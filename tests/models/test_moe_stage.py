@@ -39,8 +39,8 @@ def test_moe_stage_matches_original_attention_router_and_experts(
     original_layer = moe_layer_weights_from_dict(original, prefix, original_weights=True, top_k=2)
     transformed_layer = moe_layer_weights_from_dict(transformed, prefix, top_k=2)
     hidden = torch.randn(5, 16, dtype=torch.float64)
-    expected = DenseStageRunner([([original_layer], basis, None)]).run(hidden)
-    actual = DenseStageRunner([([transformed_layer], basis, None)]).run(hidden @ basis.T)
+    expected = DenseStageRunner([[original_layer]]).run(hidden)
+    actual = DenseStageRunner([[transformed_layer]]).run(hidden @ basis.T)
     torch.testing.assert_close(actual @ basis, expected, atol=3e-10, rtol=3e-10)
 
 

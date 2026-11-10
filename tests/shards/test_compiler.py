@@ -45,10 +45,7 @@ def test_compiler_partitions_dense_checkpoint_and_separates_boundary(
         assert metadata["stage_index"] == stage_index
         assert not any("embed_tokens" in name or "lm_head" in name for name in tensors)
         seen_layers.extend(metadata["layer_indices"])
-        assert "stage.input_basis" in tensors
-        assert "stage.output_basis" in tensors
-        if stage_index + 1 < len(result.stage_shards):
-            assert "stage.transition" in tensors
+        assert not any("basis" in name or "transition" in name for name in tensors)
     assert seen_layers == list(range(layer_count))
 
     with pytest.raises(ShardIntegrityError):

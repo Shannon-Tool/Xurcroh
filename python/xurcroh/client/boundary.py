@@ -27,6 +27,14 @@ class ClientBoundary:
             raise RuntimeError("client boundary is closed")
         return hidden @ self.output_basis
 
+    def transition(self, hidden: torch.Tensor, stage_index: int) -> torch.Tensor:
+        if self.closed:
+            raise RuntimeError("client boundary is closed")
+        bases = self._tensors["basis.stages"]
+        if stage_index < 0 or stage_index + 1 >= bases.shape[0]:
+            raise ValueError("stage transition is out of range")
+        return hidden @ bases[stage_index] @ bases[stage_index + 1].T
+
     def logits(self, hidden: torch.Tensor) -> torch.Tensor:
         recovered = self.recover(hidden)
         epsilon = float(self._tensors["final_norm.epsilon"])

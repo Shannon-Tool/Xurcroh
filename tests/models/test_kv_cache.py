@@ -39,12 +39,12 @@ def test_cached_attention_and_stage_match_full_recomputation() -> None:
         input_gain=torch.ones(4, dtype=torch.float64),
         post_attention_gain=torch.ones(4, dtype=torch.float64),
     )
-    runner = DenseStageRunner([([layer], torch.eye(4, dtype=torch.float64), None)])
+    runner = DenseStageRunner([[layer]])
     cached_prefill = runner.run_cached("request", hidden[:2])
     cached_decode = runner.run_cached("request", hidden[2:])
     torch.testing.assert_close(
         torch.cat([cached_prefill, cached_decode]),
-        DenseStageRunner([([layer], torch.eye(4, dtype=torch.float64), None)]).run(hidden),
+        DenseStageRunner([[layer]]).run(hidden),
     )
     assert runner.cache_entries == 1
     runner.drop_request("request")

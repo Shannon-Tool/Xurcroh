@@ -412,6 +412,8 @@ class DenseStageEngine:
                 hidden = self._execute_stage(
                     index, hidden, request_id, sessions[index], remaining, circuit_id
                 )
+                if index + 1 < len(self.workers):
+                    hidden = self.boundary.transition(hidden, index)
                 check_request_health(cancelled, started, timeout)
             next_token = self.boundary.sample(hidden[-1:], request)
             token_id = int(next_token.item())

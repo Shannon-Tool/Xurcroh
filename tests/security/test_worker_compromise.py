@@ -67,6 +67,7 @@ def test_worker_credentials_cannot_open_boundary_or_peer_artifacts(
         assert result["master_env_present"] is False
         assert result["boundary_opened_with_private_identity"] is False
         assert result["peer_opened_with_own_identity"] is False
+        assert result["basis_tensor_names"] == []
         assert memory_contains(process.pid, identities.boundary_key) is False
         peer_private = identities.private_keys[1].private_bytes(
             Encoding.Raw, PrivateFormat.Raw, NoEncryption()

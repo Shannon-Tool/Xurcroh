@@ -28,7 +28,8 @@ def test_compiled_attention_and_ffn_match_original(tiny_llama_path: Path, tmp_pa
     transformed, _ = read_shard(result.stage_shards[0], key)
     prefix = "model.layers.0"
     hidden = torch.randn(5, 16, dtype=torch.float64)
-    basis = transformed["stage.input_basis"]
+    boundary, _ = read_shard(result.boundary_shard, identities.boundary_key)
+    basis = boundary["basis.input"]
     gain = original[f"{prefix}.input_layernorm.weight"].double()
     original_attention = AttentionWeights(
         q=original[f"{prefix}.self_attn.q_proj.weight"].double() * gain,

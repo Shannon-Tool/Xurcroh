@@ -110,13 +110,7 @@ def execute_dense_layer_cached(
 class DenseStageRunner:
     def __init__(
         self,
-        stages: list[
-            tuple[
-                list[DenseLayerWeights | MoELayerWeights],
-                torch.Tensor,
-                torch.Tensor | None,
-            ]
-        ],
+        stages: list[list[DenseLayerWeights | MoELayerWeights]],
         *,
         query_heads: int = 4,
         kv_heads: int = 2,
@@ -151,7 +145,7 @@ class DenseStageRunner:
                 raise ValueError("cached decode must contain exactly one new token")
             current: list[tuple[torch.Tensor, torch.Tensor]] = []
             layer_index = 0
-            for layers, _, transition in self.stages:
+            for layers in self.stages:
                 for layer in layers:
                     past = previous[layer_index] if layer_index < len(previous) else None
                     if isinstance(layer, MoELayerWeights):
@@ -174,13 +168,11 @@ class DenseStageRunner:
                         )
                     current.append(cache)
                     layer_index += 1
-                if transition is not None:
-                    hidden = hidden @ transition.T
             self._caches[request_id] = current
             return hidden
 
     def run(self, hidden: torch.Tensor) -> torch.Tensor:
-        for layers, _, transition in self.stages:
+        for layers in self.stages:
             for layer in layers:
                 if isinstance(layer, MoELayerWeights):
                     hidden = execute_moe_layer(
@@ -198,6 +190,4 @@ class DenseStageRunner:
                         kv_heads=self.kv_heads,
                         interleaved_rope=self.interleaved_rope,
                     )
-            if transition is not None:
-                hidden = hidden @ transition.T
         return hidden

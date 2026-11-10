@@ -369,13 +369,12 @@ class XurcrohWeightCompiler:
                 }
                 compiled.update(
                     self._compile_layer(
-                        layer_tensors, prefix, basis, self.config.seed + index * 97 + stage_index
+                        layer_tensors,
+                        prefix,
+                        basis,
+                        self.config.seed + index * 97 + stage_index,
                     )
                 )
-            compiled["stage.input_basis"] = basis
-            compiled["stage.output_basis"] = basis
-            if stage_index + 1 < self.config.stage_count:
-                compiled["stage.transition"] = bases[stage_index + 1] @ basis.T
             metadata = {
                 "role": "worker-stage",
                 "stage_index": stage_index,

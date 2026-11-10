@@ -91,7 +91,7 @@ class DenseStage:
             else:
                 layers.append(layer_weights_from_dict(self._tensors, prefix))
         self.runner = DenseStageRunner(
-            [(layers, self._tensors["stage.input_basis"], self._tensors.get("stage.transition"))],
+            [layers],
             query_heads=int(metadata.get("query_heads", 4)),
             kv_heads=int(metadata.get("kv_heads", 2)),
             interleaved_rope=bool(metadata.get("interleaved_rope", False)),

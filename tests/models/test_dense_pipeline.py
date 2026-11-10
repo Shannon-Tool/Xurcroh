@@ -50,9 +50,16 @@ def test_real_two_stage_dense_pipeline_matches_original(
             layer_weights_from_dict(tensors, f"model.layers.{layer}")
             for layer in metadata["layer_indices"]
         ]
-        stages.append((layers, tensors["stage.input_basis"], tensors.get("stage.transition")))
-    actual = DenseStageRunner(stages).run(hidden @ stages[0][1].T)
-    torch.testing.assert_close(actual @ stages[-1][1], expected, atol=3e-10, rtol=3e-10)
+        stages.append(layers)
+    boundary, _ = read_shard(result.boundary_shard, identities.boundary_key)
+    actual = hidden @ boundary["basis.input"].T
+    for index, layers in enumerate(stages):
+        actual = DenseStageRunner([layers]).run(actual)
+        if index + 1 < len(stages):
+            actual = (
+                actual @ boundary["basis.stages"][index] @ boundary["basis.stages"][index + 1].T
+            )
+    torch.testing.assert_close(actual @ boundary["basis.output"], expected, atol=3e-10, rtol=3e-10)
 
 
 def test_compiled_pipeline_matches_huggingface_llama_logits(
@@ -73,9 +80,9 @@ def test_compiled_pipeline_matches_huggingface_llama_logits(
             layer_weights_from_dict(tensors, f"model.layers.{layer}")
             for layer in metadata["layer_indices"]
         ]
-        hidden = DenseStageRunner(
-            [(layers, tensors["stage.input_basis"], tensors.get("stage.transition"))]
-        ).run(hidden)
+        hidden = DenseStageRunner([layers]).run(hidden)
+        if index + 1 < 2:
+            hidden = boundary.transition(hidden, index)
     actual = boundary.logits(hidden)
     model = AutoModelForCausalLM.from_pretrained(tiny_llama_path).double().eval()
     with torch.inference_mode():
