@@ -1,29 +1,34 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import torch
 from safetensors.torch import load_file
 
+from shards.identities import StageIdentities
 from xurcroh.models.dense import DenseStageRunner, execute_dense_layer, layer_weights_from_dict
-from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
 from xurcroh.shards.format import read_shard
-from xurcroh.shards.keys import read_key_envelope
+from xurcroh.shards.recipients import open_stage_key
+
+
+def _open_stage(result, identities: StageIdentities, index: int):
+    manifest = json.loads(result.manifest_path.read_text())
+    envelope = json.loads(result.key_envelopes[index].read_text())
+    key = open_stage_key(
+        envelope,
+        identities.private_keys[index],
+        manifest_digest=manifest["digest"],
+        checkpoint_fingerprint=manifest["checkpoint_fingerprint"],
+    )
+    return read_shard(result.stage_shards[index], key)
 
 
 def test_real_two_stage_dense_pipeline_matches_original(
     tiny_llama_path: Path, tmp_path: Path
 ) -> None:
-    master_key = bytes(range(32))
-    result = XurcrohWeightCompiler(
-        CompilationConfig(
-            checkpoint=tiny_llama_path,
-            output_dir=tmp_path / "compiled",
-            stage_count=2,
-            master_key=master_key,
-            seed=241,
-        )
-    ).compile()
+    identities = StageIdentities.create(2)
+    result = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=241)
     original = {
         name: tensor.double()
         for name, tensor in load_file(str(tiny_llama_path / "model.safetensors")).items()
@@ -39,9 +44,8 @@ def test_real_two_stage_dense_pipeline_matches_original(
         )
 
     stages = []
-    for index, shard in enumerate(result.stage_shards):
-        key = read_key_envelope(result.key_envelopes[index], master_key)
-        tensors, metadata = read_shard(shard, key)
+    for index in range(2):
+        tensors, metadata = _open_stage(result, identities, index)
         layers = [
             layer_weights_from_dict(tensors, f"model.layers.{layer}")
             for layer in metadata["layer_indices"]
@@ -58,22 +62,13 @@ def test_compiled_pipeline_matches_huggingface_llama_logits(
 
     from xurcroh.client.boundary import ClientBoundary
 
-    master_key = bytes(range(32))
-    result = XurcrohWeightCompiler(
-        CompilationConfig(
-            checkpoint=tiny_llama_path,
-            output_dir=tmp_path / "compiled",
-            stage_count=2,
-            master_key=master_key,
-            seed=241,
-        )
-    ).compile()
+    identities = StageIdentities.create(2)
+    result = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=241)
     token_ids = torch.tensor([[1, 2, 3, 4]])
-    boundary = ClientBoundary(result.boundary_shard, master_key)
+    boundary = ClientBoundary(result.boundary_shard, identities.boundary_key)
     hidden = boundary.embed(token_ids)[0]
-    for index, shard in enumerate(result.stage_shards):
-        key = read_key_envelope(result.key_envelopes[index], master_key)
-        tensors, metadata = read_shard(shard, key)
+    for index in range(2):
+        tensors, metadata = _open_stage(result, identities, index)
         layers = [
             layer_weights_from_dict(tensors, f"model.layers.{layer}")
             for layer in metadata["layer_indices"]

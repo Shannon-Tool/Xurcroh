@@ -22,15 +22,15 @@ def test_default_tee_policy_accepts_one_supported_hardware_root() -> None:
 def test_remote_tee_mode_does_not_silently_skip_attestation(
     tiny_llama_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    master_key, compiled = compiled_manifest(tiny_llama_path, tmp_path)
-    monkeypatch.setenv("TEST_XURCROH_MASTER_KEY", master_key.hex())
+    identities, compiled = compiled_manifest(tiny_llama_path, tmp_path)
+    monkeypatch.setenv("TEST_XURCROH_CLIENT_BOUNDARY_KEY", identities.boundary_key.hex())
     client = Xurcroh(
         cluster={"endpoint": "https://127.0.0.1:1"},
         model_path={
             "tiny": {
                 "path": str(tiny_llama_path),
                 "manifest_path": str(compiled.manifest_path),
-                "master_key_env": "TEST_XURCROH_MASTER_KEY",
+                "boundary_key_env": "TEST_XURCROH_CLIENT_BOUNDARY_KEY",
             }
         },
         security={"mode": "tee", "require_attestation": True},

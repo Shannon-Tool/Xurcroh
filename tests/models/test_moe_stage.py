@@ -9,6 +9,7 @@ import torch
 from safetensors.torch import load_file, save_file
 
 from integration.test_stage_sdk import running_stage
+from shards.identities import StageIdentities
 from shards.test_moe_compiler import make_tensors
 from Xurcroh import Xurcroh
 from xurcroh.algebra.orthogonal import sample_orthogonal
@@ -20,12 +21,14 @@ from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
 def test_moe_stage_matches_original_attention_router_and_experts(
     tiny_llama_path: Path,
 ) -> None:
+    identities = StageIdentities.create(1)
     compiler = XurcrohWeightCompiler(
         CompilationConfig(
             checkpoint=tiny_llama_path,
             output_dir=tiny_llama_path / "unused",
             stage_count=1,
-            master_key=bytes(32),
+            boundary_key=identities.boundary_key,
+            recipients=identities.recipients,
             seed=229,
         )
     )
@@ -60,26 +63,18 @@ def test_compiled_moe_executes_through_remote_stage(
     config = json.loads(config_path.read_text())
     config.update({"num_experts": 3, "num_experts_per_tok": 2, "intermediate_size": 12})
     config_path.write_text(json.dumps(config))
-    master_key = bytes(range(32))
-    compiled = XurcrohWeightCompiler(
-        CompilationConfig(
-            checkpoint=checkpoint,
-            output_dir=tmp_path / "compiled-moe",
-            stage_count=1,
-            master_key=master_key,
-            seed=241,
-        )
-    ).compile()
-    monkeypatch.setenv("TEST_XURCROH_MASTER_KEY", master_key.hex())
+    identities = StageIdentities.create(1)
+    compiled = identities.compile(checkpoint, tmp_path / "compiled-moe", seed=241)
+    monkeypatch.setenv("TEST_XURCROH_CLIENT_BOUNDARY_KEY", identities.boundary_key.hex())
     with (
-        running_stage(compiled.manifest_path, 0, master_key) as endpoint,
+        running_stage(compiled.manifest_path, 0, identities.private_keys[0]) as endpoint,
         Xurcroh(
             cluster={"name": "moe-stage", "endpoint": endpoint},
             model_path={
                 "tiny-moe": {
                     "path": str(checkpoint),
                     "manifest_path": str(compiled.manifest_path),
-                    "master_key_env": "TEST_XURCROH_MASTER_KEY",
+                    "boundary_key_env": "TEST_XURCROH_CLIENT_BOUNDARY_KEY",
                 }
             },
             security={"mode": "development"},

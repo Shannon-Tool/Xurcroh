@@ -10,28 +10,19 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
 from integration.test_stage_sdk import running_stage
-from xurcroh.adapters.pipeline import PipelineTensorInterceptor
+from shards.identities import StageIdentities
 from xurcroh.controller.identity import Registration, sign_registration
 from xurcroh.controller.registry import WorkerRegistry
 from xurcroh.controller.service import create_controller_app
-from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
-from xurcroh.shards.keys import read_key_envelope
+from xurcroh.runtime.stage_sessions import ClientStageSession
 
 
 def test_circuit_relays_real_stage_execution_without_plaintext_logs(
     tiny_llama_path: Path, tmp_path: Path, caplog
 ) -> None:
-    master_key = bytes(range(32))
-    compiled = XurcrohWeightCompiler(
-        CompilationConfig(
-            checkpoint=tiny_llama_path,
-            output_dir=tmp_path / "compiled",
-            stage_count=1,
-            master_key=master_key,
-            seed=241,
-        )
-    ).compile()
-    with running_stage(compiled.manifest_path, 0, master_key) as endpoint:
+    identities = StageIdentities.create(1)
+    compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=241)
+    with running_stage(compiled.manifest_path, 0, identities.private_keys[0]) as endpoint:
         private = Ed25519PrivateKey.generate()
         registration = Registration(
             worker_id="local-stage-worker",
@@ -60,17 +51,13 @@ def test_circuit_relays_real_stage_execution_without_plaintext_logs(
             circuit = response.json()
             assert circuit["stages"][0]["worker"]["worker_id"] == "local-stage-worker"
             assert "return_key" not in response.text
-            stage_key = read_key_envelope(compiled.key_envelopes[0], master_key)
-            sender = PipelineTensorInterceptor(
-                stage_key, b"client", b"stage", b"xurcroh-stage-0-v1"
-            )
-            receiver = PipelineTensorInterceptor(
-                stage_key, b"stage", b"client", b"xurcroh-stage-0-v1"
-            )
+            session = ClientStageSession(0, identities.recipients[0].public_key)
             hidden = torch.randn(2, 16, dtype=torch.float64)
-            packet = sender.seal("relay-request", "f64", [2, 16], hidden.numpy().tobytes())
+            packet = session.sender.seal("relay-request", "f64", [2, 16], hidden.numpy().tobytes())
             body = {
                 "request_id": "relay-request",
+                "session_id": session.session_id,
+                "client_public": session.client_public,
                 "stage_index": 0,
                 "dtype": "f64",
                 "shape": [2, 16],
@@ -85,7 +72,7 @@ def test_circuit_relays_real_stage_execution_without_plaintext_logs(
             assert relay.status_code == 200
             result = relay.json()
             assert result["packet"] != body["packet"]
-            dtype, shape, payload = receiver.open_tensor(
+            dtype, shape, payload = session.receiver.open_tensor(
                 base64.b64decode(result["packet"], validate=True)
             )
             assert dtype == "f64"

@@ -38,7 +38,8 @@ from xurcroh.runtime.generation import (
     stopping_strings,
 )
 from xurcroh.runtime.remote import RemoteOpenAIEngine
-from xurcroh.shards.keys import read_key_envelope
+from xurcroh.runtime.stage_sessions import ClientStageSession
+from xurcroh.shards.recipients import verify_manifest_digest
 
 
 class DenseStageEngine:
@@ -64,46 +65,43 @@ class DenseStageEngine:
         manifest_path = Path(definition.manifest_path)
         try:
             document = json.loads(manifest_path.read_text())
-            if document["format"] != "xurcroh-manifest" or document["version"] != 1:
+            if document["format"] != "xurcroh-manifest" or document["version"] != 2:
                 raise ShardIntegrityError("unsupported dense stage manifest")
+            verify_manifest_digest(document)
             if document["stage_count"] != len(workers):
                 raise ConfigurationError("pipeline worker count must equal manifest stage_count")
             stages = document["stages"]
             boundary = document["boundary"]
         except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
             raise ShardIntegrityError("invalid dense stage manifest") from error
-        environment_name = definition.master_key_env or "XURCROH_MASTER_KEY"
+        environment_name = definition.boundary_key_env or "XURCROH_CLIENT_BOUNDARY_KEY"
         encoded_key = os.environ.get(environment_name)
         if encoded_key is None:
             raise ConfigurationError(
-                f"master key environment variable {environment_name} is not set"
+                f"client boundary key environment variable {environment_name} is not set"
             )
         try:
-            master_key = bytes.fromhex(encoded_key)
+            boundary_key = bytes.fromhex(encoded_key)
         except ValueError as error:
-            raise ConfigurationError("master key must be hexadecimal") from error
-        if len(master_key) != 32:
-            raise ConfigurationError("master key must contain 32 bytes")
+            raise ConfigurationError("client boundary key must be hexadecimal") from error
+        if len(boundary_key) != 32:
+            raise ConfigurationError("client boundary key must contain 32 bytes")
         self._client = httpx.Client(timeout=60)
         self._native_clients: dict[int, Any] = {}
         self._native_locks = [threading.Lock() for _ in workers]
-        self._links: list[tuple[PipelineTensorInterceptor, PipelineTensorInterceptor]] = []
-        for index, stage in enumerate(stages):
+        self._recipient_public: list[bytes] = []
+        for stage in stages:
             if Path(stage["file"]).name != stage["file"]:
                 raise ShardIntegrityError("unsafe stage artifact path")
             if Path(stage["key_envelope"]).name != stage["key_envelope"]:
                 raise ShardIntegrityError("unsafe stage key path")
-            key = read_key_envelope(manifest_path.parent / stage["key_envelope"], master_key)
-            context = f"xurcroh-stage-{index}-v1".encode()
-            self._links.append(
-                (
-                    PipelineTensorInterceptor(key, b"client", b"stage", context),
-                    PipelineTensorInterceptor(key, b"stage", b"client", context),
-                )
-            )
+            recipient_public = bytes.fromhex(stage["recipient_public"])
+            if len(recipient_public) != 32:
+                raise ShardIntegrityError("invalid stage recipient public key")
+            self._recipient_public.append(recipient_public)
         if Path(boundary["file"]).name != boundary["file"]:
             raise ShardIntegrityError("unsafe client boundary path")
-        self.boundary = ClientBoundary(manifest_path.parent / boundary["file"], master_key)
+        self.boundary = ClientBoundary(manifest_path.parent / boundary["file"], boundary_key)
         for worker in workers:
             RemoteOpenAIEngine.validate_worker(worker, security, stage=True)
             if security.require_attestation:
@@ -241,6 +239,7 @@ class DenseStageEngine:
         index: int,
         hidden: torch.Tensor,
         request_id: str,
+        session: ClientStageSession,
         timeout: float,
         circuit_id: str | None = None,
     ) -> torch.Tensor:
@@ -248,11 +247,13 @@ class DenseStageEngine:
         if contiguous.dtype != torch.float64 or contiguous.ndim != 2:
             raise ProtocolError("client stage input must be a float64 matrix")
         shape = list(contiguous.shape)
-        sender, receiver = self._links[index]
-        packet = sender.seal(request_id, "f64", shape, contiguous.numpy().tobytes())
+        packet = session.sender.seal(request_id, "f64", shape, contiguous.numpy().tobytes())
         worker = self.workers[index]
         if (worker.endpoint or "").startswith("quic://"):
-            return self._execute_native(index, packet, request_id, shape, receiver, timeout)
+            wire_packet = session.wire_packet(packet)
+            return self._execute_native(
+                index, wire_packet, request_id, shape, session.receiver, timeout
+            )
         url = (
             self._controller_url(f"/v1/relay/{circuit_id}")
             if circuit_id is not None
@@ -264,6 +265,8 @@ class DenseStageEngine:
                 url,
                 json={
                     "request_id": request_id,
+                    "session_id": session.session_id,
+                    "client_public": session.client_public,
                     "stage_index": index,
                     "dtype": "f64",
                     "shape": shape,
@@ -281,7 +284,7 @@ class DenseStageEngine:
             raise ClusterUnavailableError(
                 f"stage {index} worker {worker.name} failed: {type(error).__name__}"
             ) from error
-        dtype, result_shape, payload = receiver.open_tensor(result)
+        dtype, result_shape, payload = session.receiver.open_tensor(result)
         if dtype != "f64" or result_shape != shape or len(payload) != shape[0] * shape[1] * 8:
             raise ProtocolError("stage response tensor does not match the request shape")
         buffer = bytearray(payload)
@@ -290,24 +293,57 @@ class DenseStageEngine:
         finally:
             buffer[:] = bytes(len(buffer))
 
-    def _clear_stage_caches(self, request_id: str, circuit_id: str | None) -> None:
+    def _clear_stage_caches(
+        self,
+        request_id: str,
+        circuit_id: str | None,
+        sessions: list[ClientStageSession],
+    ) -> None:
         if circuit_id is not None:
             with suppress(httpx.HTTPError):
                 self._client.delete(
                     self._controller_url(f"/v1/relay/{circuit_id}/stages/{request_id}"),
                     timeout=10,
                 )
-        for index, worker in enumerate(self.workers):
+        for index, (worker, session) in enumerate(zip(self.workers, sessions, strict=False)):
             if (worker.endpoint or "").startswith("quic://"):
                 client = self._native_clients.get(index)
                 if client is not None:
-                    request_hash = hashlib.sha256(request_id.encode()).digest()[:16]
-                    with suppress(ValueError):
-                        client.send(request_hash, index, 0, "cancel", "u8", [], b"")
+                    session_uuid = uuid.UUID(session.session_id).bytes
+
+                    def cancel_native(
+                        client: Any = client,
+                        session_uuid: bytes = session_uuid,
+                        index: int = index,
+                    ) -> None:
+                        client.send(
+                            session_uuid,
+                            index,
+                            0,
+                            "cancel",
+                            "",
+                            [],
+                            b"",
+                        )
+                        response = client.receive()
+                        if response[3] != "complete":
+                            raise ValueError("native stage cancellation was not acknowledged")
+
+                    with (
+                        suppress(ValueError, FutureTimeoutError),
+                        self._native_locks[index],
+                        ThreadPoolExecutor(max_workers=1) as executor,
+                    ):
+                        executor.submit(cancel_native).result(timeout=10)
             else:
                 with suppress(httpx.HTTPError):
                     self._client.delete(
                         f"{self._endpoint(worker)}/v1/stages/{request_id}", timeout=10
+                    )
+                with suppress(httpx.HTTPError):
+                    self._client.delete(
+                        f"{self._endpoint(worker)}/v1/stages/sessions/{session.session_id}",
+                        timeout=10,
                     )
 
     def generate(
@@ -321,6 +357,10 @@ class DenseStageEngine:
             self._create_circuit(request.model) if self.controller_endpoint is not None else None
         )
         request_id = request.request_id or f"req_{uuid.uuid4().hex}"
+        sessions = [
+            ClientStageSession(index, recipient_public)
+            for index, recipient_public in enumerate(self._recipient_public)
+        ]
         try:
             yield from self._generate(
                 request,
@@ -328,9 +368,10 @@ class DenseStageEngine:
                 timeout=timeout,
                 circuit_id=circuit_id,
                 request_id=request_id,
+                sessions=sessions,
             )
         finally:
-            self._clear_stage_caches(request_id, circuit_id)
+            self._clear_stage_caches(request_id, circuit_id, sessions)
             if circuit_id is not None:
                 self._delete_circuit(circuit_id)
 
@@ -342,6 +383,7 @@ class DenseStageEngine:
         timeout: float,
         circuit_id: str | None,
         request_id: str,
+        sessions: list[ClientStageSession],
     ) -> Iterator[GenerationEvent]:
         if self._closed:
             raise ModelLoadError("dense stage engine is closed")
@@ -367,7 +409,9 @@ class DenseStageEngine:
             for index in range(len(self.workers)):
                 check_request_health(cancelled, started, timeout)
                 remaining = timeout - (time.monotonic() - started)
-                hidden = self._execute_stage(index, hidden, request_id, remaining, circuit_id)
+                hidden = self._execute_stage(
+                    index, hidden, request_id, sessions[index], remaining, circuit_id
+                )
                 check_request_health(cancelled, started, timeout)
             next_token = self.boundary.sample(hidden[-1:], request)
             token_id = int(next_token.item())

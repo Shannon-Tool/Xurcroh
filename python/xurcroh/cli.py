@@ -7,6 +7,7 @@ from pathlib import Path
 from Xurcroh import Xurcroh
 from xurcroh.errors import ConfigurationError
 from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
+from xurcroh.shards.recipients import StageRecipient
 
 
 def main() -> None:
@@ -22,7 +23,8 @@ def main() -> None:
     compile_parser.add_argument("--checkpoint", type=Path, required=True)
     compile_parser.add_argument("--output", type=Path, required=True)
     compile_parser.add_argument("--stages", type=int, required=True)
-    compile_parser.add_argument("--master-key-env", default="XURCROH_MASTER_KEY")
+    compile_parser.add_argument("--boundary-key-env", default="XURCROH_CLIENT_BOUNDARY_KEY")
+    compile_parser.add_argument("--stage-recipient", action="append", required=True)
     compile_parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
     if args.command == "chat":
@@ -38,21 +40,33 @@ def main() -> None:
             )
             print(response.choices[0].message.content)
     elif args.command == "compile":
-        encoded = os.environ.get(args.master_key_env)
+        encoded = os.environ.get(args.boundary_key_env)
         if encoded is None:
             raise ConfigurationError(
-                f"master key environment variable {args.master_key_env} is not set"
+                f"client boundary key environment variable {args.boundary_key_env} is not set"
             )
         try:
-            master_key = bytes.fromhex(encoded)
+            boundary_key = bytes.fromhex(encoded)
         except ValueError as error:
-            raise ConfigurationError("master key must be hexadecimal") from error
+            raise ConfigurationError("client boundary key must be hexadecimal") from error
+        recipients = []
+        for value in args.stage_recipient:
+            index_text, separator, public_hex = value.partition("=")
+            if not separator:
+                raise ConfigurationError("stage recipients require INDEX=PUBLIC_KEY_HEX")
+            try:
+                index = int(index_text)
+                public_key = bytes.fromhex(public_hex)
+            except ValueError as error:
+                raise ConfigurationError("invalid stage recipient") from error
+            recipients.append(StageRecipient(index, public_key, f"stage-{index}"))
         result = XurcrohWeightCompiler(
             CompilationConfig(
                 checkpoint=args.checkpoint,
                 output_dir=args.output,
                 stage_count=args.stages,
-                master_key=master_key,
+                boundary_key=boundary_key,
+                recipients=tuple(sorted(recipients, key=lambda recipient: recipient.stage_index)),
                 seed=args.seed,
             )
         ).compile()

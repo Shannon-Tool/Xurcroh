@@ -4,6 +4,7 @@ from pathlib import Path
 
 import torch
 
+from shards.identities import StageIdentities
 from xurcroh.algebra.feedforward import FeedForwardWeights, reference_feedforward
 from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
 
@@ -44,12 +45,14 @@ def make_tensors() -> dict[str, torch.Tensor]:
 def test_moe_router_and_experts_preserve_permuted_mapping(
     tiny_llama_path: Path, tmp_path: Path
 ) -> None:
+    identities = StageIdentities.create(1)
     compiler = XurcrohWeightCompiler(
         CompilationConfig(
             checkpoint=tiny_llama_path,
             output_dir=tmp_path / "out",
             stage_count=1,
-            master_key=bytes(32),
+            boundary_key=identities.boundary_key,
+            recipients=identities.recipients,
             seed=229,
         )
     )

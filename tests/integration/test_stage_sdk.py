@@ -8,22 +8,26 @@ from pathlib import Path
 
 import pytest
 import uvicorn
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
+from shards.identities import StageIdentities
 from Xurcroh import Xurcroh
 from xurcroh.errors import RequestCancelledError
-from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
 
 
 @contextmanager
 def running_stage(
-    manifest: Path, stage_index: int, master_key: bytes, attestation_document=None
+    manifest: Path,
+    stage_index: int,
+    private_key: X25519PrivateKey,
+    attestation_document=None,
 ) -> Iterator[str]:
     from xurcroh.stage_worker import create_stage_app
 
     app = create_stage_app(
         manifest,
         stage_index=stage_index,
-        master_key=master_key,
+        private_key=private_key,
         attestation_document=attestation_document,
     )
     config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="error")
@@ -46,20 +50,12 @@ def running_stage(
 def test_public_sdk_executes_real_encrypted_remote_stages(
     tiny_llama_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    master_key = bytes(range(32))
-    compiled = XurcrohWeightCompiler(
-        CompilationConfig(
-            checkpoint=tiny_llama_path,
-            output_dir=tmp_path / "compiled",
-            stage_count=2,
-            master_key=master_key,
-            seed=241,
-        )
-    ).compile()
-    monkeypatch.setenv("TEST_XURCROH_MASTER_KEY", master_key.hex())
+    identities = StageIdentities.create(2)
+    compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=241)
+    monkeypatch.setenv("TEST_XURCROH_CLIENT_BOUNDARY_KEY", identities.boundary_key.hex())
     with (
-        running_stage(compiled.manifest_path, 0, master_key) as first,
-        running_stage(compiled.manifest_path, 1, master_key) as second,
+        running_stage(compiled.manifest_path, 0, identities.private_keys[0]) as first,
+        running_stage(compiled.manifest_path, 1, identities.private_keys[1]) as second,
         Xurcroh(
             cluster=[
                 {"name": "stage-0", "endpoint": first, "labels": {"stage_index": "0"}},
@@ -69,7 +65,7 @@ def test_public_sdk_executes_real_encrypted_remote_stages(
                 "tiny": {
                     "path": str(tiny_llama_path),
                     "manifest_path": str(compiled.manifest_path),
-                    "master_key_env": "TEST_XURCROH_MASTER_KEY",
+                    "boundary_key_env": "TEST_XURCROH_CLIENT_BOUNDARY_KEY",
                 }
             },
             pipeline_parallel=2,

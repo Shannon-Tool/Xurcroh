@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 import torch
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from fastapi import FastAPI, Request
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,14 +19,17 @@ from xurcroh.adapters.pipeline import PipelineTensorInterceptor
 from xurcroh.errors import ModelLoadError, ProtocolError, ShardIntegrityError
 from xurcroh.models.dense import DenseLayerWeights, DenseStageRunner, layer_weights_from_dict
 from xurcroh.models.moe import MoELayerWeights, moe_layer_weights_from_dict
+from xurcroh.runtime.stage_sessions import StageSessionStore
 from xurcroh.shards.format import read_shard
-from xurcroh.shards.keys import read_key_envelope
+from xurcroh.shards.recipients import open_stage_key, verify_manifest_digest
 
 
 class StageExecutionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request_id: str = Field(pattern=r"^[A-Za-z0-9._:-]{1,128}$")
+    session_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    client_public: str = Field(min_length=44, max_length=44)
     stage_index: int = Field(ge=0)
     dtype: Literal["f64"] = "f64"
     shape: list[int] = Field(min_length=1, max_length=2)
@@ -32,12 +37,18 @@ class StageExecutionRequest(BaseModel):
 
 
 class DenseStage:
-    def __init__(self, manifest_path: str | Path, stage_index: int, master_key: bytes) -> None:
+    def __init__(
+        self,
+        manifest_path: str | Path,
+        stage_index: int,
+        private_key: X25519PrivateKey,
+    ) -> None:
         path = Path(manifest_path)
         try:
             document = json.loads(path.read_text())
-            if document["format"] != "xurcroh-manifest" or document["version"] != 1:
+            if document["format"] != "xurcroh-manifest" or document["version"] != 2:
                 raise ShardIntegrityError("unsupported stage manifest")
+            digest = verify_manifest_digest(document)
             stage = document["stages"][stage_index]
             if len(document["stages"]) != document["stage_count"]:
                 raise ShardIntegrityError("stage count does not match manifest")
@@ -45,9 +56,18 @@ class DenseStage:
                 raise ShardIntegrityError("unsafe stage artifact path")
             if Path(stage["key_envelope"]).name != stage["key_envelope"]:
                 raise ShardIntegrityError("unsafe stage key path")
+            envelope = json.loads((path.parent / stage["key_envelope"]).read_text())
         except (OSError, KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
             raise ShardIntegrityError("invalid stage manifest") from error
-        key = read_key_envelope(path.parent / stage["key_envelope"], master_key)
+        public = private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        if public.hex() != stage["recipient_public"]:
+            raise ShardIntegrityError("stage recipient identity mismatch")
+        key = open_stage_key(
+            envelope,
+            private_key,
+            manifest_digest=digest,
+            checkpoint_fingerprint=document["checkpoint_fingerprint"],
+        )
         self._tensors, metadata = read_shard(path.parent / stage["file"], key)
         if metadata["ciphertext_sha256"] != stage["ciphertext_sha256"]:
             raise ShardIntegrityError("stage manifest ciphertext digest mismatch")
@@ -76,9 +96,7 @@ class DenseStage:
             kv_heads=int(metadata.get("kv_heads", 2)),
             interleaved_rope=bool(metadata.get("interleaved_rope", False)),
         )
-        context = f"xurcroh-stage-{stage_index}-v1".encode()
-        self.receiver = PipelineTensorInterceptor(key, b"stage", b"client", context)
-        self.sender = PipelineTensorInterceptor(key, b"client", b"stage", context)
+        self.sessions = StageSessionStore(private_key, stage_index)
         self.stage_index = stage_index
         self.closed = False
 
@@ -94,6 +112,7 @@ class DenseStage:
             for tensor in self._tensors.values():
                 tensor.zero_()
             self._tensors.clear()
+            self.sessions.close()
             self.closed = True
 
 
@@ -126,10 +145,10 @@ def create_stage_app(
     manifest_path: str | Path,
     *,
     stage_index: int,
-    master_key: bytes,
+    private_key: X25519PrivateKey,
     attestation_document: dict[str, Any] | None = None,
 ) -> FastAPI:
-    stage = DenseStage(manifest_path, stage_index, master_key)
+    stage = DenseStage(manifest_path, stage_index, private_key)
     cancelled: dict[str, threading.Event] = {}
     lock = threading.Lock()
 
@@ -201,14 +220,17 @@ def create_stage_app(
                 raise ProtocolError("stage request ID is already active")
             cancelled[request.request_id] = event
         try:
+            receiver, sender = stage.sessions.get_or_create(
+                request.session_id, request.client_public
+            )
             packet = base64.b64decode(request.packet, validate=True)
-            hidden = _decode_tensor(packet, stage.receiver)
+            hidden = _decode_tensor(packet, receiver)
             if event.is_set():
                 raise ProtocolError("stage request was cancelled")
             output = stage.execute(hidden, request.request_id)
             if event.is_set():
                 raise ProtocolError("stage request was cancelled")
-            response_packet, shape = _encode_tensor(output, request.request_id, stage.sender)
+            response_packet, shape = _encode_tensor(output, request.request_id, sender)
             hidden.zero_()
             output.zero_()
             return {
@@ -236,21 +258,22 @@ def create_stage_app(
                 event.set()
         stage.runner.drop_request(request_id)
 
+    @app.delete("/v1/stages/sessions/{session_id}", status_code=204)
+    def close_session(session_id: str) -> None:
+        stage.sessions.remove(session_id)
+
     return app
 
 
 def main() -> None:
     import argparse
-    import os
 
     import uvicorn
-
-    from xurcroh.errors import ConfigurationError
 
     parser = argparse.ArgumentParser(prog="xurcroh-stage")
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--stage-index", type=int, required=True)
-    parser.add_argument("--master-key-env", default="XURCROH_MASTER_KEY")
+    parser.add_argument("--stage-private-key", type=Path, required=True)
     parser.add_argument("--attestation-evidence", type=Path)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=9444)
@@ -263,15 +286,10 @@ def main() -> None:
     args = parser.parse_args()
     if not args.development_http and (not args.tls_cert or not args.tls_key):
         parser.error("stage workers require TLS certificate/key or explicit --development-http")
-    encoded = os.environ.get(args.master_key_env)
-    if encoded is None:
-        parser.error(f"master key environment variable {args.master_key_env} is not set")
-    try:
-        master_key = bytes.fromhex(encoded)
-    except ValueError as error:
-        raise ConfigurationError("master key must be hexadecimal") from error
-    if len(master_key) != 32:
-        raise ConfigurationError("master key must contain 32 bytes")
+    identity_bytes = args.stage_private_key.read_bytes()
+    if len(identity_bytes) != 32:
+        parser.error("stage private identity must contain exactly 32 bytes")
+    stage_identity = X25519PrivateKey.from_private_bytes(identity_bytes)
     attestation_document = (
         json.loads(args.attestation_evidence.read_text())
         if args.attestation_evidence is not None
@@ -280,7 +298,7 @@ def main() -> None:
     app = create_stage_app(
         args.manifest,
         stage_index=args.stage_index,
-        master_key=master_key,
+        private_key=stage_identity,
         attestation_document=attestation_document,
     )
     if any((args.quic_listen, args.quic_cert, args.quic_key)) and not all(
@@ -294,7 +312,7 @@ def main() -> None:
         native_server = NativeStageServer(
             args.manifest,
             stage_index=args.stage_index,
-            master_key=master_key,
+            stage_private_key=stage_identity,
             certificate=args.quic_cert.read_bytes(),
             private_key=args.quic_key.read_bytes(),
             address=args.quic_listen,

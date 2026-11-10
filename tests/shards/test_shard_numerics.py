@@ -1,30 +1,30 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import torch
 from safetensors.torch import load_file
 
+from shards.identities import StageIdentities
 from xurcroh.algebra.attention import AttentionWeights, reference_attention
 from xurcroh.algebra.feedforward import FeedForwardWeights, reference_feedforward
-from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
 from xurcroh.shards.format import read_shard
-from xurcroh.shards.keys import read_key_envelope
+from xurcroh.shards.recipients import open_stage_key
 
 
 def test_compiled_attention_and_ffn_match_original(tiny_llama_path: Path, tmp_path: Path) -> None:
-    master_key = bytes(range(32))
-    result = XurcrohWeightCompiler(
-        CompilationConfig(
-            checkpoint=tiny_llama_path,
-            output_dir=tmp_path / "compiled",
-            stage_count=1,
-            master_key=master_key,
-            seed=223,
-        )
-    ).compile()
+    identities = StageIdentities.create(1)
+    result = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=223)
     original = load_file(str(tiny_llama_path / "model.safetensors"))
-    key = read_key_envelope(result.key_envelopes[0], master_key)
+    manifest = json.loads(result.manifest_path.read_text())
+    envelope = json.loads(result.key_envelopes[0].read_text())
+    key = open_stage_key(
+        envelope,
+        identities.private_keys[0],
+        manifest_digest=manifest["digest"],
+        checkpoint_fingerprint=manifest["checkpoint_fingerprint"],
+    )
     transformed, _ = read_shard(result.stage_shards[0], key)
     prefix = "model.layers.0"
     hidden = torch.randn(5, 16, dtype=torch.float64)

@@ -5,24 +5,16 @@ from pathlib import Path
 import torch
 from safetensors.torch import load_file
 
+from shards.identities import StageIdentities
 from xurcroh.client.boundary import ClientBoundary
-from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
 
 
 def test_client_boundary_embeds_and_evaluates_output_head(
     tiny_llama_path: Path, tmp_path: Path
 ) -> None:
-    master_key = bytes(range(32))
-    result = XurcrohWeightCompiler(
-        CompilationConfig(
-            checkpoint=tiny_llama_path,
-            output_dir=tmp_path / "compiled",
-            stage_count=1,
-            master_key=master_key,
-            seed=331,
-        )
-    ).compile()
-    boundary = ClientBoundary(result.boundary_shard, master_key)
+    identities = StageIdentities.create(1)
+    result = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=331)
+    boundary = ClientBoundary(result.boundary_shard, identities.boundary_key)
     token_ids = torch.tensor([2, 3, 4])
     original = {
         name: tensor.double()

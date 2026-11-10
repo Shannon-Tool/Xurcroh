@@ -12,11 +12,11 @@ import uvicorn
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from integration.test_stage_sdk import running_stage
+from shards.identities import StageIdentities
 from Xurcroh import Xurcroh
 from xurcroh.controller.identity import Registration, sign_registration
 from xurcroh.controller.registry import WorkerRegistry
 from xurcroh.controller.service import create_controller_app
-from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
 
 
 @contextmanager
@@ -53,19 +53,11 @@ def running_controller(worker_endpoint: str) -> Iterator[str]:
 def test_public_sdk_uses_and_tears_down_controller_circuit(
     tiny_llama_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    master_key = bytes(range(32))
-    compiled = XurcrohWeightCompiler(
-        CompilationConfig(
-            checkpoint=tiny_llama_path,
-            output_dir=tmp_path / "compiled",
-            stage_count=1,
-            master_key=master_key,
-            seed=241,
-        )
-    ).compile()
-    monkeypatch.setenv("TEST_XURCROH_MASTER_KEY", master_key.hex())
+    identities = StageIdentities.create(1)
+    compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=241)
+    monkeypatch.setenv("TEST_XURCROH_CLIENT_BOUNDARY_KEY", identities.boundary_key.hex())
     with (
-        running_stage(compiled.manifest_path, 0, master_key) as worker,
+        running_stage(compiled.manifest_path, 0, identities.private_keys[0]) as worker,
         running_controller(worker) as controller,
         Xurcroh(
             cluster={
@@ -77,7 +69,7 @@ def test_public_sdk_uses_and_tears_down_controller_circuit(
                 "tiny": {
                     "path": str(tiny_llama_path),
                     "manifest_path": str(compiled.manifest_path),
-                    "master_key_env": "TEST_XURCROH_MASTER_KEY",
+                    "boundary_key_env": "TEST_XURCROH_CLIENT_BOUNDARY_KEY",
                 }
             },
         ) as client,

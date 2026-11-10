@@ -207,7 +207,7 @@ class ModelDefinition(StrictModel):
     modality: Literal["auto", "text", "vlm", "image", "video"] = "auto"
     allow_download: bool = False
     manifest_path: str | None = None
-    master_key_env: str | None = None
+    boundary_key_env: str | None = None
     protect_latents: bool = False
 
 

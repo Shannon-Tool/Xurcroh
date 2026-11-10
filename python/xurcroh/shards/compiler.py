@@ -21,7 +21,7 @@ from xurcroh.algebra.feedforward import FeedForwardWeights, conjugate_feedforwar
 from xurcroh.algebra.rmsnorm import absorb_rms_gain
 from xurcroh.errors import ConfigurationError, ModelLoadError
 from xurcroh.shards.format import write_shard
-from xurcroh.shards.keys import write_key_envelope
+from xurcroh.shards.recipients import StageRecipient, manifest_digest, seal_stage_key
 
 LAYER_PATTERN = re.compile(r"(?:^|\.)layers\.(\d+)\.")
 
@@ -31,15 +31,22 @@ class CompilationConfig:
     checkpoint: Path
     output_dir: Path
     stage_count: int
-    master_key: bytes
+    boundary_key: bytes
+    recipients: tuple[StageRecipient, ...]
     seed: int
     compute_dtype: torch.dtype = torch.float64
 
     def __post_init__(self) -> None:
         if self.stage_count < 1:
             raise ValueError("stage_count must be positive")
-        if len(self.master_key) != 32:
-            raise ValueError("master_key must contain 32 bytes")
+        if len(self.boundary_key) != 32:
+            raise ValueError("boundary_key must contain 32 bytes")
+        if len(self.recipients) != self.stage_count:
+            raise ValueError("each stage requires exactly one recipient")
+        if tuple(recipient.stage_index for recipient in self.recipients) != tuple(
+            range(self.stage_count)
+        ):
+            raise ValueError("recipient stage indexes must be sequential")
 
 
 @dataclass(frozen=True)
@@ -339,9 +346,11 @@ class XurcrohWeightCompiler:
         output_dir.mkdir(parents=True, exist_ok=True)
         stage_shards: list[Path] = []
         key_envelopes: list[Path] = []
+        stage_keys: list[bytes] = []
         manifest_stages = []
         compiled_stages = []
         for stage_index, indices in enumerate(partitions):
+            recipient = self.config.recipients[stage_index]
             basis = bases[stage_index]
             stage_names = [
                 name
@@ -384,9 +393,7 @@ class XurcrohWeightCompiler:
             stage_key = os.urandom(32)
             shard_metadata = write_shard(shard_path, compiled, stage_key, metadata)
             key_path = output_dir / f"stage-{stage_index}.key.json"
-            write_key_envelope(
-                key_path, stage_key, self.config.master_key, key_id=f"stage-{stage_index}"
-            )
+            stage_keys.append(stage_key)
             stage_shards.append(shard_path)
             key_envelopes.append(key_path)
             manifest_stages.append(
@@ -394,6 +401,8 @@ class XurcrohWeightCompiler:
                     **shard_metadata,
                     "file": shard_path.name,
                     "key_envelope": key_path.name,
+                    "key_id": recipient.key_id,
+                    "recipient_public": recipient.public_key.hex(),
                 }
             )
             compiled_stages.append(compiled)
@@ -431,7 +440,7 @@ class XurcrohWeightCompiler:
         boundary_metadata = write_shard(
             boundary_path,
             boundary_tensors,
-            self.config.master_key,
+            self.config.boundary_key,
             {
                 "role": "client-boundary",
                 "tied_embeddings": head_name is None,
@@ -443,7 +452,7 @@ class XurcrohWeightCompiler:
                 tensor.zero_()
         manifest = {
             "format": "xurcroh-manifest",
-            "version": 1,
+            "version": 2,
             "model_type": self.reader.config.get("model_type", "unknown"),
             "checkpoint_fingerprint": self.reader.fingerprint,
             "stage_count": self.config.stage_count,
@@ -455,6 +464,18 @@ class XurcrohWeightCompiler:
                 "tied_embeddings": head_name is None,
             },
         }
+        digest = manifest_digest(manifest)
+        manifest["digest"] = digest
+        for stage_index, (key_path, stage_key) in enumerate(
+            zip(key_envelopes, stage_keys, strict=True)
+        ):
+            envelope = seal_stage_key(
+                stage_key,
+                self.config.recipients[stage_index],
+                manifest_digest=digest,
+                checkpoint_fingerprint=self.reader.fingerprint,
+            )
+            key_path.write_text(json.dumps(envelope, indent=2, sort_keys=True) + "\n")
         manifest_path = output_dir / "manifest.json"
         manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         return CompilationResult(

@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from shards.identities import StageIdentities
 from Xurcroh import Xurcroh
 from xurcroh.native_stage import NativeStageServer
-from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
 
 
 def test_public_sdk_executes_dense_stage_over_native_quic(
@@ -14,28 +14,20 @@ def test_public_sdk_executes_dense_stage_over_native_quic(
 ) -> None:
     import xurcroh_quic
 
-    master_key = bytes(range(32))
-    compiled = XurcrohWeightCompiler(
-        CompilationConfig(
-            checkpoint=tiny_llama_path,
-            output_dir=tmp_path / "compiled",
-            stage_count=1,
-            master_key=master_key,
-            seed=241,
-        )
-    ).compile()
+    identities = StageIdentities.create(1)
+    compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=241)
     certificate, private_key = xurcroh_quic.generate_self_signed("localhost")
     certificate_path = tmp_path / "stage-ca.pem"
     certificate_path.write_bytes(certificate)
     server = NativeStageServer(
         compiled.manifest_path,
         stage_index=0,
-        master_key=master_key,
+        stage_private_key=identities.private_keys[0],
         certificate=certificate,
         private_key=private_key,
     )
     server.start()
-    monkeypatch.setenv("TEST_XURCROH_MASTER_KEY", master_key.hex())
+    monkeypatch.setenv("TEST_XURCROH_CLIENT_BOUNDARY_KEY", identities.boundary_key.hex())
     try:
         with Xurcroh(
             cluster={
@@ -47,7 +39,7 @@ def test_public_sdk_executes_dense_stage_over_native_quic(
                 "tiny": {
                     "path": str(tiny_llama_path),
                     "manifest_path": str(compiled.manifest_path),
-                    "master_key_env": "TEST_XURCROH_MASTER_KEY",
+                    "boundary_key_env": "TEST_XURCROH_CLIENT_BOUNDARY_KEY",
                 }
             },
             security={"mode": "development"},
@@ -60,6 +52,7 @@ def test_public_sdk_executes_dense_stage_over_native_quic(
             )
         assert response.usage.completion_tokens == 1
         assert response.execution.worker_ids == ["localhost"]
+        assert server.stage.sessions.active_count == 0
     finally:
         server.close()
 
@@ -76,18 +69,11 @@ def test_native_stage_timeout_aborts_wait(
     from xurcroh.config import ModelDefinition, SecurityConfig, WorkerConfig
     from xurcroh.errors import RequestTimeoutError
     from xurcroh.runtime.stage import DenseStageEngine
+    from xurcroh.runtime.stage_sessions import ClientStageSession
 
-    master_key = bytes(range(32))
-    compiled = XurcrohWeightCompiler(
-        CompilationConfig(
-            checkpoint=tiny_llama_path,
-            output_dir=tmp_path / "compiled",
-            stage_count=1,
-            master_key=master_key,
-            seed=241,
-        )
-    ).compile()
-    monkeypatch.setenv("TEST_XURCROH_MASTER_KEY", master_key.hex())
+    identities = StageIdentities.create(1)
+    compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=241)
+    monkeypatch.setenv("TEST_XURCROH_CLIENT_BOUNDARY_KEY", identities.boundary_key.hex())
     certificate, private_key = xurcroh_quic.generate_self_signed("localhost")
     server = xurcroh_quic.TensorServer("127.0.0.1:0", certificate, private_key)
     address = server.local_addr()
@@ -104,7 +90,7 @@ def test_native_stage_timeout_aborts_wait(
         ModelDefinition(
             path=str(tiny_llama_path),
             manifest_path=str(compiled.manifest_path),
-            master_key_env="TEST_XURCROH_MASTER_KEY",
+            boundary_key_env="TEST_XURCROH_CLIENT_BOUNDARY_KEY",
         ),
         [
             WorkerConfig(
@@ -116,9 +102,16 @@ def test_native_stage_timeout_aborts_wait(
         SecurityConfig(mode="development"),
     )
     (tmp_path / "ca.pem").write_bytes(certificate)
+    session = ClientStageSession(0, identities.recipients[0].public_key)
     try:
         with pytest.raises(RequestTimeoutError):
-            engine._execute_stage(0, torch.randn(1, 16, dtype=torch.float64), "timeout", 0.01)
+            engine._execute_stage(
+                0,
+                torch.randn(1, 16, dtype=torch.float64),
+                "timeout",
+                session,
+                0.01,
+            )
     finally:
         engine.close()
         server.close()
