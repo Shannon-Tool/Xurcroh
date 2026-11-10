@@ -1,0 +1,15 @@
+# 08. Secure Transport
+
+<Evidence type="local">Rust protocol, AEAD, replay, rotation, and loopback QUIC tests</Evidence>
+
+The protocol uses a fixed 78-byte header with magic, version, frame kind, request/stream IDs, sequence, dtype, shape, and payload length. Decoders reject truncation, overflow, invalid types, and trailing bytes. Fuzz inputs do not panic.
+
+## AEAD lifecycle
+
+HKDF-SHA256 derives distinct send/receive keys. Nonces encode monotonic sequence numbers. A 64-packet replay window permits recent reordering but rejects duplicates and old packets. Authentication completes before replay state changes. Epoch rotation replaces keys and starts a new nonce domain; exhaustion fails closed.
+
+<Equation tex="K_{dir}=HKDF\text{-}SHA256(master, context \parallel dir),\quad N_t=0^{32}\parallel t_{64}" />
+
+Onion-style layers use ephemeral ECDH keys in the browser simulation and X25519 in production Rust. The innermost layer alone carries return secrets. Controller-scoped circuits carry encrypted stage requests/responses and are deleted on completion, cancellation, or error; integration tests verify controller-only routing and zero remaining circuits. This limits metadata visibility; it does not hide endpoint existence, timing, collusion, or a global passive adversary.
+
+QUIC tests generate self-signed certificates, pin the exact certificate through rustls, transfer real request/response frames, and reject a wrong certificate. PyO3 exposes bidirectional clients, servers, and worker connections with GIL release and explicit close/abort lifecycle. `DenseStageEngine` executes a real compiled stage over `quic://`; tests also prove timeout abort and graceful shutdown. NAT behavior and WAN performance remain unmeasured.

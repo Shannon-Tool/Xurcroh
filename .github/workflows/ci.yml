@@ -1,0 +1,75 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: ./scripts/bootstrap-python.sh
+      - name: Format and lint
+        run: |
+          .venv/bin/ruff format --check python benchmarks tests
+          .venv/bin/ruff check python benchmarks tests
+          .venv/bin/mypy
+      - name: Build native transport bindings
+        run: .venv/bin/maturin develop --manifest-path crates/transport/Cargo.toml --features python
+      - name: Build Python and native wheels
+        run: ./scripts/build-wheels.sh
+      - name: Test
+        run: .venv/bin/pytest --cov --cov-report=xml -m 'not hardware'
+      - name: Audit dependencies
+        run: .venv/bin/pip-audit
+
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.99.1"
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web-manual/package-lock.json
+      - run: npm ci
+        working-directory: apps/web-manual
+      - run: npm run check
+        working-directory: apps/web-manual
+      - run: npm audit
+        working-directory: apps/web-manual
+
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

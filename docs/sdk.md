@@ -1,0 +1,86 @@
+# Python SDK Reference
+
+## Installation and lifecycle
+
+Xurcroh requires Python 3.12 or 3.13. The distribution and import namespace are both `Xurcroh`. Use a context manager so active requests are cancelled and model resources are released:
+
+```python
+from Xurcroh import Xurcroh
+
+with Xurcroh(
+    cluster={"endpoint": "local://cpu"},
+    model_path={"qwen-7b": "/models/qwen-7b"},
+) as client:
+    response = client.chat.completions.create(
+        model="qwen-7b",
+        messages=[{"role": "user", "content": "Hello!"}],
+        temperature=0.7,
+        max_tokens=1024,
+    )
+    print(response.choices[0].message.content)
+```
+
+`AsyncXurcroh` provides the same resources with `async with`, `await ...create(...)`, and `async for` streaming. Both clients are lazy: a model is loaded on its first request, not during configuration. Calls on a closed client raise `ClientClosedError`.
+
+## Models
+
+`model_path` accepts one local path or a mapping of public names to paths/configuration dictionaries. Advanced definitions support `path`, `revision`, `engine`, `modality`, `allow_download`, `manifest_path`, `master_key_env`, and `protect_latents`. Downloads are disabled by default. Unknown names raise `ModelNotFoundError` with the available registry; no model name is silently remapped. When `manifest_path` names a compiled `.xurcroh` manifest, remote workers execute encrypted dense stages while the trusted client retains tokenization, embedding, final normalization, LM-head sampling, and decoded text. The stage count must match `pipeline_parallel` and the selected worker count. The master key is read indirectly from `master_key_env` (default `XURCROH_MASTER_KEY`) and is never a response or log field. `protect_latents=true` enables channel/spatial latent protection for compatible local BCHW UNet pipelines and protected remote image/video sessions. Remote sessions use ephemeral X25519 agreement, directional AEAD tensor envelopes, client-side prompt conditioning/noise, and client-side decode; workers return latents, not decoded images or video. Source-image editing uses validated `strength` and client VAE encoding, so source media is not forwarded to the worker. Unsupported pipelines fail explicitly instead of silently running unprotected.
+
+```python
+client = Xurcroh(
+    cluster={"endpoint": "local://cpu"},
+    model_path={
+        "qwen-7b": "/models/qwen-7b",
+        "llama-70b": {
+            "path": "/models/llama-70b",
+            "engine": "vllm",
+            "modality": "text",
+        },
+    },
+)
+```
+
+## Cluster configuration
+
+A cluster can be an endpoint string, one worker dictionary, a worker list, or an advanced mapping with `workers`, `pipeline_parallel`, `tensor_parallel`, `expert_parallel`, `security`, and `provision_workers`. An empty configuration creates one explicit `local://cpu` worker. Remote endpoints require initialized Xurcroh workers; the SDK does not claim remote execution when none is available.
+
+Worker fields include `name`, `host`, `endpoint`, `ssh`, `gpu`, `labels`, `group`, `provider`, `network_interface`, and `resources`. SSH supports `username`, `port`, `key_path`, `password`, `password_env`, `known_hosts_path`, and strict host-key checking. `SecretStr` redaction prevents passwords from appearing in representations. Operators should prefer SSH keys, agents, or indirectly supplied environment credentials. Secrets are never valid log fields.
+
+Parallelism is validated before execution; pipeline degree cannot exceed worker count. Strict security rejects plaintext worker weights and unauthenticated transport. `tee` mode requires attestation. Development-only downgrades must be selected explicitly and are not production security configurations.
+
+## Chat completions
+
+`client.chat.completions.create` supports `model`, `messages`, `temperature`, `top_p`, `top_k`, `max_tokens`, `stream`, `timeout`, `request_id`, `seed`, and `stop`. Temperature zero selects greedy decoding. Responses use OpenAI-style `choices`, `message`, `usage`, and streaming `delta` objects. `execution` contains request ID, actual engine, worker IDs, duration, and security mode, never prompt contents.
+
+```python
+stream = client.chat.completions.create(
+    model="qwen-7b",
+    messages=[{"role": "user", "content": "Hello!"}],
+    stream=True,
+    request_id="request-42",
+)
+for chunk in stream:
+    print(chunk.choices[0].delta.content or "", end="")
+```
+
+Call `client.cancel("request-42")` to cancel active work. Cancellation and timeout raise `RequestCancelledError` and `RequestTimeoutError`. Concurrent requests use independent request state and actual model execution. Closing a stream or client releases its request registration; abandoned streams cannot deadlock shutdown.
+
+## Images and video
+
+Chat messages accept plain text or typed content parts: `{"type": "text", "text": "..."}`, `{"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}`, and `{"type": "input_audio", "input_audio": {"data": "<base64-wav>", "format": "wav"}}`. Image inputs support base64 data URLs and trusted local `file://` paths; remote URL fetching is disabled. WAV input must be signed 16-bit PCM. Text-only models reject media parts before execution.
+
+`client.images.generate`, `client.images.edit`, and `client.videos.generate` use validated request schemas and typed responses. A model whose detected modality does not support the requested operation raises `CapabilityError`. A supported model without a running diffusion/video endpoint raises `ClusterUnavailableError`; these methods never return synthetic media. `Images.edit` requires `image`. Video supports image-conditioned generation through the same field. Local and remote VLM/image/video engines use the same public methods; remote media endpoints are `/v1/images/generations`, `/v1/images/edits`, and `/v1/videos/generations`.
+
+## Operational metrics
+
+`client.metrics()` returns aggregate started, completed, failed, timed-out, cancelled, and total-duration counters. `await AsyncXurcroh.metrics()` provides the same snapshot asynchronously. Workers expose `/metrics`. These values exclude prompts, tokens, media, credentials, and circuit secrets; restrict metric endpoint access because aggregate activity can still reveal operational behavior.
+
+## Errors
+
+All stable exceptions derive from `XurcrohError`: configuration, model lookup/loading, capability, cluster, protocol, attestation, shard, request, cancellation, timeout, compatibility, and closed-client failures. Invalid requests fail before model execution where possible. The SDK does not expose stack-trace-only Pydantic failures as its configuration contract.
+
+The command-line interface provides real local inference:
+
+```bash
+xurcroh chat --model tiny --model-path /models/tiny --prompt 'Hello!' --max-tokens 32
+```

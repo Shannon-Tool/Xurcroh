@@ -1,0 +1,15 @@
+# 13. Image Diffusion
+
+<Evidence type="local">Latent math and real neural image generation</Evidence>
+
+Initial noise is generated client-side, spatially permuted, and channel-rotated. The latent transform is invertible: \(z'=\Pi zU^\top\). `ProtectedDiffusionPipeline` recovers the model input before each neural call, transforms intermediate scheduler states, and recovers the final latent before decode. The local `protect_latents` path is tested against identical neural denoising with a final-latent tolerance of `2e-3`; framework methods are restored after every call. Protected remote image/video sessions add ephemeral X25519 agreement, directional AEAD envelopes, client conditioning and decode, replay/capacity checks, and latent-only worker responses. Source-image editing uses client VAE encoding with validated `strength`, so original media is not forwarded.
+
+## AdaLN and joint attention
+
+Coordinate-wise AdaLN does not commute with dense rotations. Zero-shot mode uses signed permutations: scale and gate vectors are permuted without signs, while shift/residual vectors use the full signed permutation. Adapted mode trains block scalars and a shift vector, with measured loss rather than an equivalence claim.
+
+Double-stream joint attention shares head rotations across image and text streams, preserving cross-modal inner products. Single-stream execution uses a shared residual basis. `LocalDiffusionEngine` and `RemoteMediaEngine` call actual Diffusers-compatible pipelines and return PNG bytes through local or remote SDK execution; no synthetic image is presented as model-quality output.
+
+<Equation tex="\hat z_{t-\Delta t}=\hat z_t-\Delta t\hat v_\theta=\Pi(z_t-\Delta tv_\theta)U^\top" />
+
+See the [diffusion laboratory](/15-interactive-laboratory#diffusion) for synthetic latent state transitions.

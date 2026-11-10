@@ -1,0 +1,19 @@
+# 05. System Architecture
+
+<Evidence type="derived">Stable component contracts</Evidence>
+
+The public `Xurcroh` package is a thin facade over `xurcroh` internals. It normalizes named model registries and heterogeneous worker configurations, validates security and parallelism, and exposes sync, async, streaming, image, and video interfaces. It never manufactures response text or media.
+
+## Ownership boundaries
+
+Python owns the SDK, model adapters, controller, and lifecycle. Rust owns binary framing, directional keys, replay protection, onion metadata, and QUIC. C++/CUDA owns zero-on-free, shared-memory scrubbing, uniform page touch, and ChaCha20 masking. The web manual owns only explanatory simulations.
+
+<Figure caption="Client → controller directory → independently owned stages → protected return path. The controller sees opaque ciphertext, not payload plaintext." />
+
+<Mermaid chart="flowchart LR\n  C[Client boundary] -->|opaque AEAD| D[Blind controller]\n  D --> A[Worker stage A]\n  A --> B[Worker stage B]\n  B -->|protected return| C" caption="Figure 5.1: Protected inference and return path with independent worker boundaries." />
+
+## Runtime reliability
+
+Worker registration is signed and fresh. Topology construction checks model capability and TP/EP group constraints. Admission uses bounded per-model semaphores. Managed streams release resources even when abandoned before their first token. Alternates are tried before output; retry stops after partial output to avoid duplicates.
+
+The [public API reference](/19-developer-reference) shows the exact developer-facing contract, while [secure transport](/08-secure-transport) explains the native data plane.

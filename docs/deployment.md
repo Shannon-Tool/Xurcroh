@@ -1,0 +1,94 @@
+# Deployment and Operations
+
+Xurcroh is in the pre-GPU engineering phase. These files provide reproducible service packaging; they are not evidence of physical multi-GPU execution, production security acceptance, or measured hardware performance.
+
+## Build
+
+```bash
+./scripts/build-wheels.sh
+docker build --tag xurcroh:0.1.0 .
+```
+
+The first command creates distinct `xurcroh` and `xurcroh-quic` wheels in `dist/`. Install both for SDK and native transport support; `CARGO_BIN` can select a rustup toolchain not already on `PATH`. The multi-stage `Dockerfile` installs the locked Python environment, compiles the Rust transport extension with Rust 1.99.1, and runs as UID/GID 10001. It does not contain checkpoints, credentials, generated shards, or CUDA memory libraries. Build `native/cuda` for the target GPU architecture as described in `docs/hardware-validation.md`. The locked development environment uses CPU PyTorch; a GPU image must use the checkpoint-compatible PyTorch/CUDA wheel set and record that lockfile before deployment. See `docs/resources.md` for analytical GPU topologies and hardware risks.
+
+## Loopback integration environment
+
+`deploy/compose.yaml` is explicitly a development configuration. It uses unencrypted HTTP inside one Compose network and binds published ports to loopback. It is not a zero-trust production topology.
+
+```bash
+export XURCROH_MODEL_ROOT=/absolute/path/containing/tiny
+# From the repository root:
+docker compose --project-directory . -f deploy/compose.yaml up --build
+curl http://127.0.0.1:9442/health
+curl http://127.0.0.1:9443/health
+```
+
+The model root must contain `tiny/` with a Transformers-compatible checkpoint. Replace that name and model argument for a real checkpoint. Stop services with `docker compose -f deploy/compose.yaml down`. Do not pass credentials on a command line or store them in Compose files.
+
+## TLS worker and controller
+
+A standalone worker requires a certificate, key, and immutable local model path:
+
+```bash
+.venv/bin/python -m xurcroh.worker \
+  --worker-id worker-a \
+  --model qwen-7b=/models/qwen-7b \
+  --host 0.0.0.0 --port 9443 \
+  --tls-cert /run/xurcroh/tls/tls.crt \
+  --tls-key /run/xurcroh/tls/tls.key \
+  --controller https://controller.example:9443 \
+  --advertised-endpoint https://worker-a.example:9443
+```
+
+Start the controller with:
+
+```bash
+.venv/bin/uvicorn xurcroh.controller.service:create_controller_app --factory \
+  --host 0.0.0.0 --port 9443 \
+  --ssl-certfile /run/xurcroh-controller/tls/tls.crt \
+  --ssl-keyfile /run/xurcroh-controller/tls/tls.key
+```
+
+`--advertised-endpoint` is the address other nodes use; `--host` is only the bind address. Workers refresh signed registration every 20 seconds. Private identity keys remain in the worker process. Configure certificate verification and hostnames correctly; disabling verification is not a supported strict-mode fallback.
+
+`/health` reports liveness only. `/metrics` and `client.metrics()` expose aggregate request counters and total duration, not prompts, tokens, media, credentials, or secrets. Metrics are not differential-privacy guarantees; restrict their network visibility.
+
+## Kubernetes review checklist
+
+`deploy/kubernetes.yaml` defines one controller, two independently addressable GPU workers, TLS secret mounts, a read-only checkpoint PVC, non-root/read-only containers, GPU requests, and namespace network policy. Before applying it:
+
+1. Replace `CHECKPOINT_STORAGE_CLASS` and the image name with actual infrastructure values.
+2. Provision `xurcroh-controller-tls`, `xurcroh-worker-a-tls`, and `xurcroh-worker-b-tls` using an approved CA. Do not commit private keys.
+3. Populate the checkpoint PVC through an authenticated artifact process; verify immutable checkpoint revisions and licenses.
+4. Select nodes with the intended GPU and high-bandwidth topology. Keep tensor/expert groups within a high-bandwidth host group; use pipeline stages across independent hosts.
+5. Add an explicit ingress policy for the authorized client/controller networks. The supplied namespace-only policy intentionally denies other ingress by default.
+6. Configure attestation and strict encrypted-shard loading before treating workers as zero-trust stages. Merely running two copies of a plaintext checkpoint is not the Xurcroh zero-trust architecture.
+7. Run `docs/hardware-validation.md` and real numerical/security acceptance tests. No such result is included in this pre-GPU repository.
+
+Validate YAML locally with the deployment integration tests. `kubectl apply` is a Stage Two infrastructure action and has not been run.
+
+## Encrypted dense stages
+
+Compile the checkpoint on a trusted host, distribute only each stage's `.xurcroh` shard and wrapped key envelope to its assigned worker, and retain the client boundary shard and master key on the trusted client. Start each worker without putting the key on its command line:
+
+```bash
+export XURCROH_MASTER_KEY='<64-hex-character-development-key>'
+.venv/bin/python -m xurcroh.stage_worker \
+  --manifest /models/compiled-qwen/manifest.json --stage-index 0 \
+  --host 0.0.0.0 --port 9444 \
+  --tls-cert /run/xurcroh/tls/tls.crt --tls-key /run/xurcroh/tls/tls.key \
+  --quic-listen 0.0.0.0:9445 \
+  --quic-cert /run/xurcroh/tls/tls.crt --quic-key /run/xurcroh/tls/tls.key
+```
+
+Use a secret manager for real keys and rotate them through the shard distribution process. Start the remaining stages with their distinct indexes and endpoints. The public model definition then uses `path` for the local tokenizer/config, `manifest_path` for the compiled manifest, and `master_key_env` for indirect key supply. Stage workers validate encrypted shard identity, checkpoint fingerprint, manifest digest, tensor shape, and AEAD/replay state. QUIC clients use `quic://worker-a:9445`, `labels.ca_path`, and `labels.server_name`; `labels.attestation_endpoint` selects the HTTPS evidence endpoint. Native connections use per-worker locks, graceful shutdown, and timeout-triggered abort. For TEE mode, supply public evidence with `--attestation-evidence /run/xurcroh/attestation.json`; clients request a fresh challenge, verify nonce-bound evidence locally, and invoke the AMD/Intel verifier. NVIDIA remote evidence is not yet supported. Never put private attestation keys in this JSON document. The reference stage engine recomputes causal attention over the active sequence in FP64; it establishes functional distributed execution, not production GPU throughput. Hardware engine integration remains a Stage Two performance path.
+
+Strict mode rejects full-model remote checkpoints even over HTTPS. Development policy is required for the ordinary full-model OpenAI-compatible worker path. Local `local://cpu` execution remains a trusted-client capability.
+
+## Client configuration
+
+Use `benchmarks/cluster.example.yaml` as a schema example. Set the worker credential indirectly through the named environment variable, install the trusted CA in the client, and use an HTTPS endpoint. A local model path is used for the client boundary/model definition; remote model names are not silently redirected. Multiple workers are alternates in the public remote chat path; algebraic pipeline-stage transport must be selected by the stage runtime rather than assumed from a worker list.
+
+## Shutdown and failure behavior
+
+Clients should be context managers. Closing cancels active work and releases model resources. Workers close their runtime at FastAPI lifespan shutdown. Registration expiry removes unhealthy workers from controller topology. Request admission is bounded per model. These local lifecycle tests do not prove recovery from physical host failure or WAN partition.

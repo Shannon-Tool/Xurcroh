@@ -1,0 +1,13 @@
+# 17. Security Evaluation
+
+<Evidence type="local">Adversarial experiments and explicit limitations</Evidence>
+
+`orthogonal_procrustes` demonstrates that a public-weight adversary can recover an orthogonal basis under suitable conditions. `gram_spectrum` shows how contragredient scaling changes the spectrum used by alignment attacks. These are vulnerability demonstrations, not a claim that scaling makes reconstruction impossible.
+
+## Norm and invariant leakage
+
+`nearest_embedding_by_norm` recovers token identity from distinct norms even after orthogonal rotation. RMS-based homogenization addresses that specific signal but can alter model quality and does not remove every inversion path. Attention logits and repeated-token structure may remain informative.
+
+Finite-field Freivalds tests detect altered integer matrix products. Floating-point checks use tolerances and do not inherit the finite-field probability bound. Signed registration, replay rejection, wrong-key/tamper tests, and cross-user cache tests cover protocol failures rather than mathematical privacy alone.
+
+The [threat model](/03-threat-model) defines collusion and physical attacks. [Developer reference](/19-developer-reference) describes trust-root limits, TEE interfaces, memory constraints, and the exact hardware work still required.

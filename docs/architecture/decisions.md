@@ -1,0 +1,53 @@
+# Architecture and Technical Decisions
+
+## ADR-001: Security claims and threat model
+
+Xurcroh provides computational basis obfuscation, authenticated transport confidentiality, partitioned model custody, and optional hardware-backed isolation. These are distinct properties. Orthogonal or contragredient transformations do not provide semantic security against a worker that observes weights and activations, do not prevent collusion, and preserve structural invariants unless the specific transformation removes them. ChaCha20-based masking uses a pseudorandom generator and is not an information-theoretic one-time pad.
+
+The controller receives only opaque application ciphertext and routing metadata needed for the selected circuit mode. Global passive traffic analysis, endpoint identity, timing, token counts, availability attacks, malicious worker computation, physical TEE attacks, and colluding workers remain separate threats. Constant-load MoE dispatch addresses network volume leakage, not all timing, cache, TLB, or power side channels.
+
+## ADR-002: Zero-shot conversion versus adaptation
+
+RMSNorm coordinate gains are absorbed into immediately adjacent linear projections before conjugation. This is exact when the consumer set is known and no other operation consumes the normalized output. SwiGLU and GeGLU permit intermediate permutations and the documented contragredient scaling of the non-gated branch. Q/K transformations must commute with every positional rotation pair and share transformations across each GQA group. Arbitrary dense residual rotations are not valid for coordinate-wise AdaLN; zero-shot diffusion uses signed permutations, while dense residual bases require separately trained block-scalar modulation.
+
+## ADR-003: Framework integration
+
+The inspected vLLM `BaseModelLoader` exposes `create_model`, `load_weights`, and `load_model`; Xurcroh uses the inspected interface rather than copying the specification's older override. Optional integrations import framework modules only at runtime and fail with an explicit compatibility error if the pinned API is absent. CPU reference execution is real model execution for validation, not a substitute claim that vLLM, SGLang, or xDiT GPU integration has been hardware-verified.
+
+Verified references on 2026-11-10 include:
+
+- vLLM BaseModelLoader: https://docs.vllm.ai/en/latest/api/vllm/model_executor/model_loader/base_loader/
+- Gemma 4 Unified: https://huggingface.co/docs/transformers/model_doc/gemma4_unified
+- Qwen 3.8 official repository: https://github.com/QwenLM/Qwen3.8
+- SGLang Diffusion CLI: https://docs.sglang.ai/docs/sglang-diffusion/api/cli
+
+## ADR-004: Memory scrubbing scope
+
+Zero-on-free synchronizes the wipe on the allocation's stream before `cudaFree`, preventing reuse through that allocator before the wipe completes. KV pools require separate physical-slot wipes because returning a logical block does not call the allocator. An independent epilogue kernel cannot prove that every hardware register, all SRAM, or another device's local memory was cleared. The audit probe measures the tested allocation/shared-memory region only and its report must state that scope.
+
+## ADR-005: Integrity verification
+
+Freivalds' probability bound applies to exact arithmetic over the selected finite field. BF16/FP16/FP8 kernels round and may reorder operations, so the same bound is not asserted for them. Floating-point verification uses documented numerical tolerances and empirical differential tests, while finite-field checks are available for quantized/integer projections.
+
+## ADR-006: Repository and dependency layout
+
+The implementation uses one importable `python/xurcroh` package instead of duplicating modules across suggested directory names. Rust is split into protocol, crypto, and transport crates. The web manual is isolated under `apps/web-manual`; shared machine-readable schemas and evidence reports avoid manually duplicating protocol and model constants. The stable public package is `python/Xurcroh`, exporting `Xurcroh` and `AsyncXurcroh` over those private interfaces.
+
+## ADR-007: Checkpoint-driven model architecture detection
+
+Live checkpoint metadata on 2026-11-10 contradicts two blueprint assumptions. `Qwen/Qwen3.8-27B` declares `model_type=qwen3_5` and `Qwen3_5ForConditionalGeneration`, 24 query heads with head dimension 256, 16 linear key heads and 48 linear value heads, and an empty `deepstack_visual_indexes` list. `google/gemma-4-12B-it` declares 16 query heads, head dimension 256, global head dimension 512, and tied embeddings rather than the blueprint's 24 heads at dimension 160. Adapters therefore resolve behavior from a pinned checkpoint's `config.json` and revision, validate required fields explicitly, and never silently substitute the blueprint constants. Sources:
+
+- https://huggingface.co/Qwen/Qwen3.8-27B/raw/main/config.json
+- https://huggingface.co/google/gemma-4-12B-it/raw/main/config.json
+
+## ADR-008: Public SDK and production boundaries
+
+The required `from Xurcroh import Xurcroh` API is a lifecycle-owning facade over actual execution adapters. It does not contain model responses or simulation calls. Typed configuration accepts existing endpoints and explicitly authorized SSH bootstrap settings while redacting secrets. Methods validate model capabilities and fail before execution when no real adapter exists. Synchronous, asynchronous, and streaming APIs share one request/session state machine rather than maintaining divergent implementations.
+
+Python owns the SDK, ML adapters, and control plane; Rust owns protocol, AEAD, and QUIC; C++/CUDA owns native memory operations; TypeScript is confined to the independent manual. Cross-language boundaries specify buffer ownership, cancellation, errors, and protocol versions. No additional language is introduced without a measured benefit.
+
+## ADR-009: Dense stage protocol and checkpoint RoPE layout
+
+Compiled dense manifests can be executed by actual remote stage workers through `DenseStageEngine`. Each link uses the unwrapped per-stage key with directional HKDF context; the manifest master key is not reused as the tensor-session key. Workers validate encrypted shard identity, checkpoint fingerprint, tensor descriptors, and replay state. Clients retain tokenization, embedding, final normalization, LM-head sampling, and decoded text. The reference network path uses FP64 tensors over development HTTP in local tests or TLS in deployment. Rust QUIC remains the high-throughput transport implementation, but physical GPU-stage QUIC timing and framework-kernel integration are hardware-pending claims.
+
+Strict mode no longer equates HTTPS with zero-trust model custody: full-model remote checkpoints require explicit development policy, while strict remote execution uses compiled stages. Llama-class checkpoints use half-split RoPE; adjacent-pair and half-split layouts are explicit implementation parameters and the selected layout is authenticated in stage metadata. Direct Hugging Face logit comparison establishes numerical equivalence within `atol=3e-8, rtol=1e-6` for the miniature FP64 fixture, not universal bitwise or reduced-precision equivalence.

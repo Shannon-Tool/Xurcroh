@@ -1,0 +1,20 @@
+# 03. Threat Model
+
+<Evidence type="limitation">Security boundaries are explicit</Evidence>
+
+Xurcroh considers independently operated workers, network carriers, relays, and the controller potentially malicious. A worker may inspect its own weights, memory, and computation. The controller must not receive payload decryption keys. The trusted client owns boundary weights and session secrets.
+
+## Assets and boundaries
+
+- Plaintext prompts, source images/audio/video, and decoded outputs belong to the client.
+- Full unprotected model weights must not appear on one worker.
+- Inter-stage tensors require authenticated encryption and replay protection.
+- Request-scoped KV, activations, latents, recurrent states, and transport buffers require lifecycle cleanup.
+
+## Adversaries not eliminated
+
+Colluding workers can combine their observations. Malicious computation can return incorrect results. Global observers can study endpoint identity, timing, and traffic volume. Physical host access can expose Python/framework copies, hardware registers, or attack attestation roots. Padded MoE traffic still has timing and microarchitectural side channels.
+
+<Equation tex="\text{Obfuscation} \neq \text{FHE} \neq \text{Secret Sharing} \neq \text{Zero Knowledge}" />
+
+The threat model therefore separates computational obfuscation, transport confidentiality, individual-worker custody, collusion, hardware-backed confidentiality, and formal proof. See [Security Evaluation](/17-security-evaluation) for the Procrustes and embedding-norm experiments that demonstrate these limits.

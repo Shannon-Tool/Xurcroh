@@ -1,0 +1,15 @@
+# 16. Performance
+
+<Evidence type="estimate">Analytical models, not hardware benchmarks</Evidence>
+
+Pipeline communication grows with the number of stage boundaries, hidden size, sequence length, and dtype width. A BF16 hidden tensor of shape \(L\times d\) carries \(2Ld\) bytes per hop. Tensor parallelism adds frequent collectives and is restricted to high-bandwidth groups; pipeline parallelism is preferred across independent hosts.
+
+<Equation tex="T_{decode}\approx T_{compute}+\sum_{s=1}^{P-1}\left(\frac{2Ld}{B_s}+R_s\right)+T_{client}" />
+
+Here \(B_s\) is effective bandwidth and \(R_s\) is per-hop latency. Encryption, scheduling, and client boundaries are separate costs. The 40–50 ms/token figure in the source documents is a research target, not an achieved result.
+
+## Benchmark protocol
+
+The installed `xurcroh-benchmark` command emits JSON for end-to-end time to first chunk, inter-chunk latency, throughput, transport/security overhead, memory, numerical quality, image, and video. Time to first chunk is not an isolated engine prefill measurement; Stage Two must instrument that separately. Commands and schemas are in `docs/benchmarking.md`. Reports label CPU observations, analytical estimates, and physical GPU results separately. No synthetic chart in this manual is a performance benchmark.
+
+Native optimization uses offline weight processing, FWHT client transforms, binary tensor frames, bounded batches, and communication/computation overlap where the engine supports it. Fragmentation and pipeline bubbles require real profiling.

@@ -1,0 +1,17 @@
+# 04. Mathematics
+
+<Evidence type="derived">Functional equivalence with stated preconditions</Evidence>
+
+For a linear layer \(Y=XW^\top+b\), input and output bases \(U,O\) define \(\hat W=OWU^\top\) and \(\hat b=bO^\top\). Then \(\hat Y=(XU^\top)\hat W^\top+\hat b=(XW^\top+b)O^\top\). The implementation validates matrix dimensions and uses FP64/FP32/reduced-precision comparisons rather than shape checks.
+
+## Normalization and nonlinearity
+
+RMSNorm coordinate gains are absorbed into every adjacent projection before basis conjugation: \(\tilde W=W\operatorname{diag}(g)\). This is exact only when the normalized output feeds no other operation. SwiGLU and GeGLU permit intermediate permutations and scaling of the non-gated branch; arbitrary dense rotations do not commute with coordinate-wise AdaLN.
+
+<Equation tex="\hat W_{gate}=P^\top W_{gate}U^\top,\quad \hat W_{up}=DP^\top W_{up}U^\top,\quad \hat W_{down}=U W_{down}PD^{-1}" />
+
+## Positional and recurrent operations
+
+RoPE and interleaved MRoPE require each Q/K transform to commute with every 2×2 planar rotation and to share structure across a GQA group. Frame-wise DeltaNet uses \(A=K^\top\operatorname{Diag}(\beta)K\) and \(B=V^\top\operatorname{Diag}(\beta)K\); orthogonal conjugation gives \(\hat A=OAO^\top\) and \(\hat B=RBO^\top\), preserving the normal-equation update.
+
+Counterexample: a dense residual rotation does not preserve coordinate-wise AdaLN. Zero-shot diffusion uses signed permutations; dense residual bases require separately trained block-scalar modulation. The [conjugation laboratory](/15-interactive-laboratory#conjugation) evaluates these relationships numerically.

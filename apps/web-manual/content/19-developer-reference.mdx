@@ -1,0 +1,34 @@
+# 19. Developer Reference
+
+<Evidence type="local">Public contracts verified by real execution</Evidence>
+
+```python
+from Xurcroh import Xurcroh
+
+with Xurcroh(
+    cluster={"endpoint": "local://cpu"},
+    model_path={"tiny": "/models/tiny"},
+) as client:
+    response = client.chat.completions.create(
+        model="tiny",
+        messages=[{"role": "user", "content": "Hello!"}],
+    )
+    print(response.choices[0].message.content)
+```
+
+## API surface
+
+`Xurcroh` and `AsyncXurcroh` expose `.chat.completions.create`, `.images.generate`/`.images.edit`, and `.videos.generate`. Responses include choices/messages/deltas, usage, and execution metadata. Parameters cover sampling, max tokens, streaming, timeout, cancellation ID, seed, and modality-specific inputs.
+
+`model_path` accepts one path or named definitions. Cluster workers support endpoints, SSH, GPU metadata, labels, groups, providers, resources, and credential environment references. Unknown models and incompatible settings fail before execution where possible.
+
+## Source map and errors
+
+- `python/Xurcroh`: stable public facade.
+- `python/xurcroh/runtime`: real local/remote execution and lifecycle.
+- `python/xurcroh/shards`: compiler, manifests, and strict loaders.
+- `crates`: protocol, crypto, and QUIC.
+- `native/cuda`: memory and masking.
+- `apps/web-manual`: independent documentation.
+
+Errors derive from `XurcrohError`: configuration, model lookup/load, capability, cluster, protocol, attestation, shard, timeout, cancellation, and closed client. No method returns a simulated capability when an adapter is unavailable.

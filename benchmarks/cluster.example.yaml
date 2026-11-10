@@ -1,0 +1,19 @@
+cluster:
+  workers:
+    - name: worker-a
+      endpoint: https://worker-a.example:9443
+      models: [qwen-7b]
+      credential_env: XURCROH_WORKER_CREDENTIAL
+      resources:
+        max_concurrent_requests: 4
+model_path:
+  qwen-7b:
+    path: /models/qwen-7b
+    engine: vllm
+    modality: text
+pipeline_parallel: 1
+tensor_parallel: 1
+expert_parallel: 1
+security:
+  mode: strict
+  memory_scrubbing: true

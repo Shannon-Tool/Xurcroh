@@ -1,0 +1,18 @@
+# 02. Research Foundations
+
+<Evidence type="published">Primary research and standards</Evidence>
+
+Xurcroh combines established engineering mechanisms rather than introducing a new cryptographic hardness assumption. ConjFormer studies orthogonally equivariant transformer inference. CryptoMoE motivates balanced expert dispatch. QUIC supplies independent streams with TLS 1.3, while RFC 8439 specifies ChaCha20-Poly1305 authenticated encryption.
+
+## Important distinctions
+
+Fully homomorphic encryption and secure multiparty computation offer different confidentiality guarantees from basis obfuscation. They do not justify describing a rotation as non-reversible. Hardware trusted execution environments offer another boundary, but physical memory-bus attacks and attestation-forgery risks mean that hardware quotes are evidence, not absolute truth.
+
+<Citation id="conjformer" title="Orthogonally Equivariant Transformers for LLM Inference" url="https://arxiv.org/abs/2606.16461" />
+<Citation id="cryptomoe" title="CryptoMoE: Privacy-Preserving and Scalable Mixture of Experts" url="https://papers.nips.cc/paper_files/paper/2025/file/5340b0c0b76dc0115f5cc91c20c1251d-Paper-Conference.pdf" />
+<Citation id="rfc8439" title="ChaCha20 and Poly1305 for IETF Protocols" url="https://www.rfc-editor.org/rfc/rfc8439" />
+<Citation id="leftover" title="Listening to LLM Responses Through Leaked GPU Local Memory" url="https://arxiv.org/abs/2401.16603" />
+
+## Engineering sources
+
+The adapters follow live [vLLM loader APIs](https://docs.vllm.ai/en/latest/api/vllm/model_executor/model_loader/base_loader/), [SGLang pipeline documentation](https://docs.sglang.ai/advanced_features/pipeline_parallelism.html), [SGLang Diffusion CLI](https://docs.sglang.ai/docs/sglang-diffusion/api/cli), and the [xDiT repository](https://github.com/xdit-project/xDiT). The interactive examples are deterministic explanations of these paths, not simulated measurements of them.

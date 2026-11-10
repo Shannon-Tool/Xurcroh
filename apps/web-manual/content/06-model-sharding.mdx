@@ -1,0 +1,15 @@
+# 06. Model Sharding
+
+<Evidence type="local">Encrypted round trips and numerical compilation verified</Evidence>
+
+The offline compiler reads `config.json` plus `model.safetensors` or its index, detects layer structure, partitions contiguous stages, applies verified dense/MoE transformations, and separates the client embedding/LM-head boundary. It rejects unsupported layouts instead of silently copying them.
+
+## Versioned artifacts
+
+A `.xurcroh` file contains an 8-byte magic, format version, bounded canonical JSON header, 96-bit nonce, and ChaCha20-Poly1305 ciphertext. Header and prefix are authenticated associated data. Decryption additionally checks the plaintext digest. Per-stage DEKs are wrapped independently and never stored in the manifest as plaintext.
+
+<Equation tex="C=\operatorname{AEAD}_{K_s}(N_s, S_s, AAD_s),\quad AAD_s=\operatorname{header}_s" />
+
+`SecureShardLoader` requires the correct key and stage metadata, decrypts into page-locked mutable RAM, loads safetensors from bytes, then wipes/unlocks the buffer and zeroes CPU tensors. Wrong keys, modified ciphertext, truncation, missing files, and unexpected stages fail closed. `verify_manifest` validates artifact hashes, common checkpoint identity, and complete layer coverage.
+
+`VerityPackager` provides real EROFS/dm-verity command automation. It does not imply runtime integrity; that requires separate workload checks and hardware validation. See the [developer reference](/19-developer-reference) and [thin-client boundary](/19-developer-reference#client-boundary).

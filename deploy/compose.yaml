@@ -1,0 +1,50 @@
+name: xurcroh-development
+services:
+  controller:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: xurcroh:0.1.0
+    entrypoint: [uvicorn, xurcroh.controller.service:create_controller_app, --factory, --host, 0.0.0.0, --port, "9443"]
+    ports:
+      - "127.0.0.1:9442:9443"
+    read_only: true
+    tmpfs: [/tmp, /runtime-data]
+    security_opt: [no-new-privileges:true]
+  worker-a:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: xurcroh:0.1.0
+    command:
+      - --worker-id=worker-a
+      - --model=tiny=/models/tiny
+      - --host=0.0.0.0
+      - --port=9443
+      - --development-http
+      - --controller=http+dev://controller:9443
+      - --advertised-endpoint=http+dev://worker-a:9443
+    volumes:
+      - ${XURCROH_MODEL_ROOT:?Set XURCROH_MODEL_ROOT}:/models:ro
+    ports:
+      - "127.0.0.1:9443:9443"
+    read_only: true
+    tmpfs: [/tmp, /runtime-data]
+    security_opt: [no-new-privileges:true]
+    depends_on: [controller]
+  worker-b:
+    image: xurcroh:0.1.0
+    command:
+      - --worker-id=worker-b
+      - --model=tiny=/models/tiny
+      - --host=0.0.0.0
+      - --port=9443
+      - --development-http
+      - --controller=http+dev://controller:9443
+      - --advertised-endpoint=http+dev://worker-b:9443
+    volumes:
+      - ${XURCROH_MODEL_ROOT:?Set XURCROH_MODEL_ROOT}:/models:ro
+    read_only: true
+    tmpfs: [/tmp, /runtime-data]
+    security_opt: [no-new-privileges:true]
+    depends_on: [controller]

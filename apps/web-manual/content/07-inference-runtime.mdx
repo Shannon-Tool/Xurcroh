@@ -1,0 +1,15 @@
+# 07. Inference Runtime
+
+<Evidence type="local">Real miniature execution and multi-user scheduling</Evidence>
+
+Dense execution uses `DenseStageRunner`: each stage applies RMSNorm, attention, residual, and feed-forward computation, then an optional basis transition. Tests compile a real miniature Llama checkpoint and compare two encrypted stages with the original computation and Hugging Face logits. `DenseStageEngine` also executes those stages through actual worker processes using per-stage AEAD keys, authenticated tensor descriptors, synchronous/streaming public SDK calls, and cancellation; the trusted client retains embedding and LM-head sampling.
+
+## Framework adapters
+
+The vLLM adapter uses `xurcroh_sharded`, disables prefix caching and async scheduling, and supplies a strict loader. SGLang commands disable the radix cache and enable dynamic chunked prefill. xDiT uses the official runner with Ulysses, PipeFusion, and CFG options. Version and parallelism mismatches raise `CompatibilityError`.
+
+`ContinuousBatchScheduler` implements bounded running sets and fair chunk scheduling. Dynamic chunks shrink by a configurable smoothing factor while remaining page-aligned. Stage runners keep request-scoped KV caches: full prefill runs once, subsequent calls contain one token, and cache entries are zeroed and removed on completion or cancellation. Native engines supply their own optimized batching and chunked-prefill kernels; local scheduling makes the lifecycle testable without GPUs.
+
+<Figure caption="Client prompt → local boundary → encrypted stage tensors → recovered hidden state → local LM head and sampling." />
+
+Physical kernel hooks and multi-GPU timing remain hardware validation tasks. The CPU paths prove numerical and lifecycle behavior, not full vLLM/SGLang/xDiT performance.

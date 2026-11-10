@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Rust and native builds
+/build/
+/dist/
+target/
+/native/build/
+*.so
+*.dll
+*.dylib
+*.o
+*.a
+
+# Web
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Model and generated artifacts
+/artifacts/
+/models/
+/checkpoints/
+*.safetensors
+*.gguf
+*.xurcroh
+*.erofs
+*.verity
+/benchmark-results/
+
+# Local secrets and runtime data
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+runtime-data/
+*.log
+
+# Isolated development worktrees
+.worktrees/
+worktrees/
+
+# Internal specifications, directives, and work records
+/requirement/
+/AGENTS.md
+/docs/requirements/
+/docs/superpowers/
+/docs/handoff.md
+
+# Editors and operating systems
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~

@@ -1,0 +1,19 @@
+# 01. Introduction
+
+<Evidence type="derived">Architectural definition</Evidence>
+
+Xurcroh is a production-oriented distributed inference platform. Its purpose is to partition model custody and computation across independently operated workers while keeping raw prompts, original media, and decoded outputs inside a client-owned boundary. The implementation does not assert that obfuscation is equivalent to encryption.
+
+## System model
+
+The public Python entry point is `from Xurcroh import Xurcroh`. A normalizes cluster and model configuration, selects real execution adapters, and owns request lifecycles. vLLM and SGLang serve autoregressive workloads; SGLang Diffusion and xDiT serve image and video workloads. Rust owns protocol, cryptography, and QUIC transport. C++/CUDA owns native memory operations. TypeScript is confined to this independent manual.
+
+<Equation tex="\hat{F}(XU^\top)=F(X)U^\top" />
+
+This equivariance equation is a functional requirement, not a confidentiality theorem. A transformed block computes the original result in a changed basis only when normalization, nonlinearity, attention, modulation, and recurrence constraints hold. `docs/architecture/decisions.md` records those constraints and contradictions found in the source specifications.
+
+## Evidence discipline
+
+The manual distinguishes formal derivations, published research, local experiments, hardware benchmarks, analytical estimates, hypotheses, and limitations. A passing CPU test is not a GPU performance result. Analytical latency targets are not measurements. No page claims production certification, physical multi-GPU validation, or cryptographic non-reversibility.
+
+Start with the [threat model](/03-threat-model), then inspect the [mathematics](/04-mathematics), [encrypted shards](/06-model-sharding), and [interactive laboratory](/15-interactive-laboratory).

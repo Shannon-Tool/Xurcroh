@@ -1,0 +1,15 @@
+# 12. Vision-Language
+
+<Evidence type="local">Actual patch, audio, masking, positional, and connector computations</Evidence>
+
+Gemma 4 Unified uses local 48×48 merged RGB patches and 640-sample audio frames. The client performs projection, norm homogenization, and secret basis preparation. Chaff vectors extend to a fixed bucket but have `false` attention mask entries; real token ordering and masks remain exact.
+
+## Qwen 3.8
+
+Interleaved MRoPE treats each temporal/height/width axis as a planar rotation. A secret constant position shift cancels in relative scores. Gated DeltaNet states rotate as \(\hat S=RSO^\top\), preserving delta updates and readout. DeepStack connectors use two-sided conjugation to inject vision features into the target decoder basis.
+
+<Equation tex="R(p_t+\Delta)R(p_s+\Delta)^\top=R(p_t)R(p_s)^\top" />
+
+Live configs identify Qwen 3.8 as `qwen3_5` with head dimension 256 and empty DeepStack indexes; Gemma’s current head configuration also differs from the blueprint. The implementation reads pinned configs instead of hardcoding those assumptions.
+
+Client-side boundaries do not imply inversion is impossible. They reduce direct exposure of raw media and front-end parameters. Public chat requests support typed text, image, and WAV content parts. `LocalVisionLanguageEngine` and the remote worker path execute actual processor/model generation; miniature Gemma image-conditioned sync and streaming tests pass locally and over HTTP. Full official-checkpoint quality, audio-model compatibility, and reconstruction evaluations remain future experiments.

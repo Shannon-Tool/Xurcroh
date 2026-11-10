@@ -1,0 +1,15 @@
+# 11. MoE Architecture
+
+<Evidence type="local">Router/expert mapping and adversarial dispatch verified</Evidence>
+
+The compiler permutes router rows and physical experts using one mapping, then applies independent FFN permutations and contragredient scales to each expert. Tests verify that the transformed router selects the corresponding transformed expert.
+
+## Constant-load dispatch
+
+For top-k selection, each expert receives a fixed-capacity buffer. Real locations carry token indices and softmax weights; remaining locations are dummy and have exactly zero combine weight. If any expert exceeds capacity, dispatch fails instead of dropping tokens. Combined output matches the unprotected reference. `MoELayerWeights` and `execute_moe_layer` integrate this dispatch into the stage runner; `tests/models/test_moe_stage.py` verifies transformed-versus-original layers and executes a compiled MoE checkpoint through an actual encrypted remote stage and the public SDK.
+
+<Equation tex="h_t=u_t+\sum_{i\in I_t}g_{i,t}e_i(u_t),\quad g_{dummy}=0" />
+
+Multi-head Latent Attention rotates the compressed KV cache and uses query/output absorption to preserve scores. DeepSeek-specific physical kernel behavior remains hardware validation.
+
+Constant loads hide network volume, not every side channel. TLB, cache, power, timing, and co-residency can still leak information. The [MoE simulator](/15-interactive-laboratory#moe) displays real loads and dummy slots while explicitly labeling those residual risks.

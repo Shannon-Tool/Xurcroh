@@ -1,0 +1,15 @@
+# 14. Video Generation
+
+<Evidence type="local">Recurrent, cube, scheduler, decoder, and muxing tests</Evidence>
+
+Video DeltaNet uses frame-wise normal equations. Orthogonal key/value transformations conjugate \(A\) and \(B\), so the matrix inverse and recurrent state remain equivalent. Cube-preserving permutations reorder macro-cubes and tokens inside each cube without destroying cube-local sparsity structure.
+
+## Parallelism and decoding
+
+Ring Attention is rejected for Cube/SubBlock sparse attention. Ulysses and CFG parallelism are validated explicitly. Cache-DiT residual norms are invariant under orthogonal bases. Wan’s timestep experts depend on public timesteps, not prompt content.
+
+Local and remote video engines return actual MP4 bytes through `/v1/videos/generations`. Protected sessions use `/v1/protected/videos/latents`, returning only encrypted latents to the trusted client for reconstruction and MP4 encoding. `chunked_video_decode` processes four-frame chunks, and `mux_video_audio` invokes ffmpeg to add PCM audio with AAC encoding. Integration tests verify real neural-image and MP4 responses and reject missing frames. These are real encoding paths; they do not imply official Wan or MiniMax checkpoint quality.
+
+<Equation tex="S_t=(\bar S_t+B_t)(I+A_t)^{-1}" />
+
+The [video/diffusion lab](/15-interactive-laboratory#diffusion) uses synthetic latents to show state transitions and recurrence, not fabricated model-quality video.

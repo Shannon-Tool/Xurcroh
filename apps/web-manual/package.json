@@ -1,0 +1,49 @@
+{
+  "name": "xurcroh-research-manual",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run build && node scripts/validate-content.mjs"
+  },
+  "dependencies": {
+    "@next/mdx": "^16.4.6",
+    "katex": "^0.19.1",
+    "mermaid": "^12.3.0",
+    "minimatch": "^11.0.1",
+    "next": "^16.4.6",
+    "next-mdx-remote": "^6.0.0",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "rehype-katex": "^1.2.0",
+    "remark-gfm": "4.0.1",
+    "remark-math": "^3.0.1",
+    "shiki": "3.12.2"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.8.0",
+    "@testing-library/react": "16.3.0",
+    "@testing-library/user-event": "14.6.1",
+    "@types/jest-axe": "^3.5.9",
+    "@types/node": "22.18.8",
+    "@types/react": "19.1.16",
+    "@types/react-dom": "19.1.11",
+    "@vitejs/plugin-react": "5.0.4",
+    "eslint": "9.36.0",
+    "eslint-config-next": "15.5.29",
+    "jest-axe": "10.0.0",
+    "jsdom": "27.0.1",
+    "typescript": "5.9.3",
+    "vite": "^7.3.8",
+    "vitest": "^5.1.0"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1"
+  }
+}

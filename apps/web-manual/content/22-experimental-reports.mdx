@@ -1,0 +1,22 @@
+# 22. Experimental Reports
+
+<Evidence type="local">Actual reproducible outcomes</Evidence>
+
+## Numerical equivalence
+
+`experiments/numerics.py` compares original and conjugated linear projections using deterministic 32→64 matrices. FP32 maximum error is about 9.54e-6. BF16 maximum deviation from original FP32 is about 3.97e-2, FP16 about 5.00e-3, and FP8 E4M3 about 5.80e-1. These are single-layer synthetic measurements, not model-wide quality bounds.
+
+An early experiment multiplied by the output basis twice and produced implausible errors. A regression test now verifies the experiment itself, including separate reduced-precision error against original FP32.
+
+## Integration evidence
+
+- 100+ local tests cover algebra, shards, SDK, sync/async/streaming, controller, remote inference, MoE, VLM, image/video, memory, attestation, and adversarial cases.
+- A real miniature Llama checkpoint is compiled, encrypted, and compared through two dense stages.
+- Real remote workers generate tokens, return usage metadata, and fail over before output.
+- Tiny neural diffusion pipelines produce actual PNG and MP4 artifacts, including audio muxing.
+- Rust fuzzing and loopback QUIC tests reject malformed input and wrong identities.
+- Two CUDA tests remain explicit skips without CUDA; no hardware result is fabricated.
+
+## Stage Two acceptance
+
+Required work includes official checkpoints, physical multi-GPU correctness, native forensics, TEE trust-root verification, WAN/NAT behavior, side-channel evaluation, resource profiling, and quality/performance benchmarks. See [hardware validation](/18-deployment) for executable preparation.

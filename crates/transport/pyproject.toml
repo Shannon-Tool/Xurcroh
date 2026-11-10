@@ -1,0 +1,14 @@
+[build-system]
+requires = ["maturin>=1.8,<2"]
+build-backend = "maturin"
+
+[project]
+name = "xurcroh-quic"
+version = "0.1.0"
+description = "Rust QUIC, tensor framing, and AEAD bindings for Xurcroh"
+requires-python = ">=3.12,<3.14"
+license = "Apache-2.0"
+
+[tool.maturin]
+module-name = "xurcroh_quic"
+features = ["python"]

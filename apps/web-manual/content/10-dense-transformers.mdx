@@ -1,0 +1,15 @@
+# 10. Dense Transformers
+
+<Evidence type="local">FP64 original-versus-transformed block comparisons</Evidence>
+
+Dense layers combine scalar RMSNorm, GQA attention, residual addition, and SwiGLU/GeGLU. Q/K transformations commute with RoPE and share each KV group’s 2×2 rotations and contragredient scales. V/O use general-linear pairs whose inverses cancel in the output projection.
+
+<Equation tex="\hat Q=Q\Lambda O,\quad \hat K=K\Lambda^{-1}O,\quad \hat Q\hat K^\top=QK^\top" />
+
+FFN gate/up rows are permuted, the up branch is scaled, and down columns are permuted before inverse scaling. A regression caught and fixed scale-before-permutation ordering; the current implementation verifies exact FP64 equivalence.
+
+## Pipelines and client output
+
+Stages retain a common residual basis internally and apply \(T=U_{next}U_{prev}^\top\) only at the boundary. The client recovers the final hidden state and applies final RMSNorm plus the client-owned LM head. Cleanup happens only after the boundary is serialized, avoiding an earlier zeroed-basis defect. Llama-class checkpoints use half-split RoPE rather than adjacent-pair layout; the compiler records the selected convention in authenticated metadata. A direct Hugging Face logit test passes at FP64 `atol=3e-8, rtol=1e-6`, which is tolerance-based equivalence rather than bitwise identity.
+
+Use the [conjugation lab](/15-interactive-laboratory#conjugation) to inspect basis recovery and structural invariants.

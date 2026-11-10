@@ -1,0 +1,12 @@
+[package]
+name = "xurcroh-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror = "1.0.69"
+
+[dev-dependencies]
+proptest = "1.6.0"

@@ -1,0 +1,15 @@
+# 20. Troubleshooting
+
+<Evidence type="limitation">Common failure behavior and open validation work</Evidence>
+
+**Configuration errors.** Check model names, registry paths, worker counts, and TP/EP groups. Pipeline degree cannot exceed workers, and TEE mode requires attestation. Development-only downgrades must be explicit.
+
+**Model loading errors.** Confirm config/index files exist, checkpoint revisions are pinned, and the layout has a verified adapter. Strict workers do not load plaintext monolithic checkpoints. Missing keys, corrupt shards, and unexpected stage metadata fail closed.
+
+**Transport errors.** Verify the certificate, ALPN, endpoint, and worker identity. Replayed packets, old sequences, wrong nonces, and modified ciphertext are rejected. Partial-output streams do not retry because that would duplicate tokens.
+
+**Memory errors.** Activate the burn allocator before any CUDA allocation and raise memlock limits if required. A logical free is not a physical KV wipe. Shared-memory probes do not establish complete register erasure.
+
+**Async errors.** Forward passes use per-iteration inference mode so a generator can resume on another thread safely. Close streams to release admission even when no token was produced.
+
+Full official checkpoints, native GPU behavior, and physical TEE/NAT results remain open validation items; do not resolve them by assuming CPU behavior is identical.

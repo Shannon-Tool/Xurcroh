@@ -1,0 +1,25 @@
+# 21. Research References
+
+<Evidence type="published">Primary sources and official documentation</Evidence>
+
+## Algebra and privacy
+
+- [Orthogonally Equivariant Transformers for LLM Inference](https://arxiv.org/abs/2606.16461), the ConjFormer reference used for equivariance and its limitations.
+- [CryptoMoE: Privacy-Preserving and Scalable Mixture of Experts](https://papers.nips.cc/paper_files/paper/2025/file/5340b0c0b76dc0115f5cc91c20c1251d-Paper-Conference.pdf), balanced expert routing.
+- [Listening to LLM Responses Through Leaked GPU Local Memory](https://arxiv.org/abs/2401.16603), LeftoverLocals and residual-memory risk.
+
+## Protocols and frameworks
+
+- [RFC 8439: ChaCha20 and Poly1305](https://www.rfc-editor.org/rfc/rfc8439), authenticated encryption.
+- [vLLM BaseModelLoader](https://docs.vllm.ai/en/latest/api/vllm/model_executor/model_loader/base_loader/), the inspected custom loader interface.
+- [SGLang pipeline parallelism](https://docs.sglang.ai/advanced_features/pipeline_parallelism.html), async P2P and dynamic chunking.
+- [SGLang Diffusion CLI](https://docs.sglang.ai/docs/sglang-diffusion/api/cli), diffusion serving and compatibility.
+- [xDiT](https://github.com/xdit-project/xDiT), model runner, USP, PipeFusion, and CFG parallelism.
+
+## Models and attestation
+
+- [Gemma 4 Unified](https://huggingface.co/docs/transformers/model_doc/gemma4_unified), encoder-free image/audio processing.
+- [Qwen 3.8 official repository](https://github.com/QwenLM/Qwen3.8), model IDs and serving.
+- [NVIDIA Local GPU Verifier](https://docs.nvidia.com/attestation/attestation-client-tools-sdk/latest/local-verifier/installation.html), installation and GPU-ready verification.
+- [sgx-dcap-quote-verify-python](https://pypi.org/project/sgx-dcap-quote-verify-python/), Intel collateral and quote verification API.
+- [AMD snpguest](https://github.com/virtee/snpguest), SEV-SNP report and certificate verification.

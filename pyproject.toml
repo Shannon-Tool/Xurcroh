@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Xurcroh"
+version = "0.1.0"
+description = "Zero-trust distributed multimodal inference"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = "Apache-2.0"
+authors = [{name = "Project Xurcroh contributors"}]
+dependencies = [
+  "numpy>=2.2,<3",
+  "torch>=2.8,<3",
+  "safetensors>=0.6,<1",
+  "cryptography>=50,<51",
+  "pydantic>=2.11,<3",
+  "PyYAML>=6.0,<7",
+  "fastapi>=0.119,<1",
+  "httpx>=0.28,<1",
+  "uvicorn>=0.37,<1",
+  "pillow>=13,<14",
+]
+
+[project.optional-dependencies]
+models = ["transformers>=4.57,<6", "torchvision>=0.24,<1", "diffusers>=0.35,<1", "imageio>=2.37,<3", "imageio-ffmpeg>=0.5,<1"]
+ssh = ["asyncssh>=2.24,<3"]
+dev = [
+  "pytest>=8.4,<10",
+  "pytest-asyncio>=1.2,<2",
+  "pytest-cov>=7,<8",
+  "ruff>=0.14,<1",
+  "mypy>=1.18,<2",
+  "pip-audit>=2.9,<3",
+  "maturin>=1.8,<2",
+  "types-PyYAML>=6.0,<7",
+  "types-Pillow>=10.2,<14",
+]
+
+[project.scripts]
+xurcroh = "xurcroh.cli:main"
+xurcroh-benchmark = "xurcroh.benchmark_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["python"]
+include = ["Xurcroh*", "xurcroh*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "python"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+  "hardware: requires physical GPU or attestation hardware",
+  "slow: long-running integration test",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["python", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "S"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S107", "S311"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["Xurcroh", "xurcroh"]
+mypy_path = "python"
+
+[[tool.mypy.overrides]]
+module = ["torch.*", "safetensors.*", "PIL.*", "asyncssh.*", "vllm.*", "sglang.*", "xdit.*", "xurcroh_quic", "imageio.*", "imageio_ffmpeg", "sgx_dcap_quote_verify"]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["Xurcroh", "xurcroh"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 80
