@@ -35,6 +35,7 @@ class CompilationConfig:
     recipients: tuple[StageRecipient, ...]
     seed: int
     compute_dtype: torch.dtype = torch.float64
+    shard_dtype: torch.dtype | None = None
 
     def __post_init__(self) -> None:
         if self.stage_count < 1:
@@ -47,6 +48,18 @@ class CompilationConfig:
             range(self.stage_count)
         ):
             raise ValueError("recipient stage indexes must be sequential")
+        if self.shard_dtype not in {
+            None,
+            torch.float64,
+            torch.float32,
+            torch.float16,
+            torch.bfloat16,
+        }:
+            raise ValueError("shard_dtype must be FP64, FP32, FP16, or BF16")
+
+    @property
+    def storage_dtype(self) -> torch.dtype:
+        return self.shard_dtype or self.compute_dtype
 
 
 @dataclass(frozen=True)
@@ -388,6 +401,10 @@ class XurcrohWeightCompiler:
                 "transformation": "dense-contragredient-v1",
                 "checkpoint_fingerprint": self.reader.fingerprint,
             }
+            compiled = {
+                name: tensor.to(self.config.storage_dtype) if tensor.is_floating_point() else tensor
+                for name, tensor in compiled.items()
+            }
             shard_path = output_dir / f"stage-{stage_index}.xurcroh"
             stage_key = os.urandom(32)
             shard_metadata = write_shard(shard_path, compiled, stage_key, metadata)
@@ -435,6 +452,10 @@ class XurcrohWeightCompiler:
                     boundary_tensors["lm_head.weight"],
                     boundary[final_norm_name].to(self.config.compute_dtype),
                 )
+        boundary_tensors = {
+            name: tensor.to(self.config.storage_dtype) if tensor.is_floating_point() else tensor
+            for name, tensor in boundary_tensors.items()
+        }
         boundary_path = output_dir / "client-boundary.xurcroh"
         boundary_metadata = write_shard(
             boundary_path,

@@ -20,6 +20,7 @@ from xurcroh.errors import ModelLoadError, ProtocolError, ShardIntegrityError
 from xurcroh.models.dense import DenseLayerWeights, DenseStageRunner, layer_weights_from_dict
 from xurcroh.models.moe import MoELayerWeights, moe_layer_weights_from_dict
 from xurcroh.runtime.stage_sessions import StageSessionStore
+from xurcroh.runtime.tensor_codec import decode_stage_tensor, encode_stage_tensor
 from xurcroh.shards.format import read_shard
 from xurcroh.shards.recipients import open_stage_key, verify_manifest_digest
 
@@ -31,7 +32,7 @@ class StageExecutionRequest(BaseModel):
     session_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     client_public: str = Field(min_length=44, max_length=44)
     stage_index: int = Field(ge=0)
-    dtype: Literal["f64"] = "f64"
+    dtype: Literal["f64", "f32", "f16", "bf16"] = "f64"
     shape: list[int] = Field(min_length=1, max_length=2)
     packet: str = Field(min_length=1)
 
@@ -116,29 +117,26 @@ class DenseStage:
             self.closed = True
 
 
-def _decode_tensor(packet: bytes, receiver: PipelineTensorInterceptor) -> torch.Tensor:
-    dtype, shape, payload = receiver.open_tensor(packet)
-    if dtype != "f64" or len(shape) != 2 or any(dimension < 1 for dimension in shape):
-        raise ProtocolError("stage tensor must be a non-empty float64 matrix")
-    if shape[0] * shape[1] > 16_777_216:
-        raise ProtocolError("stage tensor exceeds the element limit")
-    buffer = bytearray(payload)
-    try:
-        if len(buffer) != shape[0] * shape[1] * 8:
-            raise ProtocolError("stage tensor byte count does not match its descriptor")
-        return torch.frombuffer(buffer, dtype=torch.float64).reshape(shape).clone()
-    finally:
-        buffer[:] = bytes(len(buffer))
+def _decode_tensor(
+    packet: bytes,
+    receiver: PipelineTensorInterceptor,
+    *,
+    expected_dtype: str | None = None,
+    expected_shape: list[int] | None = None,
+) -> torch.Tensor:
+    return decode_stage_tensor(
+        packet,
+        receiver,
+        expected_dtype=expected_dtype,
+        expected_shape=expected_shape,
+    )
 
 
 def _encode_tensor(
     hidden: torch.Tensor, request_id: str, sender: PipelineTensorInterceptor
 ) -> tuple[bytes, list[int]]:
-    contiguous = hidden.detach().cpu().contiguous()
-    if contiguous.dtype != torch.float64 or contiguous.ndim != 2:
-        raise ProtocolError("stage output must be a float64 matrix")
-    shape = list(contiguous.shape)
-    return sender.seal(request_id, "f64", shape, contiguous.numpy().tobytes()), shape
+    packet, _, shape = encode_stage_tensor(hidden, request_id, sender)
+    return packet, shape
 
 
 def create_stage_app(
@@ -224,7 +222,12 @@ def create_stage_app(
                 request.session_id, request.client_public
             )
             packet = base64.b64decode(request.packet, validate=True)
-            hidden = _decode_tensor(packet, receiver)
+            hidden = _decode_tensor(
+                packet,
+                receiver,
+                expected_dtype=request.dtype,
+                expected_shape=request.shape,
+            )
             if event.is_set():
                 raise ProtocolError("stage request was cancelled")
             output = stage.execute(hidden, request.request_id)
@@ -235,7 +238,7 @@ def create_stage_app(
             output.zero_()
             return {
                 "stage_index": stage_index,
-                "dtype": "f64",
+                "dtype": request.dtype,
                 "shape": shape,
                 "packet": base64.b64encode(response_packet).decode(),
             }

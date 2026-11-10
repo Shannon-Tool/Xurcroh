@@ -39,6 +39,7 @@ from xurcroh.runtime.generation import (
 )
 from xurcroh.runtime.remote import RemoteOpenAIEngine
 from xurcroh.runtime.stage_sessions import ClientStageSession
+from xurcroh.runtime.tensor_codec import decode_stage_tensor, encode_stage_tensor
 from xurcroh.shards.recipients import verify_manifest_digest
 
 
@@ -192,6 +193,7 @@ class DenseStageEngine:
         index: int,
         packet: bytes,
         request_id: str,
+        expected_dtype: str,
         shape: list[int],
         receiver: PipelineTensorInterceptor,
         timeout: float,
@@ -221,18 +223,12 @@ class DenseStageEngine:
             raise ProtocolError("native stage response metadata is invalid")
         if response_shape != [len(result)]:
             raise ProtocolError("native stage response length is invalid")
-        result_dtype, result_shape, payload = receiver.open_tensor(result)
-        if (
-            result_dtype != "f64"
-            or result_shape != shape
-            or len(payload) != shape[0] * shape[1] * 8
-        ):
-            raise ProtocolError("native stage response tensor does not match the request shape")
-        buffer = bytearray(payload)
-        try:
-            return torch.frombuffer(buffer, dtype=torch.float64).reshape(shape).clone()
-        finally:
-            buffer[:] = bytes(len(buffer))
+        return decode_stage_tensor(
+            result,
+            receiver,
+            expected_dtype=expected_dtype,
+            expected_shape=shape,
+        )
 
     def _execute_stage(
         self,
@@ -243,16 +239,12 @@ class DenseStageEngine:
         timeout: float,
         circuit_id: str | None = None,
     ) -> torch.Tensor:
-        contiguous = hidden.detach().cpu().contiguous()
-        if contiguous.dtype != torch.float64 or contiguous.ndim != 2:
-            raise ProtocolError("client stage input must be a float64 matrix")
-        shape = list(contiguous.shape)
-        packet = session.sender.seal(request_id, "f64", shape, contiguous.numpy().tobytes())
+        packet, expected_dtype, shape = encode_stage_tensor(hidden, request_id, session.sender)
         worker = self.workers[index]
         if (worker.endpoint or "").startswith("quic://"):
             wire_packet = session.wire_packet(packet)
             return self._execute_native(
-                index, wire_packet, request_id, shape, session.receiver, timeout
+                index, wire_packet, request_id, expected_dtype, shape, session.receiver, timeout
             )
         url = (
             self._controller_url(f"/v1/relay/{circuit_id}")
@@ -268,7 +260,7 @@ class DenseStageEngine:
                     "session_id": session.session_id,
                     "client_public": session.client_public,
                     "stage_index": index,
-                    "dtype": "f64",
+                    "dtype": expected_dtype,
                     "shape": shape,
                     "packet": base64.b64encode(packet).decode(),
                 },
@@ -277,21 +269,19 @@ class DenseStageEngine:
             )
             response.raise_for_status()
             values = response.json()
-            if values["stage_index"] != index or values["dtype"] != "f64":
+            if values["stage_index"] != index or values["dtype"] != expected_dtype:
                 raise ProtocolError("stage response metadata is invalid")
             result = base64.b64decode(values["packet"], validate=True)
         except (httpx.HTTPError, ValueError, KeyError, binascii.Error) as error:
             raise ClusterUnavailableError(
                 f"stage {index} worker {worker.name} failed: {type(error).__name__}"
             ) from error
-        dtype, result_shape, payload = session.receiver.open_tensor(result)
-        if dtype != "f64" or result_shape != shape or len(payload) != shape[0] * shape[1] * 8:
-            raise ProtocolError("stage response tensor does not match the request shape")
-        buffer = bytearray(payload)
-        try:
-            return torch.frombuffer(buffer, dtype=torch.float64).reshape(shape).clone()
-        finally:
-            buffer[:] = bytes(len(buffer))
+        return decode_stage_tensor(
+            result,
+            session.receiver,
+            expected_dtype=expected_dtype,
+            expected_shape=shape,
+        )
 
     def _clear_stage_caches(
         self,
