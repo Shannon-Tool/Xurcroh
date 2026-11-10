@@ -18,6 +18,7 @@ from xurcroh.errors import (
 from xurcroh.provisioning import provision_cluster_sync
 from xurcroh.requests import CompletionRequest, ImageGenerationRequest, VideoGenerationRequest
 from xurcroh.runtime.diffusion import LocalDiffusionEngine
+from xurcroh.runtime.dit_stage import CompiledDiTStageEngine
 from xurcroh.runtime.local import LocalTransformersEngine
 from xurcroh.runtime.media import RemoteMediaEngine
 from xurcroh.runtime.media_protected import RemoteProtectedMediaEngine
@@ -56,6 +57,7 @@ class RuntimeService:
             LocalTransformersEngine
             | RemoteOpenAIEngine
             | LocalDiffusionEngine
+            | CompiledDiTStageEngine
             | DenseStageEngine
             | LocalVisionLanguageEngine
             | RemoteMediaEngine
@@ -99,6 +101,7 @@ class RuntimeService:
         LocalTransformersEngine
         | RemoteOpenAIEngine
         | LocalDiffusionEngine
+        | CompiledDiTStageEngine
         | DenseStageEngine
         | LocalVisionLanguageEngine
         | RemoteMediaEngine
@@ -110,7 +113,14 @@ class RuntimeService:
             self._ensure_open()
             engine = self._engines.get(name)
             if engine is None:
-                if definition.manifest_path is not None:
+                if definition.manifest_path is not None and definition.modality in {
+                    "image",
+                    "video",
+                }:
+                    engine = RemoteProtectedMediaEngine(
+                        name, definition, workers, self.cluster.security
+                    )
+                elif definition.manifest_path is not None:
                     engine = DenseStageEngine(
                         name,
                         definition,
@@ -202,7 +212,11 @@ class RuntimeService:
         self._ensure_open()
         engine = self._engine(request.model)
         if isinstance(
-            engine, LocalDiffusionEngine | RemoteMediaEngine | RemoteProtectedMediaEngine
+            engine,
+            LocalDiffusionEngine
+            | CompiledDiTStageEngine
+            | RemoteMediaEngine
+            | RemoteProtectedMediaEngine,
         ):
             raise CapabilityError("diffusion engines do not expose text chat completions")
         handle = self._register(request)
@@ -255,7 +269,11 @@ class RuntimeService:
         self._ensure_open()
         engine = self._engine(request.model)
         if isinstance(
-            engine, LocalDiffusionEngine | RemoteMediaEngine | RemoteProtectedMediaEngine
+            engine,
+            LocalDiffusionEngine
+            | CompiledDiTStageEngine
+            | RemoteMediaEngine
+            | RemoteProtectedMediaEngine,
         ):
             raise CapabilityError("diffusion engines do not expose text chat completions")
         handle = self._register(request)
@@ -326,7 +344,11 @@ class RuntimeService:
         engine = self._engine(request.model)
         engine.require_modality("image")
         if not isinstance(
-            engine, LocalDiffusionEngine | RemoteMediaEngine | RemoteProtectedMediaEngine
+            engine,
+            LocalDiffusionEngine
+            | CompiledDiTStageEngine
+            | RemoteMediaEngine
+            | RemoteProtectedMediaEngine,
         ):
             raise ClusterUnavailableError(
                 f"model {request.model!r} requires an initialized diffusion worker"
@@ -360,7 +382,11 @@ class RuntimeService:
         engine = self._engine(request.model)
         engine.require_modality("video")
         if not isinstance(
-            engine, LocalDiffusionEngine | RemoteMediaEngine | RemoteProtectedMediaEngine
+            engine,
+            LocalDiffusionEngine
+            | CompiledDiTStageEngine
+            | RemoteMediaEngine
+            | RemoteProtectedMediaEngine,
         ):
             raise ClusterUnavailableError(
                 f"model {request.model!r} requires an initialized video worker"

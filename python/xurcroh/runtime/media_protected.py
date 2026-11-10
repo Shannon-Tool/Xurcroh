@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import os
 import threading
 import time
 from typing import Any
@@ -12,9 +13,10 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from xurcroh.adapters.pipeline import PipelineTensorInterceptor
 from xurcroh.config import ModelDefinition, SecurityConfig, WorkerConfig
-from xurcroh.errors import ClusterUnavailableError, ConfigurationError
+from xurcroh.errors import CapabilityError, ClusterUnavailableError, ConfigurationError
 from xurcroh.requests import ImageGenerationRequest, VideoGenerationRequest
 from xurcroh.runtime.attestation import RemoteAttestationClient
+from xurcroh.runtime.dit_stage import CompiledDiTClientBoundary
 from xurcroh.runtime.generation import check_request_health
 from xurcroh.runtime.media_boundary import DiffusionMediaBoundary
 from xurcroh.runtime.media_sessions import decode_public, encode_public, open_tensors, seal_tensors
@@ -43,6 +45,27 @@ class RemoteProtectedMediaEngine:
         self.worker_id = workers[0].name
         self.worker_ids = [worker.name for worker in workers]
         self.modality = definition.modality
+        self._compiled: CompiledDiTClientBoundary | None = None
+        if definition.manifest_path is not None:
+            environment_name = definition.boundary_key_env or "XURCROH_CLIENT_BOUNDARY_KEY"
+            encoded = os.environ.get(environment_name)
+            if encoded is None:
+                raise ConfigurationError(
+                    f"client boundary key environment variable {environment_name} is not set"
+                )
+            try:
+                boundary_key = bytes.fromhex(encoded)
+            except ValueError as error:
+                raise ConfigurationError("client boundary key must be hexadecimal") from error
+            if len(boundary_key) != 32:
+                raise ConfigurationError("client boundary key must contain 32 bytes")
+            self._compiled = CompiledDiTClientBoundary(definition.manifest_path, boundary_key)
+            self.engine_name = "compiled-equivariant-dit"
+        elif definition.latent_security == "equivariant" or security.mode != "development":
+            raise CapabilityError(
+                "strict protected media requires a compiled equivariant DiT manifest; "
+                "transport_only is restricted to development mode"
+            )
         self._boundary = DiffusionMediaBoundary.from_definition(definition)
         self._client = httpx.Client(timeout=60)
         self._closed = False
@@ -139,7 +162,11 @@ class RemoteProtectedMediaEngine:
     ) -> ImageGenerationResponse:
         started = time.monotonic()
         check_request_health(cancelled, started, timeout)
-        tensors, parameters = self._boundary.prepare(request)
+        if self._compiled is not None:
+            initial, conditioning, parameters = self._boundary.raw_inputs(request)
+            tensors = self._compiled.prepare(initial, conditioning)
+        else:
+            tensors, parameters = self._boundary.prepare(request)
         latent = self._execute(
             "/v1/protected/images/latents",
             request_id,
@@ -150,6 +177,8 @@ class RemoteProtectedMediaEngine:
             started=started,
             timeout=timeout,
         )
+        if self._compiled is not None:
+            latent = self._compiled.recover(latent)
         encoded = self._boundary.decode(latent, request)
         check_request_health(cancelled, started, timeout)
         return ImageGenerationResponse(
@@ -173,7 +202,11 @@ class RemoteProtectedMediaEngine:
             )
         started = time.monotonic()
         check_request_health(cancelled, started, timeout)
-        tensors, parameters = self._boundary.prepare_video(request)
+        if self._compiled is not None:
+            initial, conditioning, parameters = self._boundary.raw_video_inputs(request)
+            tensors = self._compiled.prepare(initial, conditioning)
+        else:
+            tensors, parameters = self._boundary.prepare_video(request)
         latent = self._execute(
             "/v1/protected/videos/latents",
             request_id,
@@ -184,6 +217,8 @@ class RemoteProtectedMediaEngine:
             started=started,
             timeout=timeout,
         )
+        if self._compiled is not None:
+            latent = self._compiled.recover(latent)
         encoded = self._boundary.decode_video(latent, request)
         check_request_health(cancelled, started, timeout)
         return VideoGenerationResponse(
@@ -195,4 +230,6 @@ class RemoteProtectedMediaEngine:
     def close(self) -> None:
         if not self._closed:
             self._closed = True
+            if self._compiled is not None:
+                self._compiled.close()
             self._client.close()

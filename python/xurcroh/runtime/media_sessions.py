@@ -134,23 +134,31 @@ def install_protected_media_routes(app: FastAPI, runtime: RuntimeService) -> Non
         model = str(values.get("model", ""))
         tensors = open_tensors(str(values.get("packet", "")), request_id, session.receiver)
         from xurcroh.runtime.diffusion import LocalDiffusionEngine
+        from xurcroh.runtime.dit_stage import CompiledDiTStageEngine
 
         engine = runtime._engine(model)
-        if not isinstance(engine, LocalDiffusionEngine):
-            raise ProtocolError("protected media execution requires a local diffusion stage")
         parameters = values.get("parameters", {})
         if not isinstance(parameters, dict):
             raise ProtocolError("protected media parameters must be an object")
         parameters = dict(parameters)
-        for name, tensor in tensors.items():
-            if name not in {"latents", "basis", "permutation"}:
-                parameters[name] = tensor
-        latent = engine.generate_protected_latent(
-            parameters,
-            latents=tensors["latents"],
-            basis=tensors["basis"],
-            permutation=tensors["permutation"],
-        )
+        if isinstance(engine, CompiledDiTStageEngine):
+            latent = engine.generate(
+                parameters,
+                latents=tensors["latents"],
+                prompt_embeds=tensors["prompt_embeds"],
+            )
+        elif isinstance(engine, LocalDiffusionEngine):
+            for name, tensor in tensors.items():
+                if name not in {"latents", "basis", "permutation"}:
+                    parameters[name] = tensor
+            latent = engine.generate_protected_latent(
+                parameters,
+                latents=tensors["latents"],
+                basis=tensors["basis"],
+                permutation=tensors["permutation"],
+            )
+        else:
+            raise ProtocolError("protected media execution requires a local diffusion stage")
         return {
             "session_id": session.session_id,
             "packet": seal_tensors({"latents": latent}, request_id, session.sender),

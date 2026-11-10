@@ -98,11 +98,13 @@ def test_protected_remote_image_and_video_use_client_boundaries(
                     "path": "tiny-image",
                     "modality": "image",
                     "protect_latents": True,
+                    "latent_security": "transport_only",
                 },
                 "video": {
                     "path": "tiny-video",
                     "modality": "video",
                     "protect_latents": True,
+                    "latent_security": "transport_only",
                 },
             },
         ) as client:

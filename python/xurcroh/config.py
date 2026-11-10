@@ -209,6 +209,7 @@ class ModelDefinition(StrictModel):
     manifest_path: str | None = None
     boundary_key_env: str | None = None
     protect_latents: bool = False
+    latent_security: Literal["equivariant", "transport_only"] = "equivariant"
 
 
 class ModelRegistry:

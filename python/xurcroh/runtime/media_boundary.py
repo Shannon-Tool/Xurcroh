@@ -48,9 +48,9 @@ class DiffusionMediaBoundary:
             raise CapabilityError("source and generated latent shapes do not match")
         return source * (1 - request.strength) + initial * request.strength
 
-    def prepare(
+    def raw_inputs(
         self, request: ImageGenerationRequest
-    ) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
+    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any]]:
         seed = request.seed if request.seed is not None else secrets.randbits(63)
         unet = getattr(self.pipeline, "unet", None)
         if unet is None:
@@ -66,12 +66,6 @@ class DiffusionMediaBoundary:
         initial = torch.randn(
             1, channels, latent_height, latent_width, generator=generator, dtype=torch.float32
         )
-        basis = sample_orthogonal(channels, seed=seed + 10007, dtype=torch.float32)
-        permutation = torch.randperm(
-            latent_width * latent_height,
-            generator=torch.Generator().manual_seed(seed + 10009),
-        )
-        protected = ProtectedDiffusionPipeline(self.pipeline, basis, permutation)
         encode_prompt = getattr(self.pipeline, "encode_prompt", None)
         if not callable(encode_prompt):
             raise CapabilityError("pipeline does not expose client-side prompt conditioning")
@@ -93,6 +87,43 @@ class DiffusionMediaBoundary:
             "output_type": "latent",
         }
         initial = self._source_latent(request, initial)
+        return initial, prompt_embeds, parameters
+
+    def raw_video_inputs(
+        self, request: VideoGenerationRequest
+    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any]]:
+        image_request = ImageGenerationRequest(
+            model=request.model,
+            prompt=request.prompt,
+            size=request.size,
+            steps=request.steps,
+            seed=request.seed,
+        )
+        initial, prompt_embeds, parameters = self.raw_inputs(image_request)
+        seed = request.seed if request.seed is not None else secrets.randbits(63)
+        unet = getattr(self.pipeline, "unet", None)
+        if unet is None:
+            raise CapabilityError("protected remote video requires a UNet client boundary")
+        channels = int(unet.config.in_channels)
+        shape = (1, channels, request.frames, *initial.shape[-2:])
+        generator = torch.Generator().manual_seed(seed)
+        initial = torch.randn(shape, generator=generator, dtype=initial.dtype)
+        parameters.update({"num_frames": request.frames, "fps": request.fps})
+        return initial, prompt_embeds, parameters
+
+    def prepare(
+        self, request: ImageGenerationRequest
+    ) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
+        initial, prompt_embeds, parameters = self.raw_inputs(request)
+        seed = int(parameters["generator_seed"])
+        channels = initial.shape[1]
+        basis = sample_orthogonal(channels, seed=seed + 10007, dtype=torch.float32)
+        latent_width, latent_height = initial.shape[-2:]
+        permutation = torch.randperm(
+            latent_width * latent_height,
+            generator=torch.Generator().manual_seed(seed + 10009),
+        )
+        protected = ProtectedDiffusionPipeline(self.pipeline, basis, permutation)
         return (
             {
                 "latents": protected.protect(initial),
