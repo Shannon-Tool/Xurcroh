@@ -70,3 +70,8 @@ Signed-permutation AdaLN requires coefficient-specific handling. Multiplicative 
 ## ADR-012: Native-dtype shards and tensor transport
 
 Dense compilation can perform transformations in FP64 and emit BF16/FP16 shards and client boundaries through `shard_dtype`; FP64 remains the reference configuration. Stage descriptors support FP64, FP32, FP16, and BF16 with explicit shape, element-size, and payload-length validation on both HTTP and QUIC. `CudaStage` uses pinned host buffers and stream synchronization for device-to-host staging and cleanup. CPU tests verify native-dtype serialization, shard emission, and public-SDK inference. CUDA execution and physical GPU memory behavior remain hardware-validation claims, not results inferred from CPU tests.
+
+
+## ADR-013: vLLM v1 stage execution contract
+
+Optimized dense stages use vLLM 0.15.0 `GPUModelRunner` with recipient-sealed shard loading and `enable_prompt_embeds`. Each request creates real scheduler metadata for prefill/decode and returns `IntermediateTensors` containing both `hidden_states` and `residual` to the next worker. The compatibility manifest records source digests and required cache/scheduler settings. `engine="vllm"` and strict `auto` require the `vllm-stage` capability; `engine="reference"` is development-only. Plaintext model-server startup is not accepted as protected execution. CPU tests validate scheduler, recipient, and bundle contracts. Actual CUDA kernel execution and numerical quality require the explicit hardware test and must not be inferred from these contracts.

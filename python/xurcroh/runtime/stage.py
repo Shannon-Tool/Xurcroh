@@ -19,10 +19,12 @@ import httpx
 import torch
 
 from xurcroh.adapters.pipeline import PipelineTensorInterceptor
+from xurcroh.adapters.vllm_v1_stage import decode_intermediate, encode_intermediate
 from xurcroh.client.boundary import ClientBoundary
 from xurcroh.config import ModelDefinition, SecurityConfig, WorkerConfig
 from xurcroh.errors import (
     ClusterUnavailableError,
+    CompatibilityError,
     ConfigurationError,
     ModelLoadError,
     ProtocolError,
@@ -57,7 +59,14 @@ class DenseStageEngine:
         self.name = name
         self.definition = definition
         self.workers = workers
-        self.engine_name = "dense-stages"
+        self.engine_name = (
+            "vllm-stages"
+            if definition.engine == "vllm"
+            or (definition.engine == "auto" and security.mode != "development")
+            else "dense-stages"
+        )
+        if definition.engine == "reference" and security.mode != "development":
+            raise CompatibilityError("the FP64 reference engine requires development mode")
         self.worker_id = workers[0].name
         self.worker_ids = [worker.name for worker in workers]
         self.modality = "text"
@@ -90,6 +99,7 @@ class DenseStageEngine:
         self._client = httpx.Client(timeout=60)
         self._native_clients: dict[int, Any] = {}
         self._native_locks = [threading.Lock() for _ in workers]
+        self._residuals: dict[str, dict[int, torch.Tensor]] = {}
         self._recipient_public: list[bytes] = []
         for stage in stages:
             if Path(stage["file"]).name != stage["file"]:
@@ -109,6 +119,15 @@ class DenseStageEngine:
                 RemoteAttestationClient(self._client).verify_worker(
                     worker.labels.get("attestation_endpoint", worker.endpoint or "")
                 )
+            if self.engine_name == "vllm-stages" and not (worker.endpoint or "").startswith(
+                "quic://"
+            ):
+                response = self._client.get(f"{self._endpoint(worker)}/v1/capabilities")
+                response.raise_for_status()
+                if response.json().get("runtime") != "vllm-stage":
+                    raise CompatibilityError(
+                        f"worker {worker.name} does not provide the optimized vLLM stage"
+                    )
         try:
             from transformers import AutoTokenizer
 
@@ -197,7 +216,7 @@ class DenseStageEngine:
         shape: list[int],
         receiver: PipelineTensorInterceptor,
         timeout: float,
-    ) -> torch.Tensor:
+    ) -> torch.Tensor | dict[str, torch.Tensor]:
         client = self._native_client(index)
         request_hash = hashlib.sha256(request_id.encode()).digest()[:16]
 
@@ -223,12 +242,75 @@ class DenseStageEngine:
             raise ProtocolError("native stage response metadata is invalid")
         if response_shape != [len(result)]:
             raise ProtocolError("native stage response length is invalid")
+        if expected_dtype == "u8":
+            return decode_intermediate(result, receiver)
         return decode_stage_tensor(
             result,
             receiver,
             expected_dtype=expected_dtype,
             expected_shape=shape,
         )
+
+    def _execute_vllm_stage(
+        self,
+        index: int,
+        hidden: torch.Tensor,
+        request_id: str,
+        session: ClientStageSession,
+        timeout: float,
+        circuit_id: str | None,
+    ) -> torch.Tensor:
+        residuals = self._residuals.setdefault(request_id, {})
+        tensors = {"hidden_states": hidden}
+        if index > 0 and index - 1 in residuals:
+            tensors["residual"] = residuals[index - 1]
+        packet, shape = encode_intermediate(tensors, request_id, session.sender)
+        worker = self.workers[index]
+        if (worker.endpoint or "").startswith("quic://"):
+            wire_packet = session.wire_packet(packet)
+            result = cast(
+                dict[str, torch.Tensor],
+                self._execute_native(
+                    index, wire_packet, request_id, "u8", shape, session.receiver, timeout
+                ),
+            )
+        else:
+            url = (
+                self._controller_url(f"/v1/relay/{circuit_id}")
+                if circuit_id is not None
+                else f"{self._endpoint(worker)}/v1/stages/execute"
+            )
+            headers = {"X-Xurcroh-Stage": str(index)} if circuit_id is not None else {}
+            try:
+                response = self._client.post(
+                    url,
+                    json={
+                        "request_id": request_id,
+                        "session_id": session.session_id,
+                        "client_public": session.client_public,
+                        "stage_index": index,
+                        "dtype": "u8",
+                        "shape": shape,
+                        "packet": base64.b64encode(packet).decode(),
+                    },
+                    headers=headers,
+                    timeout=max(timeout, 0.001),
+                )
+                response.raise_for_status()
+                values = response.json()
+                if values["stage_index"] != index or values["dtype"] != "u8":
+                    raise ProtocolError("vLLM stage response metadata is invalid")
+                encoded = base64.b64decode(values["packet"], validate=True)
+            except (httpx.HTTPError, ValueError, KeyError, binascii.Error) as error:
+                raise ClusterUnavailableError(
+                    f"vLLM stage {index} worker {worker.name} failed: {type(error).__name__}"
+                ) from error
+            result = decode_intermediate(encoded, session.receiver)
+        if "residual" in result:
+            residuals[index] = result["residual"]
+        else:
+            residuals.pop(index, None)
+        return result["hidden_states"]
 
     def _execute_stage(
         self,
@@ -239,12 +321,17 @@ class DenseStageEngine:
         timeout: float,
         circuit_id: str | None = None,
     ) -> torch.Tensor:
+        if self.engine_name == "vllm-stages":
+            return self._execute_vllm_stage(index, hidden, request_id, session, timeout, circuit_id)
         packet, expected_dtype, shape = encode_stage_tensor(hidden, request_id, session.sender)
         worker = self.workers[index]
         if (worker.endpoint or "").startswith("quic://"):
             wire_packet = session.wire_packet(packet)
-            return self._execute_native(
-                index, wire_packet, request_id, expected_dtype, shape, session.receiver, timeout
+            return cast(
+                torch.Tensor,
+                self._execute_native(
+                    index, wire_packet, request_id, expected_dtype, shape, session.receiver, timeout
+                ),
             )
         url = (
             self._controller_url(f"/v1/relay/{circuit_id}")
@@ -289,6 +376,7 @@ class DenseStageEngine:
         circuit_id: str | None,
         sessions: list[ClientStageSession],
     ) -> None:
+        self._residuals.pop(request_id, None)
         if circuit_id is not None:
             with suppress(httpx.HTTPError):
                 self._client.delete(
@@ -442,5 +530,6 @@ class DenseStageEngine:
                 with suppress(ValueError):
                     client.close()
             self._native_clients.clear()
+            self._residuals.clear()
             self.boundary.close()
             self._client.close()

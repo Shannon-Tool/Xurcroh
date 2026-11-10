@@ -7,7 +7,7 @@ import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import torch
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
@@ -32,7 +32,7 @@ class StageExecutionRequest(BaseModel):
     session_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     client_public: str = Field(min_length=44, max_length=44)
     stage_index: int = Field(ge=0)
-    dtype: Literal["f64", "f32", "f16", "bf16"] = "f64"
+    dtype: Literal["f64", "f32", "f16", "bf16", "u8"] = "f64"
     shape: list[int] = Field(min_length=1, max_length=2)
     packet: str = Field(min_length=1)
 
@@ -145,8 +145,20 @@ def create_stage_app(
     stage_index: int,
     private_key: X25519PrivateKey,
     attestation_document: dict[str, Any] | None = None,
+    engine: Literal["reference", "vllm"] = "reference",
+    checkpoint: str | Path | None = None,
 ) -> FastAPI:
-    stage = DenseStage(manifest_path, stage_index, private_key)
+    from xurcroh.adapters.vllm_v1_stage import VllmStage
+
+    stage: DenseStage | VllmStage
+    if engine == "vllm":
+        if checkpoint is None:
+            raise ModelLoadError("vLLM stage execution requires the checkpoint configuration")
+        from xurcroh.adapters.vllm_v1_stage import create_vllm_stage
+
+        stage = create_vllm_stage(manifest_path, stage_index, private_key, checkpoint=checkpoint)
+    else:
+        stage = DenseStage(manifest_path, stage_index, private_key)
     cancelled: dict[str, threading.Event] = {}
     lock = threading.Lock()
 
@@ -201,10 +213,10 @@ def create_stage_app(
     @app.get("/v1/capabilities")
     def capabilities() -> dict[str, Any]:
         return {
-            "runtime": "dense-stage",
+            "runtime": "vllm-stage" if engine == "vllm" else "dense-stage",
             "stage_index": stage_index,
             "dtype": "f64",
-            "cache_entries": stage.runner.cache_entries,
+            "cache_entries": getattr(stage.runner, "cache_entries", 0),
         }
 
     @app.post("/v1/stages/execute")
@@ -222,23 +234,50 @@ def create_stage_app(
                 request.session_id, request.client_public
             )
             packet = base64.b64decode(request.packet, validate=True)
-            hidden = _decode_tensor(
-                packet,
-                receiver,
-                expected_dtype=request.dtype,
-                expected_shape=request.shape,
-            )
-            if event.is_set():
-                raise ProtocolError("stage request was cancelled")
-            output = stage.execute(hidden, request.request_id)
-            if event.is_set():
-                raise ProtocolError("stage request was cancelled")
-            response_packet, shape = _encode_tensor(output, request.request_id, sender)
-            hidden.zero_()
-            output.zero_()
+            if engine == "vllm":
+                from vllm.sequence import IntermediateTensors
+
+                from xurcroh.adapters.vllm_v1_stage import (
+                    decode_intermediate,
+                    encode_intermediate,
+                )
+
+                tensors = decode_intermediate(packet, receiver)
+                hidden = (
+                    IntermediateTensors(tensors)
+                    if "residual" in tensors
+                    else tensors["hidden_states"]
+                )
+                if event.is_set():
+                    raise ProtocolError("stage request was cancelled")
+                output_any = cast(Any, stage.execute(hidden, request.request_id))
+                if event.is_set():
+                    raise ProtocolError("stage request was cancelled")
+                response_packet, shape = encode_intermediate(
+                    output_any.tensors, request.request_id, sender
+                )
+                for tensor in tensors.values():
+                    tensor.zero_()
+                for tensor in output_any.tensors.values():
+                    tensor.zero_()
+            else:
+                hidden = _decode_tensor(
+                    packet,
+                    receiver,
+                    expected_dtype=request.dtype,
+                    expected_shape=request.shape,
+                )
+                if event.is_set():
+                    raise ProtocolError("stage request was cancelled")
+                output = stage.execute(hidden, request.request_id)
+                if event.is_set():
+                    raise ProtocolError("stage request was cancelled")
+                response_packet, shape = _encode_tensor(output, request.request_id, sender)
+                hidden.zero_()
+                output.zero_()
             return {
                 "stage_index": stage_index,
-                "dtype": request.dtype,
+                "dtype": "u8" if engine == "vllm" else request.dtype,
                 "shape": shape,
                 "packet": base64.b64encode(response_packet).decode(),
             }
@@ -277,6 +316,8 @@ def main() -> None:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--stage-index", type=int, required=True)
     parser.add_argument("--stage-private-key", type=Path, required=True)
+    parser.add_argument("--engine", choices=["reference", "vllm"], default="reference")
+    parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--attestation-evidence", type=Path)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=9444)
@@ -303,6 +344,8 @@ def main() -> None:
         stage_index=args.stage_index,
         private_key=stage_identity,
         attestation_document=attestation_document,
+        engine=args.engine,
+        checkpoint=args.checkpoint,
     )
     if any((args.quic_listen, args.quic_cert, args.quic_key)) and not all(
         (args.quic_listen, args.quic_cert, args.quic_key)

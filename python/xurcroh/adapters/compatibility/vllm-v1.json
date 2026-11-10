@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "engine": "vllm",
+  "version": "0.15.0",
+  "interfaces": {
+    "model_loader": "vllm.model_executor.model_loader.base_loader.BaseModelLoader",
+    "model_runner": "vllm.v1.worker.gpu_model_runner.GPUModelRunner.execute_model",
+    "intermediate_tensors": "vllm.sequence.IntermediateTensors",
+    "pipeline_transport": "vllm.distributed.parallel_state.GroupCoordinator.send_tensor_dict/recv_tensor_dict",
+    "kv_free": "vllm.v1.core.block_pool.BlockPool.free_blocks"
+  },
+  "source_digests": {
+    "vllm/v1/worker/gpu_model_runner.py": "sha256:8a812de138ea6db605c0d83f4d2f70c022f64b595eb8c718e54514b8bcd23a4d",
+    "vllm/distributed/parallel_state.py": "sha256:9443d6ac2afb6ae8a4b4f14f12d9b14d1ac7e44da5bad46099e94550faa326bc"
+  },
+  "required_settings": {
+    "enable_prefix_caching": false,
+    "async_scheduling": false,
+    "enable_prompt_embeds": true
+  }
+}
