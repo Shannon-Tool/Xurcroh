@@ -44,7 +44,7 @@ def _new_request(request_id: str, hidden: torch.Tensor, block_ids: list[int]) ->
         block_ids=(block_ids,),
         num_computed_tokens=0,
         lora_request=None,
-        prompt_embeds=hidden.detach(),
+        prompt_embeds=hidden.detach().clone(),
     )
 
 
@@ -116,12 +116,19 @@ class VllmStageRunner:
     ) -> None:
         batch = self.model_runner.input_batch
         index = batch.req_id_to_index.get(request_id)
-        if index is None:
-            raise ProtocolError("vLLM decode request is missing from the input batch")
-        existing = batch.req_prompt_embeds.get(index)
+        request = self.model_runner.requests.get(request_id)
+        if request is None:
+            active = list(batch.req_id_to_index)
+            raise ProtocolError(f"vLLM decode request {request_id!r} has no cached state: {active}")
+        existing = (
+            batch.req_prompt_embeds.get(index) if index is not None else request.prompt_embeds
+        )
         if existing is None or existing.shape != (position, hidden.shape[1]):
             raise ProtocolError("vLLM decode embedding state is inconsistent")
-        batch.req_prompt_embeds[index] = torch.cat([existing, hidden.detach()], dim=0)
+        updated = torch.cat([existing, hidden.detach()], dim=0)
+        request.prompt_embeds = updated
+        if index is not None:
+            batch.req_prompt_embeds[index] = updated
 
     def execute(
         self,

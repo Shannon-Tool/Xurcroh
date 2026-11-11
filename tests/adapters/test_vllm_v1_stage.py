@@ -165,6 +165,9 @@ def test_vllm_stage_lifecycle_and_failures(monkeypatch: pytest.MonkeyPatch) -> N
             calls.append((scheduler, intermediate))
             if scheduler.scheduled_new_reqs:
                 request = scheduler.scheduled_new_reqs[0]
+                self.requests[request.req_id] = types.SimpleNamespace(
+                    prompt_embeds=request.prompt_embeds
+                )
                 self.input_batch.req_id_to_index[request.req_id] = 0
                 self.input_batch.req_prompt_embeds[0] = request.prompt_embeds
             else:
@@ -370,3 +373,27 @@ def test_hidden_from_intermediate_restores_residual_sum() -> None:
         )
     )
     torch.testing.assert_close(result, torch.tensor([4.0, 6.0]))
+
+
+def test_vllm_decode_reactivates_evicted_cached_request() -> None:
+    from xurcroh.adapters.vllm_v1_stage import VllmStageRunner
+
+    cached = types.SimpleNamespace(prompt_embeds=torch.ones(2, 4))
+    model = types.SimpleNamespace(
+        input_batch=types.SimpleNamespace(req_id_to_index={}, req_prompt_embeds={}),
+        requests={"request": cached},
+    )
+    runner = VllmStageRunner(model)
+    runner._append_decode_embedding("request", torch.full((1, 4), 2.0), 2)
+    assert cached.prompt_embeds.shape == (3, 4)
+    assert cached.prompt_embeds[2].tolist() == [2.0, 2.0, 2.0, 2.0]
+
+
+def test_vllm_prefill_clones_client_embedding(monkeypatch: pytest.MonkeyPatch) -> None:
+    from xurcroh.adapters.vllm_v1_stage import _new_request
+
+    install_vllm_stubs(monkeypatch)
+    hidden = torch.ones(2, 4)
+    request = _new_request("request", hidden, [0])
+    hidden.zero_()
+    assert request.prompt_embeds.tolist() == [[1.0] * 4, [1.0] * 4]
