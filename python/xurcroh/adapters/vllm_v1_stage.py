@@ -156,18 +156,19 @@ class VllmStageRunner:
     def drop_request(self, request_id: str) -> None:
         batch = getattr(self.model_runner, "input_batch", None)
         index = getattr(batch, "req_id_to_index", {}).get(request_id)
-        if batch is not None and index is not None:
-            embedding = batch.req_prompt_embeds.pop(index, None)
-            if embedding is not None:
-                embedding.zero_()
-        request = getattr(self.model_runner, "requests", {}).pop(request_id, None)
-        prompt_embeds = getattr(request, "prompt_embeds", None)
-        if prompt_embeds is not None:
-            prompt_embeds.zero_()
-        blocks = self._blocks.pop(request_id, [])
-        for cache in getattr(self.model_runner, "kv_caches", []):
-            for block in blocks:
-                cache[block].zero_()
+        with torch.inference_mode():
+            if batch is not None and index is not None:
+                embedding = batch.req_prompt_embeds.pop(index, None)
+                if embedding is not None:
+                    embedding.zero_()
+            request = getattr(self.model_runner, "requests", {}).pop(request_id, None)
+            prompt_embeds = getattr(request, "prompt_embeds", None)
+            if prompt_embeds is not None:
+                prompt_embeds.zero_()
+            blocks = self._blocks.pop(request_id, [])
+            for cache in getattr(self.model_runner, "kv_caches", []):
+                for block in blocks:
+                    cache[block].zero_()
         if blocks and getattr(self.model_runner, "kv_caches", []):
             torch.cuda.current_stream().synchronize()
         self._free_blocks.update(blocks)

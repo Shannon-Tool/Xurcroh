@@ -139,6 +139,12 @@ def _encode_tensor(
     return packet, shape
 
 
+def _zero_tensors(*tensors: torch.Tensor) -> None:
+    with torch.inference_mode():
+        for tensor in tensors:
+            tensor.zero_()
+
+
 def create_stage_app(
     manifest_path: str | Path,
     *,
@@ -272,10 +278,7 @@ def create_stage_app(
                 response_packet, shape = encode_intermediate(
                     output_any.tensors, request.request_id, sender
                 )
-                for tensor in tensors.values():
-                    tensor.zero_()
-                for tensor in output_any.tensors.values():
-                    tensor.zero_()
+                _zero_tensors(*tensors.values(), *output_any.tensors.values())
             else:
                 hidden = _decode_tensor(
                     packet,
@@ -289,8 +292,7 @@ def create_stage_app(
                 if event.is_set():
                     raise ProtocolError("stage request was cancelled")
                 response_packet, shape = _encode_tensor(output, request.request_id, sender)
-                hidden.zero_()
-                output.zero_()
+                _zero_tensors(hidden, output)
             return {
                 "stage_index": stage_index,
                 "dtype": "u8" if engine != "reference" else request.dtype,

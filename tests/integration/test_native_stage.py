@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import torch
 
 from shards.identities import StageIdentities
 from Xurcroh import Xurcroh
@@ -116,3 +117,14 @@ def test_native_stage_timeout_aborts_wait(
         engine.close()
         server.close()
         thread.join(timeout=3)
+
+
+def test_stage_zeroization_accepts_inference_tensors() -> None:
+    from xurcroh.stage_worker import _zero_tensors
+
+    with torch.inference_mode():
+        first = torch.ones(2, 2)
+        second = torch.ones(3)
+    _zero_tensors(first, second)
+    assert not first.any()
+    assert not second.any()
