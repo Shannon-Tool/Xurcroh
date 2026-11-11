@@ -106,7 +106,7 @@ class SGLangStage:
         if not self.closed:
             for request_id in list(self._positions):
                 self.drop_request(request_id)
-            if hasattr(self, "sessions"):
+            if self.sessions is not None:
                 self.sessions.close()
             self.closed = True
 

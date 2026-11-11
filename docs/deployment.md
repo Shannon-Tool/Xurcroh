@@ -69,19 +69,20 @@ Validate YAML locally with the deployment integration tests. `kubectl apply` is 
 
 ## Encrypted dense stages
 
-Compile the checkpoint on a trusted host, distribute only each stage's `.xurcroh` shard and wrapped key envelope to its assigned worker, and retain the client boundary shard and master key on the trusted client. Start each worker without putting the key on its command line:
+Compile the checkpoint on a trusted host with a separate client-boundary key and one X25519 recipient identity per worker. Distribute only each stage's `.xurcroh` shard, its recipient-sealed key envelope, and that worker's private identity. Retain the boundary shard and client key on the trusted client. Start each worker with its own identity file and an optimized engine:
 
 ```bash
-export XURCROH_MASTER_KEY='<64-hex-character-development-key>'
 .venv/bin/python -m xurcroh.stage_worker \
   --manifest /models/compiled-qwen/manifest.json --stage-index 0 \
+  --stage-private-key /run/xurcroh/stage-0.identity \
+  --engine vllm --checkpoint /models/qwen \
   --host 0.0.0.0 --port 9444 \
   --tls-cert /run/xurcroh/tls/tls.crt --tls-key /run/xurcroh/tls/tls.key \
   --quic-listen 0.0.0.0:9445 \
   --quic-cert /run/xurcroh/tls/tls.crt --quic-key /run/xurcroh/tls/tls.key
 ```
 
-Use a secret manager for real keys and rotate them through the shard distribution process. Start the remaining stages with their distinct indexes and endpoints. The public model definition then uses `path` for the local tokenizer/config, `manifest_path` for the compiled manifest, and `master_key_env` for indirect key supply. Stage workers validate encrypted shard identity, checkpoint fingerprint, manifest digest, tensor shape, and AEAD/replay state. QUIC clients use `quic://worker-a:9445`, `labels.ca_path`, and `labels.server_name`; `labels.attestation_endpoint` selects the HTTPS evidence endpoint. Native connections use per-worker locks, graceful shutdown, and timeout-triggered abort. For TEE mode, supply public evidence with `--attestation-evidence /run/xurcroh/attestation.json`; clients request a fresh challenge, verify nonce-bound evidence locally, and invoke the AMD/Intel verifier. NVIDIA remote evidence is not yet supported. Never put private attestation keys in this JSON document. The reference stage engine recomputes causal attention over the active sequence in FP64; it establishes functional distributed execution, not production GPU throughput. Hardware engine integration remains a Stage Two performance path.
+Use a secret manager for private identities and rotate them through the recipient distribution process. Start the remaining stages with distinct recipient identities and endpoints; use `--engine sglang` for the SGLang MoE path. The public model definition uses `path` for the local tokenizer/config, `manifest_path` for the compiled manifest, `boundary_key_env` for indirect client-only key supply, and `engine="vllm"` or `engine="sglang"`. Workers validate recipient identity, checkpoint fingerprint, manifest digest, tensor descriptors, and AEAD/replay state. QUIC clients use `quic://worker-a:9445`, `labels.ca_path`, and `labels.server_name`; `labels.attestation_endpoint` selects the HTTPS evidence endpoint. Native connections use per-worker locks, graceful shutdown, and timeout-triggered abort. For TEE mode, supply public evidence with `--attestation-evidence /run/xurcroh/attestation.json`; clients request a fresh challenge, verify nonce-bound evidence locally, and invoke the AMD/Intel verifier. NVIDIA remote evidence is not yet supported. Never put private attestation keys in this JSON document. `engine="reference"` is development-only FP64 numerical verification; optimized engine compatibility and numerical quality still require physical GPU validation.
 
 Strict mode rejects full-model remote checkpoints even over HTTPS. Development policy is required for the ordinary full-model OpenAI-compatible worker path. Local `local://cpu` execution remains a trusted-client capability.
 

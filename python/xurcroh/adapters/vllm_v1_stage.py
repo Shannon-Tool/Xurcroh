@@ -144,7 +144,7 @@ class VllmStage:
         if not self.closed:
             if hasattr(self, "_positions"):
                 self._positions.clear()
-            if hasattr(self, "sessions"):
+            if self.sessions is not None:
                 self.sessions.close()
             if self.worker is not None:
                 self.worker.shutdown()

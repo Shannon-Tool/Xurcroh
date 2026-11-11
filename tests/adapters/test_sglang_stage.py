@@ -109,3 +109,46 @@ def test_sglang_kv_cleanup_zeroes_slots_before_free() -> None:
     assert not k_buffer[:, [0, 2]].any()
     assert not v_buffer[:, [0, 2]].any()
     assert freed == [0]
+
+
+def test_sglang_stage_lifecycle_and_out_of_range(
+    tiny_llama_path, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from shards.identities import StageIdentities
+    from xurcroh.adapters.sglang_stage import SGLangStage, create_sglang_stage
+    from xurcroh.errors import ModelLoadError, ProtocolError
+
+    identities = StageIdentities.create(1)
+    compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=463)
+    monkeypatch.setattr("xurcroh.adapters.sglang_stage.require_sglang", lambda: None)
+    monkeypatch.setattr("torch.cuda.is_available", lambda: True)
+    with pytest.raises(ModelLoadError, match="out of range"):
+        create_sglang_stage(
+            compiled.manifest_path,
+            1,
+            identities.private_keys[0],
+            checkpoint=tiny_llama_path,
+        )
+    worker = type(
+        "Worker",
+        (),
+        {
+            "forward_batch_generation": lambda self, batch, pp_proxy_tensors=None: SimpleNamespace(
+                pp_hidden_states_proxy_tensors=pp_proxy_tensors
+                or Proxy(
+                    {"hidden_states": batch.input_embeds, "residual": batch.input_embeds.clone()}
+                )
+            )
+        },
+    )()
+    stage = SGLangStage(worker, 0)
+    with pytest.raises(ProtocolError):
+        stage.execute(torch.ones(1, 4), None)
+    with pytest.raises(ProtocolError):
+        tensors_from_proxy(SimpleNamespace())
+
+
+def test_sglang_version_rejects_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("importlib.metadata.version", lambda name: "0.5.22")
+    with pytest.raises(CompatibilityError, match="unsupported SGLang version"):
+        require_sglang()

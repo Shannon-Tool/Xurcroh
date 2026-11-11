@@ -20,7 +20,7 @@ def test_unknown_protocol_version_fails_closed() -> None:
 
 
 def test_requirement_ids_are_unique_and_complete() -> None:
-    matrix_path = Path(__file__).parents[1] / "docs/requirements/matrix.yaml"
+    matrix_path = Path(__file__).parents[1] / "docs/requirements-matrix.yaml"
     document = yaml.safe_load(matrix_path.read_text())
     requirements = document["requirements"]
     ids = [entry["id"] for entry in requirements]

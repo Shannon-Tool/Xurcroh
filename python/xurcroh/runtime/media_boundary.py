@@ -157,29 +157,24 @@ class DiffusionMediaBoundary:
     def prepare_video(
         self, request: VideoGenerationRequest
     ) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
-        image_request = ImageGenerationRequest(
-            model=request.model,
-            prompt=request.prompt,
-            size=request.size,
-            steps=request.steps,
-            seed=request.seed,
+        initial, prompt_embeds, parameters = self.raw_video_inputs(request)
+        seed = int(parameters["generator_seed"])
+        channels = initial.shape[1]
+        basis = sample_orthogonal(channels, seed=seed + 10007, dtype=torch.float32)
+        permutation = torch.randperm(
+            initial.shape[2:].numel(),
+            generator=torch.Generator().manual_seed(seed + 10009),
         )
-        tensors, parameters = self.prepare(image_request)
-        seed = request.seed if request.seed is not None else secrets.randbits(63)
-        unet = getattr(self.pipeline, "unet", None)
-        if unet is None:
-            raise CapabilityError("protected remote video requires a UNet client boundary")
-        channels = int(unet.config.in_channels)
-        latent = tensors["latents"]
-        shape = (1, channels, request.frames, *latent.shape[-2:])
-        generator = torch.Generator().manual_seed(seed)
-        initial = torch.randn(shape, generator=generator, dtype=latent.dtype)
-        protected = ProtectedDiffusionPipeline(
-            self.pipeline, tensors["basis"], tensors["permutation"]
+        protected = ProtectedDiffusionPipeline(self.pipeline, basis, permutation)
+        return (
+            {
+                "latents": protected.protect(initial),
+                "basis": basis,
+                "permutation": permutation,
+                "prompt_embeds": prompt_embeds,
+            },
+            parameters,
         )
-        tensors["latents"] = protected.protect(initial)
-        parameters.update({"num_frames": request.frames, "fps": request.fps})
-        return tensors, parameters
 
     def decode_video(self, latent: torch.Tensor, request: VideoGenerationRequest) -> bytes:
         with torch.inference_mode():
