@@ -311,7 +311,6 @@ class DenseStageEngine:
         hidden = result["hidden_states"]
         if "residual" in result:
             residuals[index] = result["residual"]
-            hidden = hidden + result["residual"]
         else:
             residuals.pop(index, None)
         return hidden
@@ -501,6 +500,9 @@ class DenseStageEngine:
                             self._residuals[request_id][index], index
                         )
                 check_request_health(cancelled, started, timeout)
+            final_residual = self._residuals.get(request_id, {}).get(len(self.workers) - 1)
+            if final_residual is not None:
+                hidden = hidden + final_residual
             next_token = self.boundary.sample(hidden[-1:], request)
             token_id = int(next_token.item())
             completion_ids.append(token_id)
