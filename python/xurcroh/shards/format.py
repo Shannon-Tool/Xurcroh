@@ -237,15 +237,17 @@ def read_shard(
                         ChaCha20Poly1305(key).decrypt(nonce, ciphertext, view[:header_end])
                     )
                     try:
-                        lock_buffer(plaintext)
+                        page_locked = lock_buffer(plaintext)
                         if _digest(plaintext) != document["payload_sha256"]:
                             raise ShardIntegrityError("decrypted shard digest mismatch")
                         tensors = _load_safetensors_buffer(plaintext)
                     finally:
                         secure_zero(plaintext)
-                        unlock_buffer(plaintext)
+                        if page_locked:
+                            unlock_buffer(plaintext)
                     result = {
                         **metadata,
+                        "page_locked": page_locked,
                         "format_version": version,
                         "shard_id": document["shard_id"],
                         "payload_sha256": document["payload_sha256"],
