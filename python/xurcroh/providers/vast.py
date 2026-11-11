@@ -441,7 +441,7 @@ def write_deployment_config(
         "model": model,
         "checkpoint": str(checkpoint),
         "compiled": str(compiled),
-        "output": str(output),
+        "output": str(output.parent / "deployment"),
         "revision": revision,
         "workers": workers,
     }
