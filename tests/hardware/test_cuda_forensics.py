@@ -32,7 +32,7 @@ def test_chacha20_mask_round_trip() -> None:
     require_cuda()
     root = Path(__file__).parents[2]
     controller = NativeMemoryController(root / "native/build/xurcroh_burn_alloc.so")
-    original = torch.arange(1024, dtype=torch.uint16, device="cuda")
+    original = torch.arange(1024, dtype=torch.int32, device="cuda").to(torch.uint16)
     masked = original.clone()
     key = torch.arange(8, dtype=torch.uint32, device="cuda")
     nonce = torch.arange(12, dtype=torch.uint8, device="cuda")
