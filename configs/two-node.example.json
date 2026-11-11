@@ -1,0 +1,26 @@
+{
+  "model": "qwen3-0.6b",
+  "checkpoint": "/trusted/models/Qwen3-0.6B",
+  "compiled": "/trusted/artifacts/qwen3-0.6b-compiled",
+  "output": "/trusted/artifacts/two-node-validation",
+  "workers": [
+    {
+      "name": "worker-a",
+      "host": "192.0.2.10",
+      "ssh_user": "root",
+      "ssh_port": 22,
+      "ssh_key": "~/.ssh/id_ed25519",
+      "public_host": "192.0.2.10",
+      "rendezvous_host": "192.0.2.10"
+    },
+    {
+      "name": "worker-b",
+      "host": "192.0.2.11",
+      "ssh_user": "root",
+      "ssh_port": 22,
+      "ssh_key": "~/.ssh/id_ed25519",
+      "public_host": "192.0.2.11",
+      "rendezvous_host": "192.0.2.10"
+    }
+  ]
+}

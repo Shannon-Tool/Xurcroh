@@ -1,0 +1,74 @@
+name: xurcroh-cuda-validation
+
+x-worker: &worker
+  build:
+    context: ../..
+    dockerfile: deploy/cuda/Dockerfile
+  image: xurcroh-cuda:0.1.0
+  restart: "no"
+  read_only: true
+  tmpfs: [/tmp, /runtime-data]
+  security_opt: [no-new-privileges:true]
+  environment: &worker-environment
+    WORLD_SIZE: "2"
+    MASTER_ADDR: worker-a
+    MASTER_PORT: "29615"
+    HF_HUB_OFFLINE: "1"
+    TRANSFORMERS_OFFLINE: "1"
+  volumes:
+    - ${XURCROH_CHECKPOINT_ROOT:?Set XURCROH_CHECKPOINT_ROOT}:/models/checkpoint:ro
+    - ${XURCROH_TLS_ROOT:?Set XURCROH_TLS_ROOT}:/run/xurcroh/tls:ro
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
+services:
+  worker-a:
+    <<: *worker
+    command:
+      - --manifest=/artifacts/manifest.json
+      - --stage-index=0
+      - --stage-private-key=/run/xurcroh/stage.identity
+      - --engine=vllm
+      - --checkpoint=/models/checkpoint
+      - --host=0.0.0.0
+      - --port=9444
+      - --tls-cert=/run/xurcroh/tls/worker-a.crt
+      - --tls-key=/run/xurcroh/tls/worker-a.key
+    environment:
+      <<: *worker-environment
+      RANK: "0"
+      LOCAL_RANK: "0"
+    volumes:
+      - ${XURCROH_CHECKPOINT_ROOT}:/models/checkpoint:ro
+      - ${XURCROH_COMPILED_ROOT:?Set XURCROH_COMPILED_ROOT}/stage-0:/artifacts:ro
+      - ${XURCROH_COMPILED_ROOT}/identities/stage-0.key:/run/xurcroh/stage.identity:ro
+      - ${XURCROH_TLS_ROOT}:/run/xurcroh/tls:ro
+    ports: ["127.0.0.1:9444:9444"]
+
+  worker-b:
+    <<: *worker
+    command:
+      - --manifest=/artifacts/manifest.json
+      - --stage-index=1
+      - --stage-private-key=/run/xurcroh/stage.identity
+      - --engine=vllm
+      - --checkpoint=/models/checkpoint
+      - --host=0.0.0.0
+      - --port=9444
+      - --tls-cert=/run/xurcroh/tls/worker-b.crt
+      - --tls-key=/run/xurcroh/tls/worker-b.key
+    environment:
+      <<: *worker-environment
+      RANK: "1"
+      LOCAL_RANK: "0"
+    volumes:
+      - ${XURCROH_CHECKPOINT_ROOT}:/models/checkpoint:ro
+      - ${XURCROH_COMPILED_ROOT}/stage-1:/artifacts:ro
+      - ${XURCROH_COMPILED_ROOT}/identities/stage-1.key:/run/xurcroh/stage.identity:ro
+      - ${XURCROH_TLS_ROOT}:/run/xurcroh/tls:ro
+    ports: ["127.0.0.1:9445:9444"]

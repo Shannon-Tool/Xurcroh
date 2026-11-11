@@ -31,3 +31,44 @@ Physical PCK extraction, quote forgery, secondary-GPU substitution, and relay/ho
 ## Cluster validation
 
 Use at least two independent GPU workers for dense pipeline checks and a suitable high-bandwidth group for TP/EP. Test real checkpoint outputs, worker failure/rescheduling, cancellation, packet delay/loss, multi-user isolation, memory teardown, and WAN/NAT behavior. Record actual prefill/inter-token latency, throughput, security overhead, memory, and image/video quality in machine-readable benchmark output. Do not use the analytical 40–50 ms/token target as a measured result.
+
+## Reproducible CUDA package
+
+`deploy/cuda/Dockerfile` builds the pinned vLLM 0.15.0 / PyTorch 2.9.1 / CUDA 12.8 runtime from `requirements-cuda.lock`. `deploy/cuda/compose.yaml` describes two isolated stage containers with one GPU each. Docker and NVIDIA Container Toolkit are required; the development host used for CPU validation does not provide them, so an image build is not itself evidence of GPU execution.
+
+Download a checkpoint explicitly on a trusted host before compilation. The initial validation target is the reviewed `Qwen/Qwen3-0.6B` architecture; record the exact revision and license with the result. Do not use a floating model revision as evidence.
+
+```bash
+./scripts/gpu/compile_checkpoint.sh /trusted/models/Qwen3-0.6B /trusted/artifacts/qwen3-compiled 2
+```
+
+The compiler creates independent recipient identities, a client-only boundary key, and three distribution classes:
+
+- `client/` and `client-boundary.xurcroh` remain on the trusted client.
+- `stage-N/` contains only the manifest, one encrypted stage shard, and its recipient envelope. `identities/stage-N.key` is copied separately only to worker N.
+- `worker-checkpoint/` contains configuration/tokenizer metadata and no safetensors. vLLM needs this metadata, but workers must never receive the original plaintext checkpoint.
+
+For two physical hosts, copy `configs/two-node.example.json`, replace its addresses and trusted local paths, and run:
+
+```bash
+./scripts/gpu/deploy_two_node.sh /trusted/config/two-node.json
+.venv/bin/python scripts/gpu/verify_two_node.py /trusted/artifacts/two-node-validation/deployment.json
+```
+
+Deployment refuses a dirty repository and uses `git archive HEAD`, so the remote source matches the recorded revision. It starts both distributed rendezvous participants, exposes only TLS worker endpoints, and waits for optimized-runtime capabilities. The verifier then uses `from Xurcroh import Xurcroh` for synchronous, streaming, concurrent, cancelled, and post-cancellation requests. It writes a JSON report with actual response metadata and marks production acceptance false.
+
+The deployment script stops worker processes if its own startup fails. Provider-instance destruction and independent billing verification are separate mandatory steps; killing a process or stopping an instance does not eliminate storage charges.
+
+Aggregate the SDK report, actual `hardware.json` files, provider ledger, and destruction evidence with:
+
+```bash
+.venv/bin/python scripts/gpu/report.py \
+  --sdk-report /trusted/artifacts/two-node-validation/sdk-report.json \
+  --hardware /trusted/artifacts/worker-a-hardware.json \
+  --hardware /trusted/artifacts/worker-b-hardware.json \
+  --ledger /trusted/artifacts/vast-ledger.json \
+  --destruction /trusted/artifacts/vast-destruction.json \
+  --output /trusted/artifacts/validation-report.json
+```
+
+A successful SDK report establishes hardware execution of that request path only. It does not establish MoE/media execution, complete side-channel resistance, numerical equivalence across every model, or production acceptance.
