@@ -325,6 +325,7 @@ def test_vllm_stage_constructs_explicit_worker_configs(
     monkeypatch.setitem(sys.modules, "vllm.config", config_module)
     monkeypatch.setitem(sys.modules, "vllm.v1.worker.gpu_worker", worker_module)
     monkeypatch.setattr("xurcroh.adapters.vllm_v1_stage.require_vllm_v1", lambda: None)
+    monkeypatch.setattr("xurcroh.adapters.vllm_loader.ensure_xurcroh_loader", lambda: None)
     monkeypatch.setattr(
         "xurcroh.adapters.vllm_v1_stage._initialize_vllm_cache", lambda worker, config: None
     )

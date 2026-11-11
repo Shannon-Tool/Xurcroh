@@ -99,5 +99,11 @@ class XurcrohShardedModelLoader(BaseModelLoader):  # type: ignore[misc]
             tensors.clear()
 
 
-if register_model_loader is not None:
+def ensure_xurcroh_loader() -> None:
+    if register_model_loader is None:
+        raise ModelLoadError("vLLM model loader registration is unavailable")
     register_model_loader("xurcroh_sharded")(XurcrohShardedModelLoader)
+
+
+if register_model_loader is not None:
+    ensure_xurcroh_loader()
