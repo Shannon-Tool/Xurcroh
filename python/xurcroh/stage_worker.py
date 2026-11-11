@@ -145,18 +145,25 @@ def create_stage_app(
     stage_index: int,
     private_key: X25519PrivateKey,
     attestation_document: dict[str, Any] | None = None,
-    engine: Literal["reference", "vllm"] = "reference",
+    engine: Literal["reference", "vllm", "sglang"] = "reference",
     checkpoint: str | Path | None = None,
 ) -> FastAPI:
+    from xurcroh.adapters.sglang_stage import SGLangStage
     from xurcroh.adapters.vllm_v1_stage import VllmStage
 
-    stage: DenseStage | VllmStage
+    stage: DenseStage | VllmStage | SGLangStage
     if engine == "vllm":
         if checkpoint is None:
-            raise ModelLoadError("vLLM stage execution requires the checkpoint configuration")
+            raise ModelLoadError("optimized stage execution requires the checkpoint configuration")
         from xurcroh.adapters.vllm_v1_stage import create_vllm_stage
 
         stage = create_vllm_stage(manifest_path, stage_index, private_key, checkpoint=checkpoint)
+    elif engine == "sglang":
+        if checkpoint is None:
+            raise ModelLoadError("optimized stage execution requires the checkpoint configuration")
+        from xurcroh.adapters.sglang_stage import create_sglang_stage
+
+        stage = create_sglang_stage(manifest_path, stage_index, private_key, checkpoint=checkpoint)
     else:
         stage = DenseStage(manifest_path, stage_index, private_key)
     cancelled: dict[str, threading.Event] = {}
@@ -213,7 +220,7 @@ def create_stage_app(
     @app.get("/v1/capabilities")
     def capabilities() -> dict[str, Any]:
         return {
-            "runtime": "vllm-stage" if engine == "vllm" else "dense-stage",
+            "runtime": f"{engine}-stage" if engine != "reference" else "dense-stage",
             "stage_index": stage_index,
             "dtype": "f64",
             "cache_entries": getattr(stage.runner, "cache_entries", 0),
@@ -234,20 +241,29 @@ def create_stage_app(
                 request.session_id, request.client_public
             )
             packet = base64.b64decode(request.packet, validate=True)
-            if engine == "vllm":
-                from vllm.sequence import IntermediateTensors
-
+            if engine != "reference":
                 from xurcroh.adapters.vllm_v1_stage import (
                     decode_intermediate,
                     encode_intermediate,
                 )
 
                 tensors = decode_intermediate(packet, receiver)
-                hidden = (
-                    IntermediateTensors(tensors)
-                    if "residual" in tensors
-                    else tensors["hidden_states"]
-                )
+                if engine == "vllm":
+                    from vllm.sequence import IntermediateTensors
+
+                    hidden = (
+                        IntermediateTensors(tensors)
+                        if "residual" in tensors
+                        else tensors["hidden_states"]
+                    )
+                else:
+                    from sglang.srt.model_executor.forward_batch_info import PPProxyTensors
+
+                    hidden = (
+                        PPProxyTensors(tensors)
+                        if "residual" in tensors
+                        else tensors["hidden_states"]
+                    )
                 if event.is_set():
                     raise ProtocolError("stage request was cancelled")
                 output_any = cast(Any, stage.execute(hidden, request.request_id))
@@ -277,7 +293,7 @@ def create_stage_app(
                 output.zero_()
             return {
                 "stage_index": stage_index,
-                "dtype": "u8" if engine == "vllm" else request.dtype,
+                "dtype": "u8" if engine != "reference" else request.dtype,
                 "shape": shape,
                 "packet": base64.b64encode(response_packet).decode(),
             }
@@ -316,7 +332,7 @@ def main() -> None:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--stage-index", type=int, required=True)
     parser.add_argument("--stage-private-key", type=Path, required=True)
-    parser.add_argument("--engine", choices=["reference", "vllm"], default="reference")
+    parser.add_argument("--engine", choices=["reference", "vllm", "sglang"], default="reference")
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--attestation-evidence", type=Path)
     parser.add_argument("--host", default="127.0.0.1")

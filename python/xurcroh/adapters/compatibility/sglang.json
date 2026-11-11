@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "engine": "sglang",
+  "version": "0.5.23",
+  "interfaces": {
+    "worker": "sglang.srt.managers.tp_worker.TpModelWorker.forward_batch_generation",
+    "proxy_tensors": "sglang.srt.model_executor.forward_batch_info.PPProxyTensors",
+    "private_loader": "sglang.private.private_model_loader.PrivateModelLoader",
+    "kv_free": "sglang.srt.mem_cache.memory_pool.ReqToTokenPool.free_rows"
+  },
+  "source_digests": {
+    "python/sglang/srt/model_executor/forward_batch_info.py": "sha256:4152e5667dc6312e49260b9e63470f35dc7bef53f73fd7f67a69f99973b89680",
+    "python/sglang/srt/model_executor/model_runner.py": "sha256:eae24245533994f09b61eeebdc4601c4dd22fb8f91350915a394df837aa2b18a",
+    "python/sglang/srt/model_loader/loader.py": "sha256:b4d61a3f8b1b4927062a3b17c23b2fb8f34009963ad70de54faa19882e4216e2"
+  },
+  "required_settings": {
+    "disable_radix_cache": true,
+    "chunked_prefill_size": 4096,
+    "enable_dynamic_chunking": true,
+    "load_format": "private"
+  }
+}

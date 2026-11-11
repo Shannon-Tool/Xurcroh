@@ -60,7 +60,9 @@ class DenseStageEngine:
         self.definition = definition
         self.workers = workers
         self.engine_name = (
-            "vllm-stages"
+            "sglang-stages"
+            if definition.engine == "sglang"
+            else "vllm-stages"
             if definition.engine == "vllm"
             or (definition.engine == "auto" and security.mode != "development")
             else "dense-stages"
@@ -119,14 +121,14 @@ class DenseStageEngine:
                 RemoteAttestationClient(self._client).verify_worker(
                     worker.labels.get("attestation_endpoint", worker.endpoint or "")
                 )
-            if self.engine_name == "vllm-stages" and not (worker.endpoint or "").startswith(
-                "quic://"
-            ):
+            if self.engine_name in {"vllm-stages", "sglang-stages"} and not (
+                worker.endpoint or ""
+            ).startswith("quic://"):
                 response = self._client.get(f"{self._endpoint(worker)}/v1/capabilities")
                 response.raise_for_status()
-                if response.json().get("runtime") != "vllm-stage":
+                if response.json().get("runtime") != self.engine_name.replace("stages", "stage"):
                     raise CompatibilityError(
-                        f"worker {worker.name} does not provide the optimized vLLM stage"
+                        f"worker {worker.name} does not provide the optimized {self.engine_name}"
                     )
         try:
             from transformers import AutoTokenizer
@@ -321,7 +323,7 @@ class DenseStageEngine:
         timeout: float,
         circuit_id: str | None = None,
     ) -> torch.Tensor:
-        if self.engine_name == "vllm-stages":
+        if self.engine_name in {"vllm-stages", "sglang-stages"}:
             return self._execute_vllm_stage(index, hidden, request_id, session, timeout, circuit_id)
         packet, expected_dtype, shape = encode_stage_tensor(hidden, request_id, session.sender)
         worker = self.workers[index]

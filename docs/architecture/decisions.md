@@ -75,3 +75,8 @@ Dense compilation can perform transformations in FP64 and emit BF16/FP16 shards 
 ## ADR-013: vLLM v1 stage execution contract
 
 Optimized dense stages use vLLM 0.15.0 `GPUModelRunner` with recipient-sealed shard loading and `enable_prompt_embeds`. Each request creates real scheduler metadata for prefill/decode and returns `IntermediateTensors` containing both `hidden_states` and `residual` to the next worker. The compatibility manifest records source digests and required cache/scheduler settings. `engine="vllm"` and strict `auto` require the `vllm-stage` capability; `engine="reference"` is development-only. Plaintext model-server startup is not accepted as protected execution. CPU tests validate scheduler, recipient, and bundle contracts. Actual CUDA kernel execution and numerical quality require the explicit hardware test and must not be inferred from these contracts.
+
+
+## ADR-014: SGLang private MoE stage contract
+
+Optimized MoE/long-context stages use SGLang 0.5.23 `TpModelWorker` with `LoadFormat.PRIVATE`, a `DefaultModelLoader` subclass that reads only the recipient-sealed stage. `ForwardBatch` carries transformed `input_embeds`, and `PPProxyTensors` preserves `hidden_states` plus `residual` for the next worker. RadixCache is disabled; KV/request cleanup wipes token slots before returning them to the free pool. CPU tests validate private loading, forward/proxy contracts, version rejection, and cleanup ordering. Actual SGLang MoE kernel compatibility and numerical quality require physical GPU validation and are not claimed from these tests.
