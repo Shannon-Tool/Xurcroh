@@ -254,27 +254,42 @@ def create_vllm_stage(
     os.environ.setdefault("RANK", str(stage_index))
     os.environ.setdefault("WORLD_SIZE", str(stage_count))
     os.environ.setdefault("LOCAL_RANK", str(device))
-    from vllm.config import VllmConfig
+    from vllm.config import (
+        CacheConfig,
+        LoadConfig,
+        ModelConfig,
+        ParallelConfig,
+        SchedulerConfig,
+        VllmConfig,
+    )
     from vllm.v1.worker.gpu_worker import Worker
 
     from xurcroh.runtime.stage_sessions import StageSessionStore
 
     identity = private_key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
     config = VllmConfig(
-        model=str(checkpoint),
-        tokenizer=str(checkpoint),
-        load_format="xurcroh_sharded",
-        model_loader_extra_config={
-            "manifest_path": str(path),
-            "stage_index": stage_index,
-            "stage_private_key": identity,
-        },
-        pipeline_parallel_size=stage_count,
-        tensor_parallel_size=1,
-        enable_prefix_caching=False,
-        async_scheduling=False,
-        enforce_eager=True,
-        enable_prompt_embeds=True,
+        model_config=ModelConfig(
+            model=str(checkpoint),
+            tokenizer=str(checkpoint),
+            enforce_eager=True,
+            enable_prompt_embeds=True,
+        ),
+        cache_config=CacheConfig(enable_prefix_caching=False),
+        parallel_config=ParallelConfig(
+            pipeline_parallel_size=stage_count,
+            tensor_parallel_size=1,
+            nnodes=stage_count,
+            node_rank=stage_index,
+        ),
+        scheduler_config=SchedulerConfig(async_scheduling=False),
+        load_config=LoadConfig(
+            load_format="xurcroh_sharded",
+            model_loader_extra_config={
+                "manifest_path": str(path),
+                "stage_index": stage_index,
+                "stage_private_key": identity,
+            },
+        ),
     )
     worker = Worker(config, device, stage_index, "env://")
     try:
