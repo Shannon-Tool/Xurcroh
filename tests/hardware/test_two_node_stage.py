@@ -10,7 +10,7 @@ import torch
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from xurcroh.config import ModelDefinition, SecurityConfig, WorkerConfig
-from xurcroh.models.dense import DenseStageRunner, layer_weights_from_dict
+from xurcroh.models.dense import execute_dense_layer_cached, layer_weights_from_dict
 from xurcroh.requests import CompletionRequest
 from xurcroh.runtime.stage import DenseStageEngine
 from xurcroh.stage_worker import DenseStage
@@ -67,35 +67,55 @@ def test_two_node_outputs_match_fp64_reference() -> None:
             identity = manifest.parent / "identities" / f"stage-{index}.key"
             private_key = X25519PrivateKey.from_private_bytes(identity.read_bytes())
             shard = DenseStage(manifest, index, private_key)
-            weights = {
-                name: value.double() if value.is_floating_point() else value
-                for name, value in shard._tensors.items()
-            }
-            shard.close()
             stage = manifest_document["stages"][index]
-            layers = [
-                layer_weights_from_dict(weights, f"model.layers.{layer}")
-                for layer in stage["layer_indices"]
-            ]
-            reference = DenseStageRunner(
-                [layers],
-                query_heads=stage["query_heads"],
-                kv_heads=stage["kv_heads"],
-                interleaved_rope=stage["interleaved_rope"],
-                rope_theta=float(
-                    checkpoint_config.get(
-                        "rope_theta",
-                        checkpoint_config.get("rope_parameters", {}).get("rope_theta", 10_000),
-                    )
-                ),
+            rope_theta = float(
+                checkpoint_config.get(
+                    "rope_theta",
+                    checkpoint_config.get("rope_parameters", {}).get("rope_theta", 10_000),
+                )
             )
             stage_errors = []
             errors[f"stage-{index}"] = stage_errors
+            weights = {}
+            pasts = {}
             try:
-                for token_index, (actual_input, actual_output) in enumerate(captured[index]):
-                    expected = reference.run_cached(
-                        f"two-node-reference-{index}", actual_input.double()
-                    )
+                inputs = {
+                    token_index: actual_input.double()
+                    for token_index, (actual_input, _) in enumerate(captured[index])
+                }
+                pasts = {token_index: None for token_index in inputs}
+                for layer_index in stage["layer_indices"]:
+                    prefix = f"model.layers.{layer_index}"
+                    weights = {
+                        name: value.double()
+                        for name, value in shard._tensors.items()
+                        if name.startswith(prefix + ".")
+                    }
+                    layer = layer_weights_from_dict(weights, prefix)
+                    next_inputs = {}
+                    next_pasts = {}
+                    for token_index, current_input in inputs.items():
+                        expected, past = execute_dense_layer_cached(
+                            current_input,
+                            layer,
+                            query_heads=stage["query_heads"],
+                            kv_heads=stage["kv_heads"],
+                            past=None if token_index == 0 else pasts[0],
+                            interleaved_rope=stage["interleaved_rope"],
+                            rope_base=rope_theta,
+                        )
+                        next_inputs[token_index] = expected
+                        next_pasts[token_index] = past
+                    for past in pasts.values():
+                        if past is not None:
+                            for value in past:
+                                value.zero_()
+                    inputs = next_inputs
+                    pasts = next_pasts
+                    for value in weights.values():
+                        value.zero_()
+                for token_index, (_, actual_output) in enumerate(captured[index]):
+                    expected = inputs[token_index]
                     error = (actual_output.double() - expected).abs().max().item()
                     stage_errors.append(error)
                     torch.testing.assert_close(
@@ -107,12 +127,14 @@ def test_two_node_outputs_match_fp64_reference() -> None:
                             f"stage {stage_index}, token {token} differs from reference: {message}"
                         ),
                     )
-                    reference.drop_request(f"two-node-reference-{index}")
             finally:
-                reference.drop_request(f"two-node-reference-{index}")
+                shard.close()
+                for past in pasts.values():
+                    if past is not None:
+                        for value in past:
+                            value.zero_()
                 for value in weights.values():
-                    if value.is_floating_point():
-                        value.zero_()
+                    value.zero_()
     except Exception as error:
         report_path = os.environ.get("XURCROH_HARDWARE_REPORT")
         if report_path:

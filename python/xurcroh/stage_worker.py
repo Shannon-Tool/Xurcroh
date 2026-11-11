@@ -105,9 +105,18 @@ class DenseStage:
     def execute(self, hidden: torch.Tensor, request_id: str | None = None) -> torch.Tensor:
         if self.closed:
             raise ModelLoadError("stage worker is closed")
+        dtype = next(
+            value.dtype
+            for name, value in self._tensors.items()
+            if name.endswith("self_attn.q_proj.weight")
+        )
+        output_dtype = hidden.dtype
+        hidden = hidden.to(dtype)
         if request_id is not None:
-            return self.runner.run_cached(request_id, hidden)
-        return self.runner.run(hidden)
+            output = self.runner.run_cached(request_id, hidden)
+        else:
+            output = self.runner.run(hidden)
+        return output.to(output_dtype)
 
     def drop_request(self, request_id: str) -> None:
         self.runner.drop_request(request_id)

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+import torch
 
 from shards.identities import StageIdentities
 from xurcroh.errors import ShardIntegrityError
@@ -68,8 +69,16 @@ def test_compiler_rejects_non_divisible_stage_count(tiny_llama_path: Path, tmp_p
         )
 
 
+@pytest.mark.parametrize(
+    ("compute_dtype", "shard_dtype", "tolerance"),
+    [(torch.float64, None, 1e-7), (torch.float32, torch.bfloat16, 0.05)],
+)
 def test_qwen_compiler_preserves_original_decoder_outputs(
-    tiny_llama_path: Path, tmp_path: Path
+    tiny_llama_path: Path,
+    tmp_path: Path,
+    compute_dtype: torch.dtype,
+    shard_dtype: torch.dtype | None,
+    tolerance: float,
 ) -> None:
     import torch
     from transformers import AutoTokenizer, Qwen3Config, Qwen3ForCausalLM
@@ -95,8 +104,23 @@ def test_qwen_compiler_preserves_original_decoder_outputs(
     original.save_pretrained(checkpoint, safe_serialization=True)
     AutoTokenizer.from_pretrained(tiny_llama_path).save_pretrained(checkpoint)
     identities = StageIdentities.create(1)
-    compiled = identities.compile(checkpoint, tmp_path / "compiled-qwen", seed=487)
+    from xurcroh.shards.compiler import XurcrohWeightCompiler
+
+    compiled = XurcrohWeightCompiler(
+        CompilationConfig(
+            checkpoint=checkpoint,
+            output_dir=tmp_path / "compiled-qwen",
+            stage_count=1,
+            boundary_key=identities.boundary_key,
+            recipients=identities.recipients,
+            seed=487,
+            compute_dtype=compute_dtype,
+            shard_dtype=shard_dtype,
+        )
+    ).compile()
     boundary = ClientBoundary(compiled.boundary_shard, identities.boundary_key)
+    assert boundary.input_basis.dtype == compute_dtype
+    assert boundary.output_basis.dtype == compute_dtype
     stage = DenseStage(compiled.manifest_path, 0, identities.private_keys[0])
     token_ids = torch.tensor([[2, 3, 2]])
     hidden = original.model.embed_tokens(token_ids)
@@ -114,8 +138,9 @@ def test_qwen_compiler_preserves_original_decoder_outputs(
                 position_ids=positions,
                 position_embeddings=original.model.rotary_emb(hidden, positions),
             )
-        transformed = stage.execute(boundary.embed(token_ids)[0])
+        stage_dtype = stage._tensors["model.layers.0.self_attn.q_proj.weight"].dtype
+        transformed = stage.execute(boundary.embed(token_ids)[0].to(stage_dtype))
         actual = boundary.recover(transformed)
-    torch.testing.assert_close(actual, hidden[0], atol=1e-7, rtol=1e-7)
+    torch.testing.assert_close(actual.double(), hidden[0], atol=tolerance, rtol=tolerance)
     stage.close()
     boundary.close()

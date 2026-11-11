@@ -20,12 +20,13 @@ class ClientBoundary:
     def embed(self, token_ids: torch.Tensor) -> torch.Tensor:
         if self.closed:
             raise RuntimeError("client boundary is closed")
-        return self._tensors["embedding.weight"][token_ids] @ self.input_basis.T
+        embedding = self._tensors["embedding.weight"][token_ids].to(self.input_basis.dtype)
+        return embedding @ self.input_basis.T
 
     def recover(self, hidden: torch.Tensor) -> torch.Tensor:
         if self.closed:
             raise RuntimeError("client boundary is closed")
-        return hidden @ self.output_basis
+        return hidden.to(self.output_basis.dtype) @ self.output_basis
 
     def transition(self, hidden: torch.Tensor, stage_index: int) -> torch.Tensor:
         if self.closed:
@@ -33,7 +34,7 @@ class ClientBoundary:
         bases = self._tensors["basis.stages"]
         if stage_index < 0 or stage_index + 1 >= bases.shape[0]:
             raise ValueError("stage transition is out of range")
-        return hidden @ bases[stage_index] @ bases[stage_index + 1].T
+        return hidden.to(bases.dtype) @ bases[stage_index] @ bases[stage_index + 1].T
 
     def logits(self, hidden: torch.Tensor) -> torch.Tensor:
         recovered = self.recover(hidden)
@@ -43,7 +44,8 @@ class ClientBoundary:
             "final_norm.weight",
             torch.ones((), dtype=normalized.dtype, device=normalized.device),
         )
-        return normalized @ self._tensors["lm_head.weight"].T
+        lm_head = self._tensors["lm_head.weight"]
+        return normalized.to(lm_head.dtype) @ lm_head.T
 
     def sample(self, hidden: torch.Tensor, request: CompletionRequest) -> torch.Tensor:
         from xurcroh.runtime.generation import sample_next_token
