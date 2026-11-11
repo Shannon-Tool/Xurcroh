@@ -218,6 +218,29 @@ def test_vllm_version_rejects_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
         require_vllm_v1()
 
 
+def test_vllm_downstream_stage_allocates_intermediate_buffers() -> None:
+    from xurcroh.adapters.vllm_v1_stage import _initialize_stage_intermediates
+
+    buffers = Intermediate({"hidden_states": torch.empty(4, 8), "residual": torch.empty(4, 8)})
+    calls = []
+
+    class Model:
+        def make_empty_intermediate_tensors(self, **kwargs):
+            calls.append(kwargs)
+            return buffers
+
+    runner = types.SimpleNamespace(
+        model=Model(),
+        model_config=types.SimpleNamespace(dtype=torch.bfloat16),
+        device=torch.device("cpu"),
+        max_num_tokens=4,
+        intermediate_tensors=None,
+    )
+    _initialize_stage_intermediates(runner, 1)
+    assert runner.intermediate_tensors is buffers
+    assert calls == [{"batch_size": 4, "dtype": torch.bfloat16, "device": torch.device("cpu")}]
+
+
 def test_vllm_cache_initialization_uses_scheduler_config(monkeypatch: pytest.MonkeyPatch) -> None:
     from xurcroh.adapters.vllm_v1_stage import _initialize_vllm_cache
 
