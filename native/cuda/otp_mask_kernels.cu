@@ -19,12 +19,11 @@ __device__ inline uint32_t load32(const uint8_t* input) {
            (static_cast<uint32_t>(input[3]) << 24);
 }
 
-__device__ void chacha20_block(const uint32_t* key, uint64_t counter, const uint8_t* nonce, uint32_t* output) {
+__device__ void chacha20_block(const uint32_t* key, uint32_t counter, const uint8_t* nonce, uint32_t* output) {
     uint32_t state[16] = {
         0x61707865U, 0x3320646eU, 0x79622d32U, 0x6b206574U,
         key[0], key[1], key[2], key[3], key[4], key[5], key[6], key[7],
-        static_cast<uint32_t>(counter), static_cast<uint32_t>(counter >> 32),
-        load32(nonce), load32(nonce + 4), load32(nonce + 8)
+        counter, load32(nonce), load32(nonce + 4), load32(nonce + 8)
     };
     uint32_t working[16];
     for (int i = 0; i < 16; ++i) working[i] = state[i];
@@ -46,7 +45,7 @@ __global__ void mask_kernel(uint16_t* data, size_t count, const uint32_t* key, c
     if (index >= count) return;
     uint64_t block = index / 32;
     uint32_t stream[16];
-    chacha20_block(key, block, nonce, stream);
+    chacha20_block(key, static_cast<uint32_t>(block), nonce, stream);
     uint32_t word_index = index % 32;
     uint32_t word = (word_index % 2 == 0) ? (stream[word_index / 2] & 0xFFFFU) : (stream[word_index / 2] >> 16);
     if (unmask) {
