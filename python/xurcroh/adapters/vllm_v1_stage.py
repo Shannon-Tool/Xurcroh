@@ -64,7 +64,7 @@ def _scheduler(
         cached = CachedRequestData(
             req_ids=[request_id],
             resumed_req_ids=set(),
-            new_token_ids=[0],
+            new_token_ids=[[0]],
             all_token_ids={request_id: []},
             new_block_ids=[new_blocks or None],
             num_computed_tokens=[position],
