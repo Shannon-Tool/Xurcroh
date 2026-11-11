@@ -198,7 +198,7 @@ class XurcrohWeightCompiler:
             minimum_scale=1.0 if has_qk_norm else 0.6,
             maximum_scale=1.0 if has_qk_norm else 1.6,
             interleaved=text_config.get("rope_style") == "interleaved",
-            quarter_turns=has_qk_norm,
+            preserve_rms_norm=has_qk_norm,
             shared_heads=has_qk_norm,
         )
         q_transform = q_transform.to(dtype)
@@ -236,6 +236,10 @@ class XurcrohWeightCompiler:
             required, (transformed.q, transformed.k, transformed.v, transformed.o), strict=True
         ):
             output[name] = value
+        if transformed.q_norm is not None:
+            output[q_norm_name] = transformed.q_norm
+        if transformed.k_norm is not None:
+            output[k_norm_name] = transformed.k_norm
         for projection, transform in (
             ("q_proj", q_transform),
             ("k_proj", k_transform),
@@ -422,6 +426,12 @@ class XurcrohWeightCompiler:
                 "layer_indices": indices,
                 "model_type": self.reader.config.get("model_type", "unknown"),
                 "interleaved_rope": text_config.get("rope_style") == "interleaved",
+                "rope_theta": float(
+                    text_config.get(
+                        "rope_theta",
+                        text_config.get("rope_parameters", {}).get("rope_theta", 10_000),
+                    )
+                ),
                 "query_heads": query_heads,
                 "kv_heads": kv_heads,
                 "moe_top_k": int(text_config.get("num_experts_per_tok", 1)),

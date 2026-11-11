@@ -20,10 +20,15 @@ def test_cached_attention_and_stage_match_full_recomputation() -> None:
         o=torch.randn(4, 4, generator=generator, dtype=torch.float64),
     )
     hidden = torch.randn(3, 4, dtype=torch.float64, generator=generator)
-    expected = reference_attention(hidden, weights, 2, 1, rotary=True, interleaved=False)
-    prefill, cache = reference_attention_cached(hidden[:2], weights, 2, 1, interleaved=False)
+    rope_base = 1_000_000
+    expected = reference_attention(
+        hidden, weights, 2, 1, rotary=True, interleaved=False, rope_base=rope_base
+    )
+    prefill, cache = reference_attention_cached(
+        hidden[:2], weights, 2, 1, interleaved=False, rope_base=rope_base
+    )
     decoded, cache = reference_attention_cached(
-        hidden[2:], weights, 2, 1, past=cache, interleaved=False
+        hidden[2:], weights, 2, 1, past=cache, interleaved=False, rope_base=rope_base
     )
     torch.testing.assert_close(torch.cat([prefill, decoded]), expected)
     assert cache[0].shape == (3, 1, 2)
@@ -39,12 +44,12 @@ def test_cached_attention_and_stage_match_full_recomputation() -> None:
         input_gain=torch.ones(4, dtype=torch.float64),
         post_attention_gain=torch.ones(4, dtype=torch.float64),
     )
-    runner = DenseStageRunner([[layer]])
+    runner = DenseStageRunner([[layer]], rope_theta=rope_base)
     cached_prefill = runner.run_cached("request", hidden[:2])
     cached_decode = runner.run_cached("request", hidden[2:])
     torch.testing.assert_close(
         torch.cat([cached_prefill, cached_decode]),
-        DenseStageRunner([[layer]]).run(hidden),
+        DenseStageRunner([[layer]], rope_theta=rope_base).run(hidden),
     )
     assert runner.cache_entries == 1
     runner.drop_request("request")
