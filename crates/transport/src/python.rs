@@ -85,7 +85,7 @@ fn encode_frame(
     let encoded = TensorFrame::new(request_id, stream_id, sequence, kind, dtype, shape, payload)
         .and_then(|frame| frame.encode())
         .map_err(value_error)?;
-    Python::with_gil(|py| Ok(PyBytes::new_bound(py, &encoded).into()))
+    Python::attach(|py| Ok(PyBytes::new(py, &encoded).into()))
 }
 
 #[pyfunction]
@@ -101,15 +101,15 @@ fn decode_frame(
     Py<PyBytes>,
 )> {
     let frame = TensorFrame::decode(input).map_err(value_error)?;
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         Ok((
-            PyBytes::new_bound(py, &frame.request_id).into(),
+            PyBytes::new(py, &frame.request_id).into(),
             frame.stream_id,
             frame.sequence,
             kind_name(frame.kind),
             frame.dtype.map(dtype_name),
             frame.shape,
-            PyBytes::new_bound(py, &frame.payload).into(),
+            PyBytes::new(py, &frame.payload).into(),
         ))
     })
 }
@@ -147,11 +147,11 @@ impl AeadSession {
         let sealed = session
             .seal(associated_data, plaintext)
             .map_err(crypto_error)?;
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             Ok((
                 sealed.sequence,
-                PyBytes::new_bound(py, &sealed.nonce).into(),
-                PyBytes::new_bound(py, &sealed.ciphertext).into(),
+                PyBytes::new(py, &sealed.nonce).into(),
+                PyBytes::new(py, &sealed.ciphertext).into(),
             ))
         })
     }
@@ -172,7 +172,7 @@ impl AeadSession {
         let plaintext = session
             .open(associated_data, &sealed)
             .map_err(crypto_error)?;
-        Python::with_gil(|py| Ok(PyBytes::new_bound(py, &plaintext).into()))
+        Python::attach(|py| Ok(PyBytes::new(py, &plaintext).into()))
     }
 }
 
@@ -215,15 +215,15 @@ fn frame_result(
     Vec<u32>,
     Py<PyBytes>,
 )> {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         Ok((
-            PyBytes::new_bound(py, &frame.request_id).into(),
+            PyBytes::new(py, &frame.request_id).into(),
             frame.stream_id,
             frame.sequence,
             kind_name(frame.kind),
             frame.dtype.map(dtype_name),
             frame.shape,
-            PyBytes::new_bound(py, &frame.payload).into(),
+            PyBytes::new(py, &frame.payload).into(),
         ))
     })
 }
@@ -231,10 +231,10 @@ fn frame_result(
 #[pyfunction]
 fn generate_self_signed(name: &str) -> PyResult<(Py<PyBytes>, Py<PyBytes>)> {
     let (certificate, key) = crate::generate_self_signed(name).map_err(value_error)?;
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         Ok((
-            PyBytes::new_bound(py, &certificate).into(),
-            PyBytes::new_bound(py, key.secret_pkcs8_der()).into(),
+            PyBytes::new(py, &certificate).into(),
+            PyBytes::new(py, key.secret_pkcs8_der()).into(),
         ))
     })
 }
@@ -258,8 +258,8 @@ impl ServerConnection {
         Py<PyBytes>,
     )> {
         let connection = self.connection.clone();
-        let frame = Python::with_gil(|py| {
-            py.allow_threads(|| runtime().block_on(crate::TensorServer::receive_frame(&connection)))
+        let frame = Python::attach(|py| {
+            py.detach(|| runtime().block_on(crate::TensorServer::receive_frame(&connection)))
         })
         .map_err(value_error)?;
         frame_result(frame)
@@ -277,17 +277,15 @@ impl ServerConnection {
     ) -> PyResult<()> {
         let frame = make_frame(request_id, stream_id, sequence, kind, dtype, shape, payload)?;
         let connection = self.connection.clone();
-        Python::with_gil(|py| {
-            py.allow_threads(|| {
-                runtime().block_on(crate::TensorServer::send_frame(&connection, &frame))
-            })
+        Python::attach(|py| {
+            py.detach(|| runtime().block_on(crate::TensorServer::send_frame(&connection, &frame)))
         })
         .map_err(value_error)
     }
 
     fn close(&self) {
         let connection = self.connection.clone();
-        Python::with_gil(|py| py.allow_threads(|| runtime().block_on(connection.closed())));
+        Python::attach(|py| py.detach(|| runtime().block_on(connection.closed())));
     }
 }
 
@@ -302,10 +300,8 @@ impl TensorServer {
     fn bind(address: &str, certificate: Vec<u8>, key: Vec<u8>) -> PyResult<Self> {
         let certificate = CertificateDer::from(certificate);
         let key = PrivatePkcs8KeyDer::from(key);
-        let server = Python::with_gil(|py| {
-            py.allow_threads(|| {
-                runtime().block_on(crate::TensorServer::bind(address, certificate, key))
-            })
+        let server = Python::attach(|py| {
+            py.detach(|| runtime().block_on(crate::TensorServer::bind(address, certificate, key)))
         })
         .map_err(value_error)?;
         Ok(Self {
@@ -331,10 +327,9 @@ impl TensorServer {
                 .ok_or_else(|| value_error("server is closed"))?
                 .clone()
         };
-        let connection = Python::with_gil(|py| {
-            py.allow_threads(|| runtime().block_on(server.accept_connection()))
-        })
-        .map_err(value_error)?;
+        let connection =
+            Python::attach(|py| py.detach(|| runtime().block_on(server.accept_connection())))
+                .map_err(value_error)?;
         Ok(ServerConnection { connection })
     }
 
@@ -358,8 +353,8 @@ impl TensorClient {
     fn connect(address: &str, server_name: &str, certificate: Vec<u8>) -> PyResult<Self> {
         let address: SocketAddr = address.parse().map_err(value_error)?;
         let certificate = CertificateDer::from(certificate);
-        let client = Python::with_gil(|py| {
-            py.allow_threads(|| {
+        let client = Python::attach(|py| {
+            py.detach(|| {
                 runtime().block_on(crate::TensorClient::connect(
                     address,
                     server_name,
@@ -391,7 +386,7 @@ impl TensorClient {
                 .ok_or_else(|| value_error("client is closed"))?
                 .clone()
         };
-        Python::with_gil(|py| py.allow_threads(|| runtime().block_on(client.send_frame(&frame))))
+        Python::attach(|py| py.detach(|| runtime().block_on(client.send_frame(&frame))))
             .map_err(value_error)
     }
 
@@ -413,9 +408,8 @@ impl TensorClient {
                 .ok_or_else(|| value_error("client is closed"))?
                 .clone()
         };
-        let frame =
-            Python::with_gil(|py| py.allow_threads(|| runtime().block_on(client.receive_frame())))
-                .map_err(value_error)?;
+        let frame = Python::attach(|py| py.detach(|| runtime().block_on(client.receive_frame())))
+            .map_err(value_error)?;
         frame_result(frame)
     }
 
@@ -425,7 +419,7 @@ impl TensorClient {
             client.abort();
             let client =
                 Arc::try_unwrap(client).map_err(|_| value_error("client is still in use"))?;
-            Python::with_gil(|py| py.allow_threads(|| runtime().block_on(client.close())));
+            Python::attach(|py| py.detach(|| runtime().block_on(client.close())));
         }
         Ok(())
     }
