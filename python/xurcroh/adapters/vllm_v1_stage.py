@@ -230,6 +230,16 @@ class VllmStage:
             self.closed = True
 
 
+def _initialize_stage_intermediates(model_runner: Any, stage_index: int) -> None:
+    if stage_index == 0 or model_runner.intermediate_tensors is not None:
+        return
+    model_runner.intermediate_tensors = model_runner.model.make_empty_intermediate_tensors(
+        batch_size=model_runner.max_num_tokens,
+        dtype=model_runner.model_config.dtype,
+        device=model_runner.device,
+    )
+
+
 def _initialize_vllm_cache(worker: Any, config: Any) -> None:
     from vllm.v1.core.kv_cache_utils import (
         generate_scheduler_kv_cache_config,
@@ -332,6 +342,7 @@ def create_vllm_stage(
         _set_stage_layer_range(
             worker.model_runner.model, document["stages"][stage_index]["layer_indices"]
         )
+        _initialize_stage_intermediates(worker.model_runner, stage_index)
         with set_current_vllm_config(config):
             _initialize_vllm_cache(worker, config)
         stage = VllmStage(worker.model_runner, worker)
