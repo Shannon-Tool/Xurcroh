@@ -1,21 +1,23 @@
 from __future__ import annotations
 
 import ctypes
+import gc
+import mmap
 
 from xurcroh.errors import ShardIntegrityError
 
 
-def _address(buffer: bytearray) -> int:
+def _address(buffer: bytearray | mmap.mmap) -> int:
     view = (ctypes.c_char * len(buffer)).from_buffer(buffer)
     return ctypes.addressof(view)
 
 
-def secure_zero(buffer: bytearray) -> None:
+def secure_zero(buffer: bytearray | mmap.mmap) -> None:
     if buffer:
         ctypes.memset(_address(buffer), 0, len(buffer))
 
 
-def lock_buffer(buffer: bytearray) -> None:
+def lock_buffer(buffer: bytearray | mmap.mmap) -> None:
     if not buffer:
         return
     libc = ctypes.CDLL(None, use_errno=True)
@@ -31,10 +33,17 @@ def lock_buffer(buffer: bytearray) -> None:
         )
 
 
-def unlock_buffer(buffer: bytearray) -> None:
+def unlock_buffer(buffer: bytearray | mmap.mmap) -> None:
     if buffer:
         libc = ctypes.CDLL(None, use_errno=True)
         if hasattr(libc, "munlock"):
             libc.munlock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
             libc.munlock.restype = ctypes.c_int
             libc.munlock(_address(buffer), len(buffer))
+
+
+def release_host_memory() -> None:
+    gc.collect()
+    libc = ctypes.CDLL(None)
+    if hasattr(libc, "malloc_trim"):
+        libc.malloc_trim(0)

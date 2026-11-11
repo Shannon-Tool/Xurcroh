@@ -191,6 +191,7 @@ def execute_moe_layer(
         kv_heads,
         rotary=rotary,
         interleaved=interleaved_rope,
+        norm_epsilon=weights.epsilon,
     )
     residual = hidden + attention
     ffn_input = unit_rms_norm(residual, weights.epsilon) * weights.post_attention_gain
@@ -226,6 +227,7 @@ def execute_moe_layer_cached(
         past=past,
         rotary=rotary,
         interleaved=interleaved_rope,
+        norm_epsilon=weights.epsilon,
     )
     residual = hidden + attention
     ffn_input = unit_rms_norm(residual, weights.epsilon) * weights.post_attention_gain
