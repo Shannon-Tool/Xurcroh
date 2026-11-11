@@ -121,7 +121,7 @@ requirements:
   - {id: VAL-04, source: phase-2, requirement: GPU execution and numerical verification tests, status: hardware_pending, evidence: [tests/hardware/test_vllm_stage.py, tests/hardware/test_sglang_stage_cuda.py]}
   - {id: VAL-05, source: phase-2, requirement: failure recovery and memory lifecycle tests, status: hardware_pending, evidence: [tests/hardware/test_cuda_forensics.py, tests/integration/test_native_stage.py]}
   - {id: VAL-06, source: phase-2, requirement: benchmark reporting, status: implemented, evidence: [python/xurcroh/benchmarking.py, python/xurcroh/benchmark_cli.py, docs/benchmarking.md]}
-  - {id: VAL-07, source: phase-2, requirement: Vast.ai cost monitoring and automatic teardown, status: hardware_pending, evidence: [docs/resources.md]}
+  - {id: VAL-07, source: phase-2, requirement: Vast.ai cost monitoring and automatic teardown, status: hardware_pending, evidence: [python/xurcroh/providers/vast.py, scripts/vast, tests/providers/test_vast.py, docs/vast-validation.md]}
   - {id: VAL-08, source: phase-3, requirement: single-GPU CUDA smoke tests, status: hardware_pending, evidence: [tests/hardware/test_cuda_stage.py, tests/hardware/test_vllm_stage.py]}
   - {id: VAL-09, source: phase-3, requirement: real GPU execution of a supported checkpoint, status: hardware_pending, evidence: [tests/hardware/test_vllm_stage.py]}
   - {id: VAL-10, source: phase-3, requirement: two genuinely independent GPU nodes, status: hardware_pending, evidence: [docs/hardware-validation.md]}
@@ -131,12 +131,12 @@ requirements:
   - {id: VAL-14, source: phase-4, requirement: final branch and commit SHA, status: hardware_pending, evidence: [.github/workflows/ci.yml]}
   - {id: VAL-15, source: phase-4, requirement: all engineering fixes and associated tests, status: implemented, evidence: [tests]}
   - {id: VAL-16, source: phase-4, requirement: passing GitHub CI evidence, status: hardware_pending, evidence: [.github/workflows/ci.yml]}
-  - {id: VAL-17, source: phase-4, requirement: actual GPU hardware configurations, status: hardware_pending, evidence: [docs/resources.md]}
+  - {id: VAL-17, source: phase-4, requirement: actual GPU hardware configurations, status: hardware_pending, evidence: [python/xurcroh/providers/vast.py, scripts/vast, tests/providers/test_vast.py, docs/vast-validation.md]}
   - {id: VAL-18, source: phase-4, requirement: successful and unsuccessful physical test results, status: hardware_pending, evidence: [docs/hardware-validation.md]}
   - {id: VAL-19, source: phase-4, requirement: numerical equivalence measurements, status: hardware_pending, evidence: [docs/experiments/numerical-equivalence.md]}
   - {id: VAL-20, source: phase-4, requirement: real latency and throughput benchmarks, status: hardware_pending, evidence: [python/xurcroh/benchmarking.py]}
   - {id: VAL-21, source: phase-4, requirement: security validation results, status: implemented, evidence: [tests/security/test_worker_compromise.py, tests/security/test_media_worker_compromise.py]}
-  - {id: VAL-22, source: phase-4, requirement: complete Vast.ai spending ledger, status: hardware_pending, evidence: [docs/resources.md]}
+  - {id: VAL-22, source: phase-4, requirement: complete Vast.ai spending ledger, status: hardware_pending, evidence: [python/xurcroh/providers/vast.py, scripts/vast, tests/providers/test_vast.py, docs/vast-validation.md]}
   - {id: VAL-23, source: phase-4, requirement: proof that all billable test instances were destroyed, status: hardware_pending, evidence: [docs/hardware-validation.md]}
   - {id: VAL-24, source: phase-4, requirement: remaining production blockers, status: implemented, evidence: [docs/security.md, docs/models.md, docs/hardware-validation.md]}
   - {id: VAL-25, source: phase-4, requirement: distinguish implemented locally validated hardware validated and production accepted, status: implemented, evidence: [docs/security.md, docs/models.md, docs/architecture/decisions.md]}
