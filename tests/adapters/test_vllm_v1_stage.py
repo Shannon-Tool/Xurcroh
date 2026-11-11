@@ -530,6 +530,7 @@ def test_stage_transition_also_transforms_residual_basis() -> None:
             return hidden * 2
 
         def sample(self, hidden, request):
+            assert hidden.reshape(-1).tolist() == [5, 5, 5, 5]
             return torch.tensor([1])
 
     engine = DenseStageEngine.__new__(DenseStageEngine)
@@ -582,3 +583,37 @@ def test_vllm_decode_uses_prompt_embedding_not_placeholder_token() -> None:
     runner._append_decode_embedding("request", torch.full((1, 4), 2.0), 9)
     assert not batch.is_token_ids[0, 9]
     assert cached.prompt_embeds.shape == (10, 4)
+
+
+def test_vllm_handoff_preserves_unfused_hidden(monkeypatch: pytest.MonkeyPatch) -> None:
+    from xurcroh.config import WorkerConfig
+    from xurcroh.runtime.stage import DenseStageEngine
+
+    engine = DenseStageEngine.__new__(DenseStageEngine)
+    engine.workers = [WorkerConfig(name="a", endpoint="https://a.invalid")]
+    engine._residuals = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"stage_index": 0, "dtype": "u8", "packet": "cGFja2V0"}
+
+    engine._client = types.SimpleNamespace(post=lambda *args, **kwargs: Response())
+    session = types.SimpleNamespace(
+        session_id="session", client_public="client", sender=object(), receiver=object()
+    )
+    monkeypatch.setattr("xurcroh.runtime.stage.encode_intermediate", lambda *args: (b"packet", [1]))
+    monkeypatch.setattr(
+        "xurcroh.runtime.stage.decode_intermediate",
+        lambda *args: {
+            "hidden_states": torch.tensor([2.0]),
+            "residual": torch.tensor([3.0]),
+        },
+    )
+
+    hidden = engine._execute_vllm_stage(0, torch.tensor([1.0]), "request", session, 60, None)
+
+    assert hidden.tolist() == [2.0]
+    assert engine._residuals["request"][0].tolist() == [3.0]
