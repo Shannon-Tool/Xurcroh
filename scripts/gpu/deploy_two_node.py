@@ -15,6 +15,17 @@ ROOT = Path(__file__).resolve().parents[2]
 def options(worker: dict[str, object]) -> list[str]:
     result = ["-p", str(worker.get("ssh_port", 22))]
     if worker.get("ssh_key"):
+        result.extend(["-o", "IdentitiesOnly=yes"])
+    if worker.get("known_hosts"):
+        result.extend(
+            [
+                "-o",
+                f"UserKnownHostsFile={Path(str(worker['known_hosts'])).expanduser()}",
+                "-o",
+                "StrictHostKeyChecking=yes",
+            ]
+        )
+    if worker.get("ssh_key"):
         result.extend(["-i", str(Path(str(worker["ssh_key"])).expanduser())])
     return result
 
@@ -35,6 +46,17 @@ def scp(
     worker: dict[str, object], sources: list[Path], remote: str, *, recursive: bool = False
 ) -> None:
     scp_options = ["-P", str(worker.get("ssh_port", 22))]
+    if worker.get("ssh_key"):
+        scp_options.extend(["-o", "IdentitiesOnly=yes"])
+    if worker.get("known_hosts"):
+        scp_options.extend(
+            [
+                "-o",
+                f"UserKnownHostsFile={Path(str(worker['known_hosts'])).expanduser()}",
+                "-o",
+                "StrictHostKeyChecking=yes",
+            ]
+        )
     if worker.get("ssh_key"):
         scp_options.extend(["-i", str(Path(str(worker["ssh_key"])).expanduser())])
     subprocess.run(
