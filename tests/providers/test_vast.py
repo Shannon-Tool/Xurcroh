@@ -251,6 +251,7 @@ def test_deployment_config_has_distinct_hosts_and_no_credentials(tmp_path: Path)
         output=output,
         revision="abc",
     )
+    assert config["output"] == str(tmp_path / "deployment")
     assert config["workers"][0]["machine_id"] != config["workers"][1]["machine_id"]
     assert config["workers"][0]["tls_port"] == 54304
     assert config["workers"][1]["tls_port"] == 54986
