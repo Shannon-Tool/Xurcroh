@@ -277,8 +277,8 @@ def create_vllm_stage(
         raise ModelLoadError("vLLM stage index is out of range")
     os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
     os.environ.setdefault("MASTER_PORT", "29615")
-    os.environ.setdefault("RANK", "0")
-    os.environ.setdefault("WORLD_SIZE", "1")
+    os.environ["RANK"] = "0"
+    os.environ["WORLD_SIZE"] = "1"
     os.environ.setdefault("LOCAL_RANK", str(device))
     from vllm.config import (
         CacheConfig,
