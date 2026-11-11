@@ -16,8 +16,25 @@ pytestmark = pytest.mark.hardware
 def test_vllm_executes_encrypted_stage_on_cuda(tiny_llama_path: Path, tmp_path: Path) -> None:
     if not torch.cuda.is_available():
         pytest.skip("CUDA device and vllm==0.15.0 are required")
+    from transformers import AutoTokenizer, LlamaConfig, LlamaForCausalLM
+
+    model_path = tmp_path / "tiny-vllm-model"
+    config = LlamaConfig(
+        vocab_size=64,
+        hidden_size=16,
+        intermediate_size=32,
+        num_hidden_layers=2,
+        num_attention_heads=1,
+        num_key_value_heads=1,
+        max_position_embeddings=64,
+        tie_word_embeddings=False,
+        attention_bias=False,
+        mlp_bias=False,
+    )
+    LlamaForCausalLM(config).save_pretrained(model_path, safe_serialization=True)
+    AutoTokenizer.from_pretrained(tiny_llama_path).save_pretrained(model_path)
     identities = StageIdentities.create(1)
-    compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=443)
+    compiled = identities.compile(model_path, tmp_path / "compiled", seed=443)
     from xurcroh.stage_worker import DenseStage
 
     reference = DenseStage(compiled.manifest_path, 0, identities.private_keys[0])
@@ -25,7 +42,7 @@ def test_vllm_executes_encrypted_stage_on_cuda(tiny_llama_path: Path, tmp_path: 
         compiled.manifest_path,
         0,
         identities.private_keys[0],
-        checkpoint=tiny_llama_path,
+        checkpoint=model_path,
         device=0,
     )
     errors = []
