@@ -8,7 +8,7 @@ import torch
 
 from shards.identities import StageIdentities
 from xurcroh.errors import ShardIntegrityError
-from xurcroh.shards.compiler import CompilationConfig
+from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
 from xurcroh.shards.format import read_shard
 from xurcroh.shards.recipients import open_stage_key
 
@@ -145,3 +145,36 @@ def test_qwen_compiler_preserves_original_decoder_outputs(
     torch.testing.assert_close(actual.double(), hidden[0], atol=tolerance, rtol=tolerance)
     stage.close()
     boundary.close()
+
+
+def test_compiler_reads_original_weights_one_layer_at_a_time(
+    tiny_llama_path: Path, tmp_path: Path
+) -> None:
+    from xurcroh.shards.compiler import LAYER_PATTERN
+
+    identities = StageIdentities.create(1)
+    compiler = XurcrohWeightCompiler(
+        CompilationConfig(
+            checkpoint=tiny_llama_path,
+            output_dir=tmp_path / "compiled",
+            stage_count=1,
+            boundary_key=identities.boundary_key,
+            recipients=identities.recipients,
+            seed=491,
+        )
+    )
+    read_tensors = compiler.reader.read_tensors
+    reads = []
+
+    def tracked_read(names):
+        reads.append(list(names))
+        return read_tensors(names)
+
+    compiler.reader.read_tensors = tracked_read
+    compiler.compile()
+    layer_reads = [
+        {int(LAYER_PATTERN.search(name).group(1)) for name in names if LAYER_PATTERN.search(name)}
+        for names in reads
+    ]
+    assert layer_reads
+    assert all(len(indices) <= 1 for indices in layer_reads)

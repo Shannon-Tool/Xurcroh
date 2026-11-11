@@ -383,21 +383,15 @@ class XurcrohWeightCompiler:
         for stage_index, indices in enumerate(partitions):
             recipient = self.config.recipients[stage_index]
             basis = bases[stage_index]
-            stage_names = [
-                name
-                for name in names
-                if any(f".layers.{index}." in name for name in (name,) for index in indices)
-            ]
-            stage_names = [name for name in stage_names if name != final_norm_name]
-            tensors = self.reader.read_tensors(stage_names)
             compiled: dict[str, torch.Tensor] = {}
             for index in indices:
                 prefix = f"model.layers.{index}"
-                layer_tensors = {
-                    name: tensor
-                    for name, tensor in tensors.items()
-                    if name.startswith(prefix + ".")
-                }
+                layer_names = [
+                    name
+                    for name in names
+                    if name.startswith(prefix + ".") and name != final_norm_name
+                ]
+                layer_tensors = self.reader.read_tensors(layer_names)
                 transformed = self._compile_layer(
                     layer_tensors,
                     prefix,
@@ -467,9 +461,6 @@ class XurcrohWeightCompiler:
             for tensor in compiled.values():
                 tensor.zero_()
             compiled.clear()
-            for tensor in tensors.values():
-                tensor.zero_()
-            tensors.clear()
             release_host_memory()
 
         boundary_names = [embedding_name]
