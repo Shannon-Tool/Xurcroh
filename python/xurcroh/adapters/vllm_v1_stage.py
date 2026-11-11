@@ -93,6 +93,7 @@ class VllmStageRunner:
         block_count = int(getattr(cache_config, "num_gpu_blocks", 256) or 256)
         self._free_blocks = set(range(block_count))
         self._blocks: dict[str, list[int]] = {}
+        self.stage_index = 0
 
     def _request_blocks(
         self, request_id: str, position: int, tokens: int
@@ -153,6 +154,11 @@ class VllmStageRunner:
             set_current_vllm_config(getattr(self.model_runner, "vllm_config", None)),
             patch.object(
                 GroupCoordinator, "is_last_rank", new_callable=PropertyMock(return_value=False)
+            ),
+            patch.object(
+                GroupCoordinator,
+                "is_first_rank",
+                new_callable=PropertyMock(return_value=self.stage_index == 0),
             ),
         ):
             output = self.model_runner.execute_model(scheduler, intermediate)
@@ -240,6 +246,16 @@ def _initialize_vllm_cache(worker: Any, config: Any) -> None:
     worker.compile_or_warm_up_model()
 
 
+def _set_stage_layer_range(model: Any, layer_indices: list[int]) -> None:
+    if not layer_indices:
+        raise ModelLoadError("stage layer range cannot be empty")
+    stage_model = getattr(model, "model", None)
+    if stage_model is None:
+        raise ModelLoadError("vLLM model does not expose pipeline layer ranges")
+    stage_model.start_layer = min(layer_indices)
+    stage_model.end_layer = max(layer_indices) + 1
+
+
 def create_vllm_stage(
     manifest_path: str | Path,
     stage_index: int,
@@ -261,8 +277,8 @@ def create_vllm_stage(
         raise ModelLoadError("vLLM stage index is out of range")
     os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
     os.environ.setdefault("MASTER_PORT", "29615")
-    os.environ.setdefault("RANK", str(stage_index))
-    os.environ.setdefault("WORLD_SIZE", str(stage_count))
+    os.environ.setdefault("RANK", "0")
+    os.environ.setdefault("WORLD_SIZE", "1")
     os.environ.setdefault("LOCAL_RANK", str(device))
     from vllm.config import (
         CacheConfig,
@@ -290,10 +306,10 @@ def create_vllm_stage(
         model_config=model_config,
         cache_config=CacheConfig(enable_prefix_caching=False),
         parallel_config=ParallelConfig(
-            pipeline_parallel_size=stage_count,
+            pipeline_parallel_size=1,
             tensor_parallel_size=1,
-            nnodes=stage_count,
-            node_rank=stage_index,
+            nnodes=1,
+            node_rank=0,
         ),
         scheduler_config=SchedulerConfig(
             max_model_len=model_config.max_model_len,
@@ -313,10 +329,14 @@ def create_vllm_stage(
     try:
         worker.init_device()
         worker.load_model()
+        _set_stage_layer_range(
+            worker.model_runner.model, document["stages"][stage_index]["layer_indices"]
+        )
         with set_current_vllm_config(config):
             _initialize_vllm_cache(worker, config)
         stage = VllmStage(worker.model_runner, worker)
         stage.stage_index = stage_index
+        stage.runner.stage_index = stage_index
         stage.sessions = StageSessionStore(private_key, stage_index)
         return stage
     except Exception:

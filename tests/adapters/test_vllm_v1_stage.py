@@ -50,7 +50,9 @@ def install_vllm_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
     sampling = types.ModuleType("vllm.sampling_params")
     sampling.SamplingParams = SamplingParams
     parallel = types.ModuleType("vllm.distributed.parallel_state")
-    parallel.GroupCoordinator = type("GroupCoordinator", (), {"is_last_rank": True})
+    parallel.GroupCoordinator = type(
+        "GroupCoordinator", (), {"is_last_rank": True, "is_first_rank": True}
+    )
     sequence = types.ModuleType("vllm.sequence")
     sequence.IntermediateTensors = Intermediate
     config = types.ModuleType("vllm.config")
@@ -320,7 +322,9 @@ def test_vllm_stage_constructs_explicit_worker_configs(
     class Worker:
         def __init__(self, config, device, rank, method):
             self.config = config
-            self.model_runner = types.SimpleNamespace()
+            self.model_runner = types.SimpleNamespace(
+                model=types.SimpleNamespace(model=types.SimpleNamespace())
+            )
             created.append(self)
 
         def init_device(self):
@@ -358,6 +362,8 @@ def test_vllm_stage_constructs_explicit_worker_configs(
     assert config.scheduler_config.is_encoder_decoder is False
     assert config.load_config.load_format == "xurcroh_sharded"
     assert config.load_config.model_loader_extra_config["stage_index"] == 0
+    assert created[0].model_runner.model.model.start_layer == 0
+    assert created[0].model_runner.model.model.end_layer == 2
     stage.close()
 
 
