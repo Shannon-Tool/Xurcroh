@@ -31,7 +31,9 @@ def require_vllm_v1() -> None:
         )
 
 
-def _new_request(request_id: str, hidden: torch.Tensor, block_ids: list[int]) -> Any:
+def _new_request(
+    request_id: str, hidden: torch.Tensor, block_ids: list[int], num_computed_tokens: int = 0
+) -> Any:
     from vllm.sampling_params import SamplingParams
     from vllm.v1.core.sched.output import NewRequestData
 
@@ -42,7 +44,7 @@ def _new_request(request_id: str, hidden: torch.Tensor, block_ids: list[int]) ->
         sampling_params=SamplingParams(temperature=0.0),
         pooling_params=None,
         block_ids=(block_ids,),
-        num_computed_tokens=0,
+        num_computed_tokens=num_computed_tokens,
         lora_request=None,
         prompt_embeds=hidden.detach().clone(),
     )
@@ -57,21 +59,9 @@ def _scheduler(
 ) -> Any:
     from vllm.v1.core.sched.output import CachedRequestData, SchedulerOutput
 
-    if position == 0:
-        cached = CachedRequestData.make_empty()
-        new = [_new_request(request_id, hidden, block_ids)]
-    else:
-        cached = CachedRequestData(
-            req_ids=[request_id],
-            resumed_req_ids=set(),
-            new_token_ids=[[0]],
-            all_token_ids={request_id: []},
-            new_block_ids=[new_blocks or None],
-            num_computed_tokens=[position],
-            num_output_tokens=[position],
-        )
-        new = []
-    tokens = hidden.shape[0]
+    cached = CachedRequestData.make_empty()
+    new = [_new_request(request_id, hidden, block_ids, position)]
+    tokens = 1 if position > 0 else hidden.shape[0]
     return SchedulerOutput(
         scheduled_new_reqs=new,
         scheduled_cached_reqs=cached,
@@ -149,6 +139,7 @@ class VllmStageRunner:
         blocks, new_blocks = self._request_blocks(request_id, position, hidden.shape[0])
         if position > 0:
             self._append_decode_embedding(request_id, hidden, position)
+            hidden = self.model_runner.requests[request_id].prompt_embeds
         scheduler = _scheduler(request_id, hidden, position, blocks, new_blocks)
         with (
             _EXECUTE_LOCK,
