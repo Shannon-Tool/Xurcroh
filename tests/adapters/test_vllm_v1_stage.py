@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import sys
 import types
 
@@ -52,7 +53,10 @@ def install_vllm_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
     parallel.GroupCoordinator = type("GroupCoordinator", (), {"is_last_rank": True})
     sequence = types.ModuleType("vllm.sequence")
     sequence.IntermediateTensors = Intermediate
+    config = types.ModuleType("vllm.config")
+    config.set_current_vllm_config = lambda value: contextlib.nullcontext()
     for name, module in {
+        "vllm.config": config,
         "vllm.sampling_params": sampling,
         "vllm.v1.core.sched.output": output,
         "vllm.distributed.parallel_state": parallel,
@@ -288,12 +292,15 @@ def test_vllm_stage_constructs_explicit_worker_configs(
     compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=469)
 
     class Config:
+        set_current_vllm_config = staticmethod(lambda value: contextlib.nullcontext())
+
         def __init__(self, **kwargs):
             self.max_model_len = 64
             self.is_encoder_decoder = False
             self.__dict__.update(kwargs)
 
     config_module = types.ModuleType("vllm.config")
+    config_module.set_current_vllm_config = Config.set_current_vllm_config
     for name in (
         "CacheConfig",
         "LoadConfig",

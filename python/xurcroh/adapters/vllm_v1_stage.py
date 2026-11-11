@@ -130,6 +130,7 @@ class VllmStageRunner:
         position: int,
         intermediate: Any = None,
     ) -> Any:
+        from vllm.config import set_current_vllm_config
         from vllm.distributed.parallel_state import GroupCoordinator
         from vllm.sequence import IntermediateTensors
 
@@ -142,6 +143,7 @@ class VllmStageRunner:
         scheduler = _scheduler(request_id, hidden, position, blocks, new_blocks)
         with (
             _EXECUTE_LOCK,
+            set_current_vllm_config(getattr(self.model_runner, "vllm_config", None)),
             patch.object(
                 GroupCoordinator, "is_last_rank", new_callable=PropertyMock(return_value=False)
             ),
@@ -261,6 +263,7 @@ def create_vllm_stage(
         ParallelConfig,
         SchedulerConfig,
         VllmConfig,
+        set_current_vllm_config,
     )
     from vllm.v1.worker.gpu_worker import Worker
 
@@ -302,7 +305,8 @@ def create_vllm_stage(
     try:
         worker.init_device()
         worker.load_model()
-        _initialize_vllm_cache(worker, config)
+        with set_current_vllm_config(config):
+            _initialize_vllm_cache(worker, config)
         stage = VllmStage(worker.model_runner, worker)
         stage.stage_index = stage_index
         stage.sessions = StageSessionStore(private_key, stage_index)
