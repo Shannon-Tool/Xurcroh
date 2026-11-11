@@ -276,3 +276,70 @@ def test_vllm_blocks_are_allocated_scrubbed_and_reused(
     assert reused == [0]
     with pytest.raises(ProtocolError, match="already active"):
         runner._request_blocks("second", 0, 1)
+
+
+def test_vllm_stage_constructs_explicit_worker_configs(
+    tiny_llama_path, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from shards.identities import StageIdentities
+    from xurcroh.adapters.vllm_v1_stage import create_vllm_stage
+
+    identities = StageIdentities.create(1)
+    compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=469)
+
+    class Config:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    config_module = types.ModuleType("vllm.config")
+    for name in (
+        "CacheConfig",
+        "LoadConfig",
+        "ModelConfig",
+        "ParallelConfig",
+        "SchedulerConfig",
+        "VllmConfig",
+    ):
+        setattr(config_module, name, Config)
+    worker_module = types.ModuleType("vllm.v1.worker.gpu_worker")
+    created = []
+
+    class Worker:
+        def __init__(self, config, device, rank, method):
+            self.config = config
+            self.model_runner = types.SimpleNamespace()
+            created.append(self)
+
+        def init_device(self):
+            return None
+
+        def load_model(self):
+            return None
+
+        def shutdown(self):
+            return None
+
+    worker_module.Worker = Worker
+    monkeypatch.setitem(sys.modules, "vllm.config", config_module)
+    monkeypatch.setitem(sys.modules, "vllm.v1.worker.gpu_worker", worker_module)
+    monkeypatch.setattr("xurcroh.adapters.vllm_v1_stage.require_vllm_v1", lambda: None)
+    monkeypatch.setattr(
+        "xurcroh.adapters.vllm_v1_stage._initialize_vllm_cache", lambda worker, config: None
+    )
+    monkeypatch.setattr("torch.cuda.is_available", lambda: True)
+    stage = create_vllm_stage(
+        compiled.manifest_path,
+        0,
+        identities.private_keys[0],
+        checkpoint=tiny_llama_path,
+    )
+    config = created[0].config
+    assert config.model_config.enable_prompt_embeds is True
+    assert config.model_config.enforce_eager is True
+    assert config.cache_config.enable_prefix_caching is False
+    assert config.parallel_config.pipeline_parallel_size == 1
+    assert config.parallel_config.nnodes == 1
+    assert config.scheduler_config.async_scheduling is False
+    assert config.load_config.load_format == "xurcroh_sharded"
+    assert config.load_config.model_loader_extra_config["stage_index"] == 0
+    stage.close()
