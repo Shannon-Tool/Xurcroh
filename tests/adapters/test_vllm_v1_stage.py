@@ -356,3 +356,17 @@ def test_vllm_stage_constructs_explicit_worker_configs(
     assert config.load_config.load_format == "xurcroh_sharded"
     assert config.load_config.model_loader_extra_config["stage_index"] == 0
     stage.close()
+
+
+def test_hidden_from_intermediate_restores_residual_sum() -> None:
+    from xurcroh.adapters.vllm_v1_stage import hidden_from_intermediate
+
+    result = hidden_from_intermediate(
+        Intermediate(
+            {
+                "hidden_states": torch.tensor([1.0, 2.0]),
+                "residual": torch.tensor([3.0, 4.0]),
+            }
+        )
+    )
+    torch.testing.assert_close(result, torch.tensor([4.0, 6.0]))

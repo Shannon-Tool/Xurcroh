@@ -323,7 +323,11 @@ def hidden_from_intermediate(value: Any) -> torch.Tensor:
     tensors = getattr(value, "tensors", None)
     if not isinstance(tensors, dict) or "hidden_states" not in tensors:
         raise ProtocolError("stage output does not contain hidden_states")
-    return cast(torch.Tensor, tensors["hidden_states"])
+    hidden = cast(torch.Tensor, tensors["hidden_states"])
+    residual = tensors.get("residual")
+    if isinstance(residual, torch.Tensor):
+        hidden = hidden + residual
+    return hidden
 
 
 def encode_intermediate(
