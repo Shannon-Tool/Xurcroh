@@ -325,7 +325,7 @@ def create_vllm_stage(
             },
         ),
     )
-    worker = Worker(config, device, stage_index, "env://")
+    worker = Worker(config, device, 0, "env://")
     try:
         worker.init_device()
         worker.load_model()
