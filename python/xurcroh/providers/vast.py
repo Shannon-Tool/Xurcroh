@@ -218,7 +218,15 @@ class VastClient:
 
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         try:
-            response = self._client.request(method, path, **kwargs)
+            for attempt in range(4):
+                response = self._client.request(method, path, **kwargs)
+                if response.status_code != 429 or attempt == 3:
+                    break
+                try:
+                    delay = min(60.0, float(response.headers.get("retry-after", 5 * 2**attempt)))
+                except ValueError:
+                    delay = 5 * 2**attempt
+                time.sleep(delay)
             response.raise_for_status()
             document = response.json()
         except httpx.HTTPStatusError as error:

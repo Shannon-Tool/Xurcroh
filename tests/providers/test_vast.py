@@ -283,3 +283,20 @@ def test_null_instance_is_accepted_while_provisioning() -> None:
 def test_deleted_instance_collection_is_empty() -> None:
     client = client_for(lambda request: httpx.Response(410))
     assert client.instances() == []
+
+
+def test_rate_limited_request_uses_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = []
+    delays = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(request.url.path)
+        if len(attempts) == 1:
+            return httpx.Response(429, headers={"retry-after": "2"})
+        return httpx.Response(200, json={"success": True, "offers": []})
+
+    monkeypatch.setattr(time, "sleep", lambda seconds: delays.append(seconds))
+    client = client_for(handler)
+    assert client.offers() == []
+    assert len(attempts) == 2
+    assert delays == [2.0]
