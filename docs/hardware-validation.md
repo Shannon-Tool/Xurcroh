@@ -55,7 +55,7 @@ For two physical hosts, copy `configs/two-node.example.json`, replace its addres
 .venv/bin/python scripts/gpu/verify_two_node.py /trusted/artifacts/two-node-validation/deployment.json
 ```
 
-Deployment refuses a dirty repository and uses `git archive HEAD`, so the remote source matches the recorded revision. It starts both distributed rendezvous participants, exposes only TLS worker endpoints, and waits for optimized-runtime capabilities. The verifier then uses `from Xurcroh import Xurcroh` for synchronous, streaming, concurrent, cancelled, and post-cancellation requests. It writes a JSON report with actual response metadata and marks production acceptance false.
+Deployment refuses a dirty repository and uses `git archive HEAD`, so the remote source matches the recorded revision. Each vLLM worker initializes a local single-rank process with only its assigned layer range; Xurcroh's authenticated transport performs the pipeline handoff, so no cross-host Gloo mesh is required. The generated deployment uses the provider's actual mapped TLS ports and waits for optimized-runtime capabilities. The verifier then uses `from Xurcroh import Xurcroh` for synchronous, streaming, concurrent, cancelled, and post-cancellation requests. It writes a JSON report with actual response metadata and marks production acceptance false.
 
 The deployment script stops worker processes if its own startup fails. Provider-instance destruction and independent billing verification are separate mandatory steps; killing a process or stopping an instance does not eliminate storage charges.
 
