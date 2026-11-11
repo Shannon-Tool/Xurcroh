@@ -31,7 +31,7 @@ def test_allocator_and_shared_scrubber() -> None:
 def test_chacha20_mask_round_trip() -> None:
     require_cuda()
     root = Path(__file__).parents[2]
-    controller = NativeMemoryController(root / "native/build/otp_mask_kernels.so")
+    controller = NativeMemoryController(root / "native/build/xurcroh_burn_alloc.so")
     original = torch.arange(1024, dtype=torch.uint16, device="cuda")
     masked = original.clone()
     key = torch.arange(8, dtype=torch.uint32, device="cuda")

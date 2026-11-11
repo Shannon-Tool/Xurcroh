@@ -9,7 +9,7 @@ ARCH="${CUDA_ARCH:-sm_90}"
 OUT="$ROOT/native/build"
 mkdir -p "$OUT"
 nvcc -O3 -arch="$ARCH" -Xcompiler -fPIC -shared \
-  "$ROOT/native/cuda/xurcroh_burn_alloc.cu" -o "$OUT/xurcroh_burn_alloc.so"
-nvcc -O3 -arch="$ARCH" -Xcompiler -fPIC -shared \
-  "$ROOT/native/cuda/otp_mask_kernels.cu" -o "$OUT/otp_mask_kernels.so"
+  "$ROOT/native/cuda/xurcroh_burn_alloc.cu" \
+  "$ROOT/native/cuda/otp_mask_kernels.cu" \
+  -o "$OUT/xurcroh_burn_alloc.so"
 printf '%s\n' "$OUT"
