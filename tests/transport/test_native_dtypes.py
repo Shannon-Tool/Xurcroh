@@ -65,7 +65,7 @@ def test_compiler_emits_bf16_shards_after_fp64_transformation(
     tensors, _ = read_shard(result.stage_shards[0], key)
     assert tensors["model.layers.0.self_attn.q_proj.weight"].dtype == torch.bfloat16
     boundary, _ = read_shard(result.boundary_shard, identities.boundary_key)
-    assert boundary["basis.input"].dtype == torch.bfloat16
+    assert boundary["basis.input"].dtype == torch.float64
 
 
 def test_public_sdk_executes_bf16_remote_stage(

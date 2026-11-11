@@ -492,9 +492,9 @@ class XurcrohWeightCompiler:
             del embedding, lm_head
         boundary_tensors.update(
             {
-                "basis.input": bases[0].to(self.config.storage_dtype),
-                "basis.output": bases[-1].to(self.config.storage_dtype),
-                "basis.stages": torch.stack(bases).to(self.config.storage_dtype),
+                "basis.input": bases[0].to(self.config.compute_dtype),
+                "basis.output": bases[-1].to(self.config.compute_dtype),
+                "basis.stages": torch.stack(bases).to(self.config.compute_dtype),
                 "final_norm.epsilon": torch.tensor(
                     float(text_config.get("rms_norm_eps", 1e-6)),
                     dtype=self.config.storage_dtype,
