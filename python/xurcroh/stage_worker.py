@@ -108,6 +108,9 @@ class DenseStage:
             return self.runner.run_cached(request_id, hidden)
         return self.runner.run(hidden)
 
+    def drop_request(self, request_id: str) -> None:
+        self.runner.drop_request(request_id)
+
     def close(self) -> None:
         if not self.closed:
             for tensor in self._tensors.values():
@@ -316,7 +319,7 @@ def create_stage_app(
             event = cancelled.get(request_id)
             if event is not None:
                 event.set()
-        stage.runner.drop_request(request_id)
+        stage.drop_request(request_id)
 
     @app.delete("/v1/stages/sessions/{session_id}", status_code=204)
     def close_session(session_id: str) -> None:
