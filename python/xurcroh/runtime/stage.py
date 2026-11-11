@@ -308,11 +308,13 @@ class DenseStageEngine:
                     f"vLLM stage {index} worker {worker.name} failed: {type(error).__name__}"
                 ) from error
             result = decode_intermediate(encoded, session.receiver)
+        hidden = result["hidden_states"]
         if "residual" in result:
             residuals[index] = result["residual"]
+            hidden = hidden + result["residual"]
         else:
             residuals.pop(index, None)
-        return result["hidden_states"]
+        return hidden
 
     def _execute_stage(
         self,
