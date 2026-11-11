@@ -12,7 +12,6 @@ from typing import Any
 import torch
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-from safetensors.torch import load as load_tensors
 
 from xurcroh.errors import ShardIntegrityError
 from xurcroh.shards.memory import lock_buffer, secure_zero, unlock_buffer
@@ -156,6 +155,46 @@ def write_shard(
             contiguous.clear()
 
 
+def _load_safetensors_buffer(plaintext: bytearray) -> dict[str, torch.Tensor]:
+    if len(plaintext) < 8:
+        raise ShardIntegrityError("truncated safetensors header")
+    header_length = struct.unpack_from("<Q", plaintext, 0)[0]
+    data_start = 8 + header_length
+    if data_start > len(plaintext):
+        raise ShardIntegrityError("truncated safetensors metadata")
+    document = json.loads(plaintext[8:data_start])
+    dtypes = {
+        "F64": torch.float64,
+        "F32": torch.float32,
+        "F16": torch.float16,
+        "BF16": torch.bfloat16,
+        "I64": torch.int64,
+        "I32": torch.int32,
+        "I16": torch.int16,
+        "I8": torch.int8,
+        "U8": torch.uint8,
+        "BOOL": torch.bool,
+    }
+    tensors = {}
+    for name, descriptor in document.items():
+        if name == "__metadata__":
+            continue
+        dtype = dtypes[descriptor["dtype"]]
+        start, end = descriptor["data_offsets"]
+        if start < 0 or end < start or data_start + end > len(plaintext):
+            raise ShardIntegrityError("safetensors data offset is out of bounds")
+        element_size = torch.empty(0, dtype=dtype).element_size()
+        size = end - start
+        if size % element_size:
+            raise ShardIntegrityError("safetensors tensor byte count is misaligned")
+        shape = descriptor["shape"]
+        count = size // element_size
+        tensor = torch.frombuffer(plaintext, dtype=dtype, count=count, offset=data_start + start)
+        tensors[name] = tensor.clone().reshape(shape)
+        del tensor
+    return tensors
+
+
 def read_shard(
     path: str | Path,
     key: bytes,
@@ -165,45 +204,58 @@ def read_shard(
     shard_path = validate_shard_path(path)
     if len(key) != 32:
         raise ShardIntegrityError("shard key must contain 32 bytes")
-    payload = shard_path.read_bytes()
     try:
-        if len(payload) < PREFIX.size + 16:
-            raise ShardIntegrityError("truncated shard header")
-        magic, version, header_length, nonce = PREFIX.unpack_from(payload)
-        if magic != MAGIC or version != FORMAT_VERSION:
-            raise ShardIntegrityError("unsupported shard magic or format version")
-        if header_length > MAX_HEADER_BYTES:
-            raise ShardIntegrityError("shard header exceeds the size limit")
-        header_start = PREFIX.size
-        header_end = header_start + header_length
-        if header_end + 16 > len(payload):
-            raise ShardIntegrityError("truncated shard authentication tag")
-        header = payload[header_start:header_end]
-        ciphertext = payload[header_end:]
-        document = json.loads(header)
-        if document.get("format") != "xurcroh-shard" or document.get("version") != version:
-            raise ShardIntegrityError("inconsistent shard header")
-        metadata = document["metadata"]
-        for field, expected in (expected_metadata or {}).items():
-            if metadata.get(field) != expected:
-                raise ShardIntegrityError(f"shard metadata mismatch for {field}")
-        aad = payload[:header_end]
-        plaintext = bytearray(ChaCha20Poly1305(key).decrypt(nonce, ciphertext, aad))
-        try:
-            lock_buffer(plaintext)
-            if _digest(plaintext) != document["payload_sha256"]:
-                raise ShardIntegrityError("decrypted shard digest mismatch")
-            tensors = load_tensors(bytes(plaintext))
-        finally:
-            secure_zero(plaintext)
-            unlock_buffer(plaintext)
-        result = {
-            **metadata,
-            "format_version": version,
-            "shard_id": document["shard_id"],
-            "payload_sha256": document["payload_sha256"],
-            "ciphertext_sha256": _digest(ciphertext),
-        }
-        return tensors, result
+        with shard_path.open("rb") as stream:
+            payload = mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ)
+            try:
+                if len(payload) < PREFIX.size + 16:
+                    raise ShardIntegrityError("truncated shard header")
+                magic, version, header_length, nonce = PREFIX.unpack_from(payload)
+                if magic != MAGIC or version != FORMAT_VERSION:
+                    raise ShardIntegrityError("unsupported shard magic or format version")
+                if header_length > MAX_HEADER_BYTES:
+                    raise ShardIntegrityError("shard header exceeds the size limit")
+                header_start = PREFIX.size
+                header_end = header_start + header_length
+                if header_end + 16 > len(payload):
+                    raise ShardIntegrityError("truncated shard authentication tag")
+                header = payload[header_start:header_end]
+                view = memoryview(payload)
+                try:
+                    ciphertext = view[header_end:]
+                    document = json.loads(header)
+                    if (
+                        document.get("format") != "xurcroh-shard"
+                        or document.get("version") != version
+                    ):
+                        raise ShardIntegrityError("inconsistent shard header")
+                    metadata = document["metadata"]
+                    for field, expected in (expected_metadata or {}).items():
+                        if metadata.get(field) != expected:
+                            raise ShardIntegrityError(f"shard metadata mismatch for {field}")
+                    plaintext = bytearray(
+                        ChaCha20Poly1305(key).decrypt(nonce, ciphertext, view[:header_end])
+                    )
+                    try:
+                        lock_buffer(plaintext)
+                        if _digest(plaintext) != document["payload_sha256"]:
+                            raise ShardIntegrityError("decrypted shard digest mismatch")
+                        tensors = _load_safetensors_buffer(plaintext)
+                    finally:
+                        secure_zero(plaintext)
+                        unlock_buffer(plaintext)
+                    result = {
+                        **metadata,
+                        "format_version": version,
+                        "shard_id": document["shard_id"],
+                        "payload_sha256": document["payload_sha256"],
+                        "ciphertext_sha256": _digest(ciphertext),
+                    }
+                    return tensors, result
+                finally:
+                    ciphertext.release()
+                    view.release()
+            finally:
+                payload.close()
     except (InvalidTag, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise ShardIntegrityError(f"cannot authenticate or parse shard {shard_path}") from error
