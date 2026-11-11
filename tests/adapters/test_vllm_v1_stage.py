@@ -154,6 +154,7 @@ def test_vllm_stage_lifecycle_and_failures(monkeypatch: pytest.MonkeyPatch) -> N
         def __init__(self):
             self.req_id_to_index = {}
             self.req_prompt_embeds = {}
+            self.is_token_ids = torch.ones(1, 3, dtype=torch.bool)
 
         def remove_request(self, request_id):
             removed.append(request_id)
@@ -565,3 +566,19 @@ def test_stage_transition_also_transforms_residual_basis() -> None:
         )
     )
     assert engine._residuals["residual-transition"][0].reshape(-1).tolist() == [6, 6, 6, 6]
+
+
+def test_vllm_decode_uses_prompt_embedding_not_placeholder_token() -> None:
+    from xurcroh.adapters.vllm_v1_stage import VllmStageRunner
+
+    batch = types.SimpleNamespace(
+        req_id_to_index={"request": 0},
+        req_prompt_embeds={0: torch.ones(9, 4)},
+        is_token_ids=torch.ones(1, 10, dtype=torch.bool),
+    )
+    cached = types.SimpleNamespace(prompt_embeds=torch.ones(9, 4))
+    model = types.SimpleNamespace(input_batch=batch, requests={"request": cached})
+    runner = VllmStageRunner(model)
+    runner._append_decode_embedding("request", torch.full((1, 4), 2.0), 9)
+    assert not batch.is_token_ids[0, 9]
+    assert cached.prompt_embeds.shape == (10, 4)

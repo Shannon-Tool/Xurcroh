@@ -130,6 +130,7 @@ class VllmStageRunner:
         request.prompt_embeds = updated
         if index is not None:
             batch.req_prompt_embeds[index] = updated
+            batch.is_token_ids[index, position] = False
 
     def execute(
         self,
