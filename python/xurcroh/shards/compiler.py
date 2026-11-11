@@ -394,14 +394,27 @@ class XurcrohWeightCompiler:
                     for name, tensor in tensors.items()
                     if name.startswith(prefix + ".")
                 }
-                compiled.update(
-                    self._compile_layer(
-                        layer_tensors,
-                        prefix,
-                        basis,
-                        self.config.seed + index * 97 + stage_index,
-                    )
+                transformed = self._compile_layer(
+                    layer_tensors,
+                    prefix,
+                    basis,
+                    self.config.seed + index * 97 + stage_index,
                 )
+                converted = {
+                    name: tensor.to(self.config.storage_dtype)
+                    if tensor.is_floating_point()
+                    else tensor
+                    for name, tensor in transformed.items()
+                }
+                if self.config.storage_dtype != self.config.compute_dtype:
+                    for tensor in transformed.values():
+                        tensor.zero_()
+                transformed.clear()
+                compiled.update(converted)
+                for tensor in layer_tensors.values():
+                    tensor.zero_()
+                layer_tensors.clear()
+                release_host_memory()
             metadata = {
                 "role": "worker-stage",
                 "stage_index": stage_index,
