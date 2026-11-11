@@ -96,6 +96,7 @@ class DenseStage:
             query_heads=int(metadata.get("query_heads", 4)),
             kv_heads=int(metadata.get("kv_heads", 2)),
             interleaved_rope=bool(metadata.get("interleaved_rope", False)),
+            rope_theta=float(metadata.get("rope_theta", 10_000)),
         )
         self.sessions = StageSessionStore(private_key, stage_index)
         self.stage_index = stage_index

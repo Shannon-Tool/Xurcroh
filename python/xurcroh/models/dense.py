@@ -68,6 +68,7 @@ def execute_dense_layer(
     activation: Literal["silu", "gelu"] = "silu",
     rotary: bool = True,
     interleaved_rope: bool = False,
+    rope_base: float = 10_000,
 ) -> torch.Tensor:
     attention_input = unit_rms_norm(hidden, weights.epsilon) * weights.input_gain
     attention = reference_attention(
@@ -78,6 +79,7 @@ def execute_dense_layer(
         rotary=rotary,
         interleaved=interleaved_rope,
         norm_epsilon=weights.epsilon,
+        rope_base=rope_base,
     )
     residual = hidden + attention
     ffn_input = unit_rms_norm(residual, weights.epsilon) * weights.post_attention_gain
@@ -94,6 +96,7 @@ def execute_dense_layer_cached(
     activation: Literal["silu", "gelu"] = "silu",
     rotary: bool = True,
     interleaved_rope: bool = False,
+    rope_base: float = 10_000,
 ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
     attention_input = unit_rms_norm(hidden, weights.epsilon) * weights.input_gain
     attention, cache = reference_attention_cached(
@@ -105,6 +108,7 @@ def execute_dense_layer_cached(
         rotary=rotary,
         interleaved=interleaved_rope,
         norm_epsilon=weights.epsilon,
+        rope_base=rope_base,
     )
     residual = hidden + attention
     ffn_input = unit_rms_norm(residual, weights.epsilon) * weights.post_attention_gain
@@ -119,6 +123,7 @@ class DenseStageRunner:
         query_heads: int = 4,
         kv_heads: int = 2,
         interleaved_rope: bool = False,
+        rope_theta: float = 10_000,
     ) -> None:
         if not stages:
             raise ValueError("dense pipeline requires at least one stage")
@@ -126,6 +131,7 @@ class DenseStageRunner:
         self.query_heads = query_heads
         self.kv_heads = kv_heads
         self.interleaved_rope = interleaved_rope
+        self.rope_theta = rope_theta
         self._caches: dict[str, list[tuple[torch.Tensor, torch.Tensor]]] = {}
         self._cache_lock = threading.Lock()
 
@@ -160,6 +166,7 @@ class DenseStageRunner:
                             kv_heads=self.kv_heads,
                             past=past,
                             interleaved_rope=self.interleaved_rope,
+                            rope_base=self.rope_theta,
                         )
                     else:
                         hidden, cache = execute_dense_layer_cached(
@@ -169,6 +176,7 @@ class DenseStageRunner:
                             kv_heads=self.kv_heads,
                             past=past,
                             interleaved_rope=self.interleaved_rope,
+                            rope_base=self.rope_theta,
                         )
                     current.append(cache)
                     layer_index += 1
@@ -185,6 +193,7 @@ class DenseStageRunner:
                         query_heads=self.query_heads,
                         kv_heads=self.kv_heads,
                         interleaved_rope=self.interleaved_rope,
+                        rope_base=self.rope_theta,
                     )
                 else:
                     hidden = execute_dense_layer(
@@ -193,5 +202,6 @@ class DenseStageRunner:
                         query_heads=self.query_heads,
                         kv_heads=self.kv_heads,
                         interleaved_rope=self.interleaved_rope,
+                        rope_base=self.rope_theta,
                     )
         return hidden

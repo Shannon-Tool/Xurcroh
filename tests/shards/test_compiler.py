@@ -43,6 +43,9 @@ def test_compiler_partitions_dense_checkpoint_and_separates_boundary(
         )
         tensors, metadata = read_shard(shard_path, key)
         assert metadata["stage_index"] == stage_index
+        assert metadata["rope_theta"] == original_config.get(
+            "rope_theta", original_config.get("rope_parameters", {}).get("rope_theta", 10_000)
+        )
         assert not any("embed_tokens" in name or "lm_head" in name for name in tensors)
         seen_layers.extend(metadata["layer_indices"])
         assert not any("basis" in name or "transition" in name for name in tensors)
@@ -63,3 +66,56 @@ def test_compiler_rejects_non_divisible_stage_count(tiny_llama_path: Path, tmp_p
             recipients=(),
             seed=1,
         )
+
+
+def test_qwen_compiler_preserves_original_decoder_outputs(
+    tiny_llama_path: Path, tmp_path: Path
+) -> None:
+    import torch
+    from transformers import AutoTokenizer, Qwen3Config, Qwen3ForCausalLM
+
+    from xurcroh.client.boundary import ClientBoundary
+    from xurcroh.stage_worker import DenseStage
+
+    checkpoint = tmp_path / "qwen"
+    config = Qwen3Config(
+        vocab_size=64,
+        hidden_size=16,
+        head_dim=4,
+        intermediate_size=32,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        max_position_embeddings=64,
+        rope_theta=1_000_000,
+        tie_word_embeddings=False,
+        attention_bias=False,
+    )
+    original = Qwen3ForCausalLM(config).double().eval()
+    original.save_pretrained(checkpoint, safe_serialization=True)
+    AutoTokenizer.from_pretrained(tiny_llama_path).save_pretrained(checkpoint)
+    identities = StageIdentities.create(1)
+    compiled = identities.compile(checkpoint, tmp_path / "compiled-qwen", seed=487)
+    boundary = ClientBoundary(compiled.boundary_shard, identities.boundary_key)
+    stage = DenseStage(compiled.manifest_path, 0, identities.private_keys[0])
+    token_ids = torch.tensor([[2, 3, 2]])
+    hidden = original.model.embed_tokens(token_ids)
+    positions = torch.arange(token_ids.shape[1]).unsqueeze(0)
+    mask = torch.full(
+        (1, 1, token_ids.shape[1], token_ids.shape[1]),
+        torch.finfo(torch.float64).min,
+        dtype=torch.float64,
+    ).triu(1)
+    with torch.inference_mode():
+        for layer in original.model.layers:
+            hidden = layer(
+                hidden,
+                attention_mask=mask,
+                position_ids=positions,
+                position_embeddings=original.model.rotary_emb(hidden, positions),
+            )
+        transformed = stage.execute(boundary.embed(token_ids)[0])
+        actual = boundary.recover(transformed)
+    torch.testing.assert_close(actual, hidden[0], atol=1e-7, rtol=1e-7)
+    stage.close()
+    boundary.close()

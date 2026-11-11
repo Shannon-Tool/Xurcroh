@@ -182,6 +182,7 @@ def execute_moe_layer(
     activation: Literal["silu", "gelu"] = "silu",
     rotary: bool = True,
     interleaved_rope: bool = False,
+    rope_base: float = 10_000,
 ) -> torch.Tensor:
     attention_input = unit_rms_norm(hidden, weights.epsilon) * weights.input_gain
     attention = reference_attention(
@@ -192,6 +193,7 @@ def execute_moe_layer(
         rotary=rotary,
         interleaved=interleaved_rope,
         norm_epsilon=weights.epsilon,
+        rope_base=rope_base,
     )
     residual = hidden + attention
     ffn_input = unit_rms_norm(residual, weights.epsilon) * weights.post_attention_gain
@@ -217,6 +219,7 @@ def execute_moe_layer_cached(
     activation: Literal["silu", "gelu"] = "silu",
     rotary: bool = True,
     interleaved_rope: bool = False,
+    rope_base: float = 10_000,
 ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
     attention_input = unit_rms_norm(hidden, weights.epsilon) * weights.input_gain
     attention, cache = reference_attention_cached(
@@ -228,6 +231,7 @@ def execute_moe_layer_cached(
         rotary=rotary,
         interleaved=interleaved_rope,
         norm_epsilon=weights.epsilon,
+        rope_base=rope_base,
     )
     residual = hidden + attention
     ffn_input = unit_rms_norm(residual, weights.epsilon) * weights.post_attention_gain
