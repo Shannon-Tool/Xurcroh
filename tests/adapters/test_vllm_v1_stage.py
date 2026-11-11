@@ -289,6 +289,8 @@ def test_vllm_stage_constructs_explicit_worker_configs(
 
     class Config:
         def __init__(self, **kwargs):
+            self.max_model_len = 64
+            self.is_encoder_decoder = False
             self.__dict__.update(kwargs)
 
     config_module = types.ModuleType("vllm.config")
@@ -340,6 +342,8 @@ def test_vllm_stage_constructs_explicit_worker_configs(
     assert config.parallel_config.pipeline_parallel_size == 1
     assert config.parallel_config.nnodes == 1
     assert config.scheduler_config.async_scheduling is False
+    assert config.scheduler_config.max_model_len == 64
+    assert config.scheduler_config.is_encoder_decoder is False
     assert config.load_config.load_format == "xurcroh_sharded"
     assert config.load_config.model_loader_extra_config["stage_index"] == 0
     stage.close()
