@@ -5,7 +5,12 @@ if ! command -v nvcc >/dev/null 2>&1; then
   echo "CUDA compiler nvcc is required to build Xurcroh native memory controls" >&2
   exit 2
 fi
-ARCH="${CUDA_ARCH:-sm_90}"
+if [[ -z "${CUDA_ARCH:-}" ]]; then
+  CAPABILITY="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)"
+  ARCH="sm_${CAPABILITY/./}"
+else
+  ARCH="$CUDA_ARCH"
+fi
 OUT="$ROOT/native/build"
 mkdir -p "$OUT"
 nvcc -O3 -arch="$ARCH" -Xcompiler -fPIC -shared \
