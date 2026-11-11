@@ -2,6 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 PYTHON="${PYTHON:-python3.12}"
 VENV="${XURCROH_CUDA_VENV:-$ROOT/.venv-cuda}"
 command -v nvidia-smi >/dev/null || { echo "nvidia-smi is required" >&2; exit 2; }
