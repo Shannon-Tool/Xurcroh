@@ -126,7 +126,7 @@ def start(index: int, worker: dict[str, object], remote_root: str) -> None:
         f"--stage-private-key {remote_root}/stage.identity --engine vllm "
         f"--checkpoint {remote_root}/worker-checkpoint --host 0.0.0.0 --port 9444 "
         f"--tls-cert {remote_root}/tls/{name}.crt --tls-key {remote_root}/tls/{name}.key "
-        f">{remote_root}/stage.log 2>&1 & echo $! > {remote_root}/stage.pid"
+        f"</dev/null >{remote_root}/stage.log 2>&1 & echo $! > {remote_root}/stage.pid"
     )
     ssh(worker, command)
 

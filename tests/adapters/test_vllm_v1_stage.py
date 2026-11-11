@@ -316,9 +316,21 @@ def test_vllm_stage_constructs_explicit_worker_configs(
 ) -> None:
     from shards.identities import StageIdentities
     from xurcroh.adapters.vllm_v1_stage import create_vllm_stage
+    from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
 
     identities = StageIdentities.create(1)
-    compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=469)
+    compiled = XurcrohWeightCompiler(
+        CompilationConfig(
+            checkpoint=tiny_llama_path,
+            output_dir=tmp_path / "compiled",
+            stage_count=1,
+            boundary_key=identities.boundary_key,
+            recipients=identities.recipients,
+            seed=469,
+            compute_dtype=torch.float32,
+            shard_dtype=torch.bfloat16,
+        )
+    ).compile()
 
     class Config:
         set_current_vllm_config = staticmethod(lambda value: contextlib.nullcontext())
@@ -375,6 +387,7 @@ def test_vllm_stage_constructs_explicit_worker_configs(
         checkpoint=tiny_llama_path,
     )
     config = created[0].config
+    assert config.model_config.dtype == "bfloat16"
     assert config.model_config.enable_prompt_embeds is True
     assert config.model_config.enforce_eager is True
     assert config.cache_config.enable_prefix_caching is False

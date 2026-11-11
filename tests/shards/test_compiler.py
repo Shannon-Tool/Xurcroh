@@ -44,6 +44,7 @@ def test_compiler_partitions_dense_checkpoint_and_separates_boundary(
         )
         tensors, metadata = read_shard(shard_path, key)
         assert metadata["stage_index"] == stage_index
+        assert metadata["storage_dtype"] == "f64"
         assert metadata["rope_theta"] == original_config.get(
             "rope_theta", original_config.get("rope_parameters", {}).get("rope_theta", 10_000)
         )
