@@ -155,6 +155,7 @@ def sanitize_instance(document: dict[str, Any]) -> dict[str, Any]:
         "machine_id",
         "ssh_host",
         "ssh_port",
+        "ports",
         "public_ipaddr",
         "gpu_name",
         "gpu_totalram",
@@ -397,6 +398,17 @@ class VastClient:
         return report
 
 
+def mapped_tls_port(instance: dict[str, Any]) -> int:
+    ports = instance.get("ports")
+    bindings = ports.get("9444/tcp") if isinstance(ports, dict) else None
+    if isinstance(bindings, list):
+        for binding in bindings:
+            value = binding.get("HostPort")
+            if value is not None and 0 < int(value) <= 65535:
+                return int(value)
+    raise ProviderError(f"instance {instance.get('id')} has no external TLS port mapping")
+
+
 def write_deployment_config(
     store: StateStore,
     instances: list[dict[str, Any]],
@@ -418,6 +430,7 @@ def write_deployment_config(
                 "host": instance["ssh_host"],
                 "ssh_user": "root",
                 "ssh_port": instance["ssh_port"],
+                "tls_port": mapped_tls_port(instance),
                 "public_host": instance.get("public_ipaddr") or instance["ssh_host"],
                 "rendezvous_host": instances[0].get("public_ipaddr") or instances[0]["ssh_host"],
                 "provider_instance_id": instance["id"],
