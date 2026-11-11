@@ -38,7 +38,7 @@ def test_ssh_options_pin_identity_and_known_hosts(tmp_path: Path) -> None:
     ]
 
 
-def test_start_detaches_remote_worker_stdin(monkeypatch) -> None:
+def test_start_detaches_remote_worker_stdin(monkeypatch, tmp_path: Path) -> None:
     module = load_deploy_module()
     commands = []
     monkeypatch.setattr(module, "ssh", lambda worker, command: commands.append(command))
@@ -46,6 +46,6 @@ def test_start_detaches_remote_worker_stdin(monkeypatch) -> None:
         "name": "worker-a",
         "rendezvous_host": "192.0.2.1",
     }
-    module.start(0, worker, "/tmp/xurcroh-test")
+    module.start(0, worker, str(tmp_path / "worker"))
     assert len(commands) == 1
     assert "</dev/null" in commands[0]
