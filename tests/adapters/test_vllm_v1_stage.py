@@ -177,6 +177,7 @@ def test_vllm_stage_lifecycle_and_failures(monkeypatch: pytest.MonkeyPatch) -> N
     second = stage.execute(first, "request")
     assert stage._positions["request"] == 3
     assert calls[1][0].scheduled_cached_reqs.num_computed_tokens == [2]
+    assert calls[1][0].scheduled_cached_reqs.new_token_ids == [[0]]
     assert hidden_from_intermediate(second).shape == (1, 4)
     stage.drop_request("request")
     assert "request" in removed
