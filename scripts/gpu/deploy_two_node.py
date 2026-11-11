@@ -31,7 +31,9 @@ def ssh(worker: dict[str, object], command: str, *, input_data: bytes | None = N
     )
 
 
-def scp(worker: dict[str, object], sources: list[Path], remote: str, *, recursive: bool = False) -> None:
+def scp(
+    worker: dict[str, object], sources: list[Path], remote: str, *, recursive: bool = False
+) -> None:
     scp_options = ["-P", str(worker.get("ssh_port", 22))]
     if worker.get("ssh_key"):
         scp_options.extend(["-i", str(Path(str(worker["ssh_key"])).expanduser())])
@@ -83,13 +85,16 @@ def prepare(index: int, worker: dict[str, object], config: dict[str, object], re
 def start(index: int, worker: dict[str, object], remote_root: str) -> None:
     name = str(worker["name"])
     environment = {
-        "MASTER_ADDR": str(worker["rendezvous_host"]),
+        "MASTER_ADDR": "127.0.0.1",
         "MASTER_PORT": "29615",
-        "WORLD_SIZE": "2",
-        "RANK": str(index),
+        "WORLD_SIZE": "1",
+        "RANK": "0",
         "LOCAL_RANK": "0",
         "HF_HUB_OFFLINE": "1",
         "TRANSFORMERS_OFFLINE": "1",
+        "LD_LIBRARY_PATH": (
+            "/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/cuda/lib64"
+        ),
     }
     exports = " ".join(f"{key}={shlex.quote(value)}" for key, value in environment.items())
     command = (
@@ -109,8 +114,12 @@ def deploy(config_path: Path) -> Path:
     workers = config["workers"]
     if len(workers) != 2 or len({worker["name"] for worker in workers}) != 2:
         raise ValueError("exactly two distinct workers are required")
-    if subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True).stdout:
-        raise RuntimeError("commit all changes before deployment; git archive must match the tested SHA")
+    if subprocess.run(
+        ["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True
+    ).stdout:
+        raise RuntimeError(
+            "commit all changes before deployment; git archive must match the tested SHA"
+        )
     revision = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True, text=True
     ).stdout.strip()
@@ -120,7 +129,13 @@ def deploy(config_path: Path) -> Path:
         f"--service={worker['name']}={worker['public_host']},{worker['name']}" for worker in workers
     ]
     subprocess.run(
-        ["python3", str(ROOT / "scripts/gpu/generate_tls.py"), "--output", str(output / "tls"), *services],
+        [
+            "python3",
+            str(ROOT / "scripts/gpu/generate_tls.py"),
+            "--output",
+            str(output / "tls"),
+            *services,
+        ],
         check=True,
     )
     try:
@@ -157,7 +172,7 @@ def deploy(config_path: Path) -> Path:
         "workers": [
             {
                 "name": worker["name"],
-                "endpoint": f"https://{worker['public_host']}:9444",
+                "endpoint": f"https://{worker['public_host']}:{worker['tls_port']}",
                 "remote_root": root,
             }
             for worker, root in zip(workers, roots)
