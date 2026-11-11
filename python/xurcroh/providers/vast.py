@@ -267,6 +267,8 @@ class VastClient:
     def instance(self, instance_id: int) -> dict[str, Any]:
         document = self._request("GET", f"/api/v0/instances/{instance_id}/")
         values = document.get("instances")
+        if values is None:
+            return {"id": instance_id, "actual_status": None}
         if not isinstance(values, dict):
             raise ProviderError("Vast instance response is malformed")
         return sanitize_instance(values)
@@ -278,7 +280,12 @@ class VastClient:
             parameters: dict[str, Any] = {"limit": 25}
             if token is not None:
                 parameters["after_token"] = token
-            document = self._request("GET", "/api/v0/instances/", params=parameters)
+            try:
+                document = self._request("GET", "/api/v0/instances/", params=parameters)
+            except ProviderError as error:
+                if "HTTP 410" in str(error):
+                    return []
+                raise
             results.extend(
                 sanitize_instance(instance) for instance in document.get("instances", [])
             )

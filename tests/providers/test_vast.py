@@ -273,3 +273,13 @@ def test_watchdog_destroys_after_budget_threshold(
     monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
     module.watchdog(tmp_path / "state.json", 3600, BudgetPolicy())
     assert destroyed == [123]
+
+
+def test_null_instance_is_accepted_while_provisioning() -> None:
+    client = client_for(lambda request: httpx.Response(200, json={"instances": None}))
+    assert client.instance(123) == {"id": 123, "actual_status": None}
+
+
+def test_deleted_instance_collection_is_empty() -> None:
+    client = client_for(lambda request: httpx.Response(410))
+    assert client.instances() == []
