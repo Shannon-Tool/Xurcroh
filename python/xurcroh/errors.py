@@ -63,3 +63,15 @@ class ShardIntegrityError(ShardError):
 
 class CompatibilityError(XurcrohError):
     pass
+
+
+class ProviderError(XurcrohError):
+    pass
+
+
+class BudgetExceededError(ProviderError):
+    pass
+
+
+class TeardownError(ProviderError):
+    pass
