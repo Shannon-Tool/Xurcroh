@@ -502,3 +502,66 @@ def test_stage_worker_cancel_uses_stage_lifecycle(tmp_path, monkeypatch) -> None
         response = client.delete("/v1/stages/request")
     assert response.status_code == 204
     assert stage._positions == {}
+
+
+def test_stage_transition_also_transforms_residual_basis() -> None:
+    import threading
+
+    from xurcroh.config import WorkerConfig
+    from xurcroh.requests import CompletionRequest
+    from xurcroh.runtime.stage import DenseStageEngine
+
+    class Tokenizer:
+        eos_token_id = 99
+
+        def __call__(self, prompt, return_tensors):
+            return {"input_ids": torch.tensor([[2, 3]])}
+
+        def decode(self, token_ids, skip_special_tokens):
+            return "x"
+
+    class Boundary:
+        def embed(self, token_ids):
+            return torch.ones(1, 1, 4)
+
+        def transition(self, hidden, stage_index):
+            assert stage_index == 0
+            return hidden * 2
+
+        def sample(self, hidden, request):
+            return torch.tensor([1])
+
+    engine = DenseStageEngine.__new__(DenseStageEngine)
+    engine._closed = False
+    engine.workers = [
+        WorkerConfig(name="a", endpoint="https://a.invalid"),
+        WorkerConfig(name="b", endpoint="https://b.invalid"),
+    ]
+    engine._tokenizer = Tokenizer()
+    engine.position_limit = 100
+    engine.vocabulary_size = 100
+    engine.boundary = Boundary()
+    engine._residuals = {}
+
+    def execute(index, hidden, request_id, session, timeout, circuit_id=None):
+        engine._residuals.setdefault(request_id, {})[index] = torch.full_like(hidden, 3)
+        return hidden
+
+    engine._execute_stage = execute
+    request = CompletionRequest.validated(
+        model="tiny",
+        messages=[{"role": "user", "content": "hello"}],
+        max_tokens=1,
+        request_id="residual-transition",
+    )
+    list(
+        engine._generate(
+            request,
+            cancelled=threading.Event(),
+            timeout=60,
+            circuit_id=None,
+            request_id="residual-transition",
+            sessions=[None, None],
+        )
+    )
+    assert engine._residuals["residual-transition"][0].reshape(-1).tolist() == [6, 6, 6, 6]

@@ -496,6 +496,10 @@ class DenseStageEngine:
                 )
                 if index + 1 < len(self.workers):
                     hidden = self.boundary.transition(hidden, index)
+                    if index in self._residuals.get(request_id, {}):
+                        self._residuals[request_id][index] = self.boundary.transition(
+                            self._residuals[request_id][index], index
+                        )
                 check_request_health(cancelled, started, timeout)
             next_token = self.boundary.sample(hidden[-1:], request)
             token_id = int(next_token.item())
