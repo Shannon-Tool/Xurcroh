@@ -13,7 +13,7 @@ fi
 "$PYTHON" -m venv "$VENV"
 "$VENV/bin/pip" install --no-cache-dir -r requirements-cuda.lock maturin==1.16.0
 "$VENV/bin/pip" install --no-cache-dir --no-deps -e .
-"$VENV/bin/maturin" develop --release --manifest-path crates/transport/Cargo.toml --features python
+VIRTUAL_ENV="$VENV" "$VENV/bin/maturin" develop --release --manifest-path crates/transport/Cargo.toml --features python
 "$VENV/bin/python" - <<'PY'
 import importlib.metadata
 import json

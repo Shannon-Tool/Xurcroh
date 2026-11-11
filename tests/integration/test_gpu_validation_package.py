@@ -18,6 +18,8 @@ def test_cuda_package_is_pinned_and_isolated() -> None:
     assert "torch==2.9.1" in lock
     assert "transformers==4.57.6" in lock
     assert "vllm==0.15.0" in lock
+    bootstrap = (ROOT / "scripts/gpu/bootstrap.sh").read_text()
+    assert 'VIRTUAL_ENV="$VENV" "$VENV/bin/maturin" develop' in bootstrap
     compose = yaml.safe_load((ROOT / "deploy/cuda/compose.yaml").read_text())
     for index, name in enumerate(("worker-a", "worker-b")):
         worker = compose["services"][name]
