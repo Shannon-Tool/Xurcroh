@@ -308,12 +308,22 @@ def create_vllm_stage(
     from xurcroh.runtime.stage_sessions import StageSessionStore
 
     ensure_xurcroh_loader()
+    storage_dtype = document["stages"][stage_index].get("storage_dtype", "bf16")
+    dtype = {
+        "f64": "float32",
+        "f32": "float32",
+        "bf16": "bfloat16",
+        "f16": "float16",
+    }.get(storage_dtype)
+    if dtype is None:
+        raise CompatibilityError(f"unsupported vLLM shard dtype: {storage_dtype}")
     identity = private_key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
     model_config = ModelConfig(
         model=str(checkpoint),
         tokenizer=str(checkpoint),
         enforce_eager=True,
         enable_prompt_embeds=True,
+        dtype=dtype,
     )
     config = VllmConfig(
         model_config=model_config,

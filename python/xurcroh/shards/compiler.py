@@ -425,6 +425,12 @@ class XurcrohWeightCompiler:
                 "stage_count": self.config.stage_count,
                 "layer_indices": indices,
                 "model_type": self.reader.config.get("model_type", "unknown"),
+                "storage_dtype": {
+                    torch.float64: "f64",
+                    torch.float32: "f32",
+                    torch.float16: "f16",
+                    torch.bfloat16: "bf16",
+                }[self.config.storage_dtype],
                 "interleaved_rope": text_config.get("rope_style") == "interleaved",
                 "rope_theta": float(
                     text_config.get(
