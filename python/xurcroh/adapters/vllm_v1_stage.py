@@ -191,6 +191,9 @@ class VllmStageRunner:
         condense = getattr(batch, "condense", None)
         if callable(condense):
             condense()
+        refresh = getattr(batch, "refresh_metadata", None)
+        if callable(refresh):
+            refresh()
 
 
 class VllmStage:

@@ -426,3 +426,66 @@ def test_vllm_prefill_clones_client_embedding(monkeypatch: pytest.MonkeyPatch) -
     request = _new_request("request", hidden, [0])
     hidden.zero_()
     assert request.prompt_embeds.tolist() == [[1.0] * 4, [1.0] * 4]
+
+
+def test_vllm_request_drop_refreshes_persistent_batch_metadata() -> None:
+    events = []
+
+    class Batch:
+        def __init__(self):
+            self.req_id_to_index = {"request": 0}
+            self.req_prompt_embeds = {}
+
+        def remove_request(self, request_id):
+            events.append("remove")
+
+        def condense(self):
+            events.append("condense")
+
+        def refresh_metadata(self):
+            events.append("refresh")
+
+    model = types.SimpleNamespace(input_batch=Batch(), requests={})
+    runner = VllmStageRunner(model)
+    runner.drop_request("request")
+    assert events == ["remove", "condense", "refresh"]
+
+
+def test_stage_worker_cancel_uses_stage_lifecycle(tmp_path, monkeypatch) -> None:
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    from fastapi.testclient import TestClient
+
+    from xurcroh.stage_worker import create_stage_app
+
+    class Runner:
+        def drop_request(self, request_id):
+            raise AssertionError("worker bypassed stage lifecycle")
+
+    class Stage:
+        def __init__(self):
+            self.runner = Runner()
+            self.sessions = types.SimpleNamespace(remove=lambda session_id: None)
+            self.closed = False
+            self._positions = {"request": 9}
+
+        def drop_request(self, request_id):
+            self._positions.pop(request_id, None)
+
+        def close(self):
+            self.closed = True
+
+    stage = Stage()
+    monkeypatch.setattr(
+        "xurcroh.adapters.vllm_v1_stage.create_vllm_stage", lambda *args, **kwargs: stage
+    )
+    app = create_stage_app(
+        tmp_path / "manifest.json",
+        stage_index=0,
+        private_key=X25519PrivateKey.generate(),
+        engine="vllm",
+        checkpoint=tmp_path,
+    )
+    with TestClient(app) as client:
+        response = client.delete("/v1/stages/request")
+    assert response.status_code == 204
+    assert stage._positions == {}
