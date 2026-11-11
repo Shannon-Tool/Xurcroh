@@ -4,6 +4,8 @@ import argparse
 import os
 from pathlib import Path
 
+import torch
+
 from Xurcroh import Xurcroh
 from xurcroh.errors import ConfigurationError
 from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
@@ -26,7 +28,15 @@ def main() -> None:
     compile_parser.add_argument("--boundary-key-env", default="XURCROH_CLIENT_BOUNDARY_KEY")
     compile_parser.add_argument("--stage-recipient", action="append", required=True)
     compile_parser.add_argument("--seed", type=int, default=0)
+    compile_parser.add_argument("--compute-dtype", choices=["f64", "f32"], default="f64")
+    compile_parser.add_argument("--shard-dtype", choices=["f64", "f32", "f16", "bf16"])
     args = parser.parse_args()
+    dtypes = {
+        "f64": torch.float64,
+        "f32": torch.float32,
+        "f16": torch.float16,
+        "bf16": torch.bfloat16,
+    }
     if args.command == "chat":
         with Xurcroh(
             cluster={"endpoint": "local://cpu"},
@@ -68,6 +78,8 @@ def main() -> None:
                 boundary_key=boundary_key,
                 recipients=tuple(sorted(recipients, key=lambda recipient: recipient.stage_index)),
                 seed=args.seed,
+                compute_dtype=dtypes[args.compute_dtype],
+                shard_dtype=dtypes[args.shard_dtype] if args.shard_dtype else None,
             )
         ).compile()
         print(result.manifest_path)

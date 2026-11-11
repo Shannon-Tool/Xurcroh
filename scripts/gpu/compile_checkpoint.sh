@@ -53,6 +53,8 @@ export XURCROH_CLIENT_BOUNDARY_KEY="$BOUNDARY_KEY"
 unset BOUNDARY_KEY
 "$PYTHON" -m xurcroh.cli compile \
   --checkpoint "$CHECKPOINT" --output "$OUTPUT" --stages "$STAGES" \
+  --compute-dtype "${XURCROH_COMPUTE_DTYPE:-f32}" \
+  --shard-dtype "${XURCROH_SHARD_DTYPE:-bf16}" \
   "${RECIPIENT_ARGS[@]}"
 "$PYTHON" - "$CHECKPOINT" "$OUTPUT/worker-checkpoint" <<'PY'
 import shutil

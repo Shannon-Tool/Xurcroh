@@ -188,6 +188,8 @@ class XurcrohWeightCompiler:
             seed=seed,
             interleaved=text_config.get("rope_style") == "interleaved",
         )
+        q_transform = q_transform.to(dtype)
+        k_transform = k_transform.to(dtype)
         generator = torch.Generator().manual_seed(seed + 1)
         value_blocks = []
         for _ in range(kv_heads):
@@ -361,7 +363,6 @@ class XurcrohWeightCompiler:
         key_envelopes: list[Path] = []
         stage_keys: list[bytes] = []
         manifest_stages = []
-        compiled_stages = []
         for stage_index, indices in enumerate(partitions):
             recipient = self.config.recipients[stage_index]
             basis = bases[stage_index]
@@ -421,9 +422,12 @@ class XurcrohWeightCompiler:
                     "recipient_public": recipient.public_key.hex(),
                 }
             )
-            compiled_stages.append(compiled)
+            for tensor in compiled.values():
+                tensor.zero_()
+            compiled.clear()
             for tensor in tensors.values():
                 tensor.zero_()
+            tensors.clear()
 
         boundary_names = [embedding_name]
         if head_name is not None:
@@ -467,9 +471,14 @@ class XurcrohWeightCompiler:
                 "checkpoint_fingerprint": self.reader.fingerprint,
             },
         )
-        for compiled in compiled_stages:
-            for tensor in compiled.values():
-                tensor.zero_()
+        for tensor in boundary_tensors.values():
+            tensor.zero_()
+        boundary_tensors.clear()
+        for tensor in boundary.values():
+            tensor.zero_()
+        boundary.clear()
+        for basis in bases:
+            basis.zero_()
         manifest = {
             "format": "xurcroh-manifest",
             "version": 2,
