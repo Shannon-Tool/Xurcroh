@@ -24,6 +24,8 @@ class AttentionWeights:
     k: torch.Tensor
     v: torch.Tensor
     o: torch.Tensor
+    q_norm: torch.Tensor | None = None
+    k_norm: torch.Tensor | None = None
 
 
 def _rope_head(
@@ -48,6 +50,8 @@ def rope_commuting_pair(
     minimum_scale: float = 0.6,
     maximum_scale: float = 1.6,
     interleaved: bool = True,
+    quarter_turns: bool = False,
+    shared_heads: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     if query_heads % kv_heads or head_dimension % 2:
         raise ValueError("GQA heads must divide evenly and RoPE head dimension must be even")
@@ -57,8 +61,17 @@ def rope_commuting_pair(
     q_blocks: list[torch.Tensor] = []
     k_blocks: list[torch.Tensor] = []
     for _ in range(kv_heads):
-        angles = torch.rand(head_dimension // 2, generator=generator, dtype=torch.float64)
-        angles = angles * (2 * torch.pi)
+        if shared_heads and q_blocks and k_blocks:
+            k_blocks.append(k_blocks[0])
+            q_blocks.extend(q_blocks[0] for _ in range(query_heads // kv_heads))
+            continue
+        if quarter_turns:
+            angles = torch.randint(
+                0, 4, (head_dimension // 2,), generator=generator, dtype=torch.int64
+            ).to(torch.float64) * (torch.pi / 2)
+        else:
+            angles = torch.rand(head_dimension // 2, generator=generator, dtype=torch.float64)
+            angles = angles * (2 * torch.pi)
         scales = torch.empty(head_dimension // 2, dtype=torch.float64)
         scales.uniform_(minimum_scale, maximum_scale, generator=generator)
         q_head = _rope_head(head_dimension, angles, scales)
@@ -134,12 +147,17 @@ def reference_attention_cached(
     position_offset: int | None = None,
     rotary: bool = True,
     interleaved: bool = True,
+    norm_epsilon: float = 1e-6,
 ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
     tokens = hidden.shape[0]
     head_dimension = weights.q.shape[0] // query_heads
     q = (hidden @ weights.q.T).reshape(tokens, query_heads, head_dimension)
     k = (hidden @ weights.k.T).reshape(tokens, kv_heads, head_dimension)
     v = (hidden @ weights.v.T).reshape(tokens, kv_heads, head_dimension)
+    if weights.q_norm is not None:
+        q = torch.nn.functional.rms_norm(q, (head_dimension,), weights.q_norm, norm_epsilon)
+    if weights.k_norm is not None:
+        k = torch.nn.functional.rms_norm(k, (head_dimension,), weights.k_norm, norm_epsilon)
     if position_offset is None:
         position_offset = 0 if past is None else past[0].shape[0]
     if rotary:
@@ -173,9 +191,16 @@ def reference_attention(
     *,
     rotary: bool,
     interleaved: bool = True,
+    norm_epsilon: float = 1e-6,
 ) -> torch.Tensor:
     return reference_attention_cached(
-        hidden, weights, query_heads, kv_heads, rotary=rotary, interleaved=interleaved
+        hidden,
+        weights,
+        query_heads,
+        kv_heads,
+        rotary=rotary,
+        interleaved=interleaved,
+        norm_epsilon=norm_epsilon,
     )[0]
 
 
@@ -193,4 +218,10 @@ def conjugate_attention(
         k=k_transform @ weights.k @ input_basis.T,
         v=value_transform @ weights.v @ input_basis.T,
         o=output_basis @ weights.o @ output_value_inverse,
+        q_norm=None
+        if weights.q_norm is None
+        else q_transform[: weights.q_norm.shape[0], : weights.q_norm.shape[0]] @ weights.q_norm,
+        k_norm=None
+        if weights.k_norm is None
+        else k_transform[: weights.k_norm.shape[0], : weights.k_norm.shape[0]] @ weights.k_norm,
     )

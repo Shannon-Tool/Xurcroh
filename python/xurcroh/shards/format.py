@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import mmap
 import os
 import struct
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +13,6 @@ import torch
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from safetensors.torch import load as load_tensors
-from safetensors.torch import save as save_tensors
 
 from xurcroh.errors import ShardIntegrityError
 from xurcroh.shards.memory import lock_buffer, secure_zero, unlock_buffer
@@ -26,7 +27,7 @@ def _canonical_json(value: dict[str, Any]) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 
 
-def _digest(value: bytes | bytearray) -> str:
+def _digest(value: bytes | bytearray | memoryview) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
@@ -39,18 +40,58 @@ def validate_shard_path(path: str | Path) -> Path:
     return shard_path
 
 
-def _atomic_write(path: Path, payload: bytes) -> None:
+def _atomic_write(path: Path, *payload: bytes) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "wb") as stream:
-            stream.write(payload)
+            for part in payload:
+                stream.write(part)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
     finally:
         if temporary.exists():
             temporary.unlink()
+
+
+def _save_safetensors_stream(tensors: dict[str, torch.Tensor], stream: Any) -> None:
+    if sys.byteorder != "little":
+        raise ValueError("safetensors streaming currently requires a little-endian host")
+    dtype_names = {
+        torch.float64: "F64",
+        torch.float32: "F32",
+        torch.float16: "F16",
+        torch.bfloat16: "BF16",
+        torch.int64: "I64",
+        torch.int32: "I32",
+        torch.int16: "I16",
+        torch.int8: "I8",
+        torch.uint8: "U8",
+        torch.bool: "BOOL",
+    }
+    document = {}
+    offset = 0
+    for name in sorted(tensors):
+        tensor = tensors[name]
+        if tensor.device.type != "cpu" or not tensor.is_contiguous():
+            raise ValueError("shard tensors must be contiguous CPU tensors")
+        if tensor.dtype not in dtype_names:
+            raise ValueError(f"unsupported shard tensor dtype: {tensor.dtype}")
+        size = tensor.numel() * tensor.element_size()
+        document[name] = {
+            "dtype": dtype_names[tensor.dtype],
+            "shape": list(tensor.shape),
+            "data_offsets": [offset, offset + size],
+        }
+        offset += size
+    header = _canonical_json(document)
+    stream.write(struct.pack("<Q", len(header)))
+    stream.write(header)
+    for name in sorted(tensors):
+        raw = tensors[name].reshape(-1).view(torch.uint8).numpy()
+        stream.write(memoryview(raw))
+    stream.flush()
 
 
 def write_shard(
@@ -65,36 +106,54 @@ def write_shard(
     if destination.suffix != ".xurcroh":
         raise ValueError("shard destination must use the .xurcroh suffix")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    contiguous = {name: tensor.detach().clone().contiguous() for name, tensor in tensors.items()}
-    plaintext = bytearray(save_tensors(contiguous))
-    try:
-        plaintext_hash = _digest(plaintext)
-        shard_id = _digest(plaintext_hash.encode() + _canonical_json(metadata))
-        header = _canonical_json(
-            {
-                "format": "xurcroh-shard",
-                "version": FORMAT_VERSION,
-                "payload_sha256": plaintext_hash,
-                "shard_id": shard_id,
-                "metadata": metadata,
-            }
-        )
-        if len(header) > MAX_HEADER_BYTES:
-            raise ValueError("shard metadata exceeds the one MiB header limit")
-        nonce = os.urandom(12)
-        prefix = PREFIX.pack(MAGIC, FORMAT_VERSION, len(header), nonce)
-        ciphertext = ChaCha20Poly1305(key).encrypt(nonce, bytes(plaintext), prefix + header)
-        ciphertext_hash = _digest(ciphertext)
-        _atomic_write(destination, prefix + header + ciphertext)
-        return {
-            **metadata,
-            "format_version": FORMAT_VERSION,
-            "shard_id": shard_id,
-            "payload_sha256": plaintext_hash,
-            "ciphertext_sha256": ciphertext_hash,
-        }
-    finally:
-        secure_zero(plaintext)
+    contiguous: dict[str, torch.Tensor] = {}
+    storages = set()
+    for name, tensor in tensors.items():
+        value = tensor.detach().contiguous()
+        storage = value.untyped_storage().data_ptr()
+        if storage in storages:
+            value = value.clone()
+        else:
+            storages.add(storage)
+        contiguous[name] = value
+    descriptor = os.memfd_create("xurcroh-shard", os.MFD_CLOEXEC)
+    with os.fdopen(descriptor, "r+b") as stream:
+        try:
+            _save_safetensors_stream(contiguous, stream)
+            contiguous.clear()
+            with mmap.mmap(stream.fileno(), 0) as plaintext:
+                try:
+                    view = memoryview(plaintext)
+                    plaintext_hash = _digest(view)
+                    shard_id = _digest(plaintext_hash.encode() + _canonical_json(metadata))
+                    header = _canonical_json(
+                        {
+                            "format": "xurcroh-shard",
+                            "version": FORMAT_VERSION,
+                            "payload_sha256": plaintext_hash,
+                            "shard_id": shard_id,
+                            "metadata": metadata,
+                        }
+                    )
+                    if len(header) > MAX_HEADER_BYTES:
+                        raise ValueError("shard metadata exceeds the one MiB header limit")
+                    nonce = os.urandom(12)
+                    prefix = PREFIX.pack(MAGIC, FORMAT_VERSION, len(header), nonce)
+                    ciphertext = ChaCha20Poly1305(key).encrypt(nonce, view, prefix + header)
+                    ciphertext_hash = _digest(ciphertext)
+                    _atomic_write(destination, prefix, header, ciphertext)
+                    return {
+                        **metadata,
+                        "format_version": FORMAT_VERSION,
+                        "shard_id": shard_id,
+                        "payload_sha256": plaintext_hash,
+                        "ciphertext_sha256": ciphertext_hash,
+                    }
+                finally:
+                    view.release()
+                    secure_zero(plaintext)
+        finally:
+            contiguous.clear()
 
 
 def read_shard(

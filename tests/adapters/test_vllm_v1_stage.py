@@ -13,7 +13,7 @@ from xurcroh.adapters.vllm_v1_stage import (
     encode_intermediate,
     require_vllm_v1,
 )
-from xurcroh.errors import CompatibilityError
+from xurcroh.errors import CompatibilityError, ProtocolError
 
 
 class Intermediate:
@@ -68,7 +68,7 @@ def test_vllm_scheduler_and_intermediate_round_trip(monkeypatch: pytest.MonkeyPa
     class Runner:
         def execute_model(self, scheduler, intermediate):
             hidden_states = (
-                scheduler.scheduled_new_reqs[0].prompt_embeds[0]
+                scheduler.scheduled_new_reqs[0].prompt_embeds
                 if scheduler.scheduled_new_reqs
                 else intermediate.tensors["hidden_states"]
             )
@@ -144,13 +144,27 @@ def test_vllm_stage_lifecycle_and_failures(monkeypatch: pytest.MonkeyPatch) -> N
     removed = []
     calls = []
 
+    class Batch:
+        def __init__(self):
+            self.req_id_to_index = {}
+            self.req_prompt_embeds = {}
+
+        def remove_request(self, request_id):
+            removed.append(request_id)
+
     class Runner:
-        input_batch = type(
-            "Batch", (), {"remove_request": lambda self, request_id: removed.append(request_id)}
-        )()
+        def __init__(self):
+            self.input_batch = Batch()
+            self.requests = {}
 
         def execute_model(self, scheduler, intermediate):
             calls.append((scheduler, intermediate))
+            if scheduler.scheduled_new_reqs:
+                request = scheduler.scheduled_new_reqs[0]
+                self.input_batch.req_id_to_index[request.req_id] = 0
+                self.input_batch.req_prompt_embeds[0] = request.prompt_embeds
+            else:
+                assert self.input_batch.req_prompt_embeds[0].shape == (3, 4)
             return Intermediate({"hidden_states": torch.ones(1, 4), "residual": torch.ones(1, 4)})
 
     worker = type("Worker", (), {"shutdown": lambda self: removed.append("shutdown")})()
@@ -192,3 +206,73 @@ def test_vllm_version_rejects_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("importlib.metadata.version", lambda name: "0.14.0")
     with pytest.raises(CompatibilityError, match="unsupported vLLM version"):
         require_vllm_v1()
+
+
+def test_vllm_cache_initialization_uses_scheduler_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    from xurcroh.adapters.vllm_v1_stage import _initialize_vllm_cache
+
+    calls = []
+
+    def get_configs(config, specs, available):
+        calls.append(("configure", specs, available))
+        return ["cache-config"]
+
+    module = types.ModuleType("vllm.v1.core.kv_cache_utils")
+    module.get_kv_cache_configs = get_configs
+    module.generate_scheduler_kv_cache_config = lambda configs: (
+        calls.append(("schedule", configs)) or types.SimpleNamespace(num_blocks=512)
+    )
+    monkeypatch.setitem(sys.modules, "vllm.v1.core.kv_cache_utils", module)
+
+    class Worker:
+        def determine_available_memory(self):
+            return 4096
+
+        def get_kv_cache_spec(self):
+            return "spec"
+
+        def initialize_cache(self, gpu, cpu):
+            calls.append(("initialize_cache", gpu, cpu))
+
+        def initialize_from_config(self, config):
+            calls.append(("initialize_from_config", config))
+
+        def compile_or_warm_up_model(self):
+            calls.append(("warmup",))
+
+    _initialize_vllm_cache(Worker(), "config")
+    assert calls == [
+        ("configure", ["spec"], [4096]),
+        ("schedule", ["cache-config"]),
+        ("initialize_cache", 512, 0),
+        ("initialize_from_config", "cache-config"),
+        ("warmup",),
+    ]
+
+
+def test_vllm_blocks_are_allocated_scrubbed_and_reused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Batch:
+        def __init__(self):
+            self.req_id_to_index = {}
+
+    runner = VllmStageRunner(type("Runner", (), {"input_batch": Batch()})())
+    blocks, new = runner._request_blocks("first", 0, 17)
+    assert blocks == [0, 1]
+    assert new == [0, 1]
+    _, new = runner._request_blocks("first", 17, 1)
+    assert new == []
+    _, new = runner._request_blocks("first", 32, 1)
+    assert new == [2]
+    cache = torch.ones(3, 2, 2)
+    stream = type("Stream", (), {"synchronize": lambda self: None})()
+    monkeypatch.setattr(torch.cuda, "current_stream", lambda: stream)
+    runner.model_runner.kv_caches = [cache]
+    runner.drop_request("first")
+    assert not cache.any()
+    assert runner._free_blocks == set(range(256))
+    reused, _ = runner._request_blocks("second", 0, 1)
+    assert reused == [0]
+    with pytest.raises(ProtocolError, match="already active"):
+        runner._request_blocks("second", 0, 1)

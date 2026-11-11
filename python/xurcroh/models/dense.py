@@ -46,6 +46,8 @@ def layer_weights_from_dict(
             k=tensors[f"{prefix}.self_attn.k_proj.weight"],
             v=tensors[f"{prefix}.self_attn.v_proj.weight"],
             o=tensors[f"{prefix}.self_attn.o_proj.weight"],
+            q_norm=tensors.get(f"{prefix}.self_attn.q_norm.weight"),
+            k_norm=tensors.get(f"{prefix}.self_attn.k_norm.weight"),
         ),
         feedforward=FeedForwardWeights(
             gate=tensors[f"{prefix}.mlp.gate_proj.weight"],
@@ -75,6 +77,7 @@ def execute_dense_layer(
         kv_heads,
         rotary=rotary,
         interleaved=interleaved_rope,
+        norm_epsilon=weights.epsilon,
     )
     residual = hidden + attention
     ffn_input = unit_rms_norm(residual, weights.epsilon) * weights.post_attention_gain
@@ -101,6 +104,7 @@ def execute_dense_layer_cached(
         past=past,
         rotary=rotary,
         interleaved=interleaved_rope,
+        norm_epsilon=weights.epsilon,
     )
     residual = hidden + attention
     ffn_input = unit_rms_norm(residual, weights.epsilon) * weights.post_attention_gain

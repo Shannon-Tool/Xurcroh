@@ -21,6 +21,7 @@ from xurcroh.algebra.feedforward import FeedForwardWeights, conjugate_feedforwar
 from xurcroh.algebra.rmsnorm import absorb_rms_gain
 from xurcroh.errors import ConfigurationError, ModelLoadError
 from xurcroh.shards.format import write_shard
+from xurcroh.shards.memory import release_host_memory
 from xurcroh.shards.recipients import StageRecipient, manifest_digest, seal_stage_key
 
 LAYER_PATTERN = re.compile(r"(?:^|\.)layers\.(\d+)\.")
@@ -168,6 +169,12 @@ class XurcrohWeightCompiler:
         known_attention.update(
             f"{attention_prefix}.{name}.bias" for name in ("q_proj", "k_proj", "v_proj", "o_proj")
         )
+        q_norm_name = f"{attention_prefix}.q_norm.weight"
+        k_norm_name = f"{attention_prefix}.k_norm.weight"
+        has_qk_norm = q_norm_name in layer or k_norm_name in layer
+        if has_qk_norm and not (q_norm_name in layer and k_norm_name in layer):
+            raise ConfigurationError("Qwen-style attention requires both q_norm and k_norm")
+        known_attention.update((q_norm_name, k_norm_name))
         for name in layer:
             if name.startswith(attention_prefix) and name not in known_attention:
                 raise ConfigurationError(f"unsupported attention tensor: {name}")
@@ -180,13 +187,19 @@ class XurcrohWeightCompiler:
             k=absorb_rms_gain(layer[required[1]], gain),
             v=absorb_rms_gain(layer[required[2]], gain),
             o=layer[required[3]],
+            q_norm=layer.get(q_norm_name),
+            k_norm=layer.get(k_norm_name),
         )
         q_transform, k_transform = rope_commuting_pair(
             query_heads,
             kv_heads,
             head_dimension,
             seed=seed,
+            minimum_scale=1.0 if has_qk_norm else 0.6,
+            maximum_scale=1.0 if has_qk_norm else 1.6,
             interleaved=text_config.get("rope_style") == "interleaved",
+            quarter_turns=has_qk_norm,
+            shared_heads=has_qk_norm,
         )
         q_transform = q_transform.to(dtype)
         k_transform = k_transform.to(dtype)
@@ -428,6 +441,7 @@ class XurcrohWeightCompiler:
             for tensor in tensors.values():
                 tensor.zero_()
             tensors.clear()
+            release_host_memory()
 
         boundary_names = [embedding_name]
         if head_name is not None:
@@ -435,31 +449,40 @@ class XurcrohWeightCompiler:
         if final_norm_name is not None:
             boundary_names.append(final_norm_name)
         boundary = self.reader.read_tensors(boundary_names)
-        boundary_tensors = {
-            "embedding.weight": boundary[embedding_name].to(self.config.compute_dtype),
-            "lm_head.weight": boundary[head_name].to(self.config.compute_dtype)
-            if head_name is not None
-            else boundary[embedding_name].to(self.config.compute_dtype),
-            "basis.input": bases[0],
-            "basis.output": bases[-1],
-            "basis.stages": torch.stack(bases),
-            "final_norm.epsilon": torch.tensor(
-                float(text_config.get("rms_norm_eps", 1e-6)), dtype=self.config.compute_dtype
-            ),
-        }
+        if head_name is None:
+            shared_embedding = boundary[embedding_name].to(self.config.storage_dtype)
+            boundary_tensors = {
+                "embedding.weight": shared_embedding,
+                "lm_head.weight": shared_embedding,
+            }
+        else:
+            embedding = boundary[embedding_name].to(self.config.compute_dtype)
+            lm_head = boundary[head_name].to(self.config.compute_dtype)
+            if final_norm_name is not None:
+                lm_head = absorb_rms_gain(
+                    lm_head, boundary[final_norm_name].to(self.config.compute_dtype)
+                )
+            boundary_tensors = {
+                "embedding.weight": embedding.to(self.config.storage_dtype),
+                "lm_head.weight": lm_head.to(self.config.storage_dtype),
+            }
+            del embedding, lm_head
+        boundary_tensors.update(
+            {
+                "basis.input": bases[0].to(self.config.storage_dtype),
+                "basis.output": bases[-1].to(self.config.storage_dtype),
+                "basis.stages": torch.stack(bases).to(self.config.storage_dtype),
+                "final_norm.epsilon": torch.tensor(
+                    float(text_config.get("rms_norm_eps", 1e-6)),
+                    dtype=self.config.storage_dtype,
+                ),
+            }
+        )
         if final_norm_name is not None:
             boundary_tensors["final_norm.weight"] = torch.ones_like(
-                boundary[final_norm_name], dtype=self.config.compute_dtype
+                boundary[final_norm_name], dtype=self.config.storage_dtype
             )
-            if head_name is not None:
-                boundary_tensors["lm_head.weight"] = absorb_rms_gain(
-                    boundary_tensors["lm_head.weight"],
-                    boundary[final_norm_name].to(self.config.compute_dtype),
-                )
-        boundary_tensors = {
-            name: tensor.to(self.config.storage_dtype) if tensor.is_floating_point() else tensor
-            for name, tensor in boundary_tensors.items()
-        }
+        release_host_memory()
         boundary_path = output_dir / "client-boundary.xurcroh"
         boundary_metadata = write_shard(
             boundary_path,
