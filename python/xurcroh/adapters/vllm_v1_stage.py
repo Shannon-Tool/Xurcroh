@@ -264,8 +264,10 @@ def create_vllm_stage(
     )
     from vllm.v1.worker.gpu_worker import Worker
 
+    from xurcroh.adapters.vllm_loader import ensure_xurcroh_loader
     from xurcroh.runtime.stage_sessions import StageSessionStore
 
+    ensure_xurcroh_loader()
     identity = private_key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
     model_config = ModelConfig(
         model=str(checkpoint),
