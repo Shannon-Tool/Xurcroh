@@ -267,13 +267,14 @@ def create_vllm_stage(
     from xurcroh.runtime.stage_sessions import StageSessionStore
 
     identity = private_key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+    model_config = ModelConfig(
+        model=str(checkpoint),
+        tokenizer=str(checkpoint),
+        enforce_eager=True,
+        enable_prompt_embeds=True,
+    )
     config = VllmConfig(
-        model_config=ModelConfig(
-            model=str(checkpoint),
-            tokenizer=str(checkpoint),
-            enforce_eager=True,
-            enable_prompt_embeds=True,
-        ),
+        model_config=model_config,
         cache_config=CacheConfig(enable_prefix_caching=False),
         parallel_config=ParallelConfig(
             pipeline_parallel_size=stage_count,
@@ -281,7 +282,11 @@ def create_vllm_stage(
             nnodes=stage_count,
             node_rank=stage_index,
         ),
-        scheduler_config=SchedulerConfig(async_scheduling=False),
+        scheduler_config=SchedulerConfig(
+            max_model_len=model_config.max_model_len,
+            is_encoder_decoder=model_config.is_encoder_decoder,
+            async_scheduling=False,
+        ),
         load_config=LoadConfig(
             load_format="xurcroh_sharded",
             model_loader_extra_config={
