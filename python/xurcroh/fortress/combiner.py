@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -10,6 +11,9 @@ from xurcroh.fortress.arithmetic import quantize_activations, signed_ring, split
 from xurcroh.fortress.compiler import CompiledOperation
 from xurcroh.fortress.grid import execute_grid
 from xurcroh.models.dense import DenseLayerWeights
+
+if TYPE_CHECKING:
+    from xurcroh.fortress.transport import FortressRoleClient
 
 
 class FortressCombiner:
@@ -24,6 +28,7 @@ class FortressCombiner:
         lm_head: torch.Tensor,
         rope_theta: float = 10_000,
         activation_bits: int = 12,
+        grid_clients: dict[str, FortressRoleClient] | None = None,
     ) -> None:
         if not 8 <= activation_bits <= 12:
             raise ValueError("Fortress activations must use 8-12 bits")
@@ -35,6 +40,9 @@ class FortressCombiner:
         self.lm_head = lm_head
         self.rope_theta = rope_theta
         self.activation_bits = activation_bits
+        if grid_clients is not None and set(grid_clients) != set(operations):
+            raise ValueError("every outsourced operation requires a Fortress grid client")
+        self.grid_clients = grid_clients
         self._caches: dict[str, list[tuple[torch.Tensor, torch.Tensor]]] = {}
         self._lock = threading.Lock()
 
@@ -55,7 +63,11 @@ class FortressCombiner:
         operation = self.operations[name]
         activation = quantize_activations(hidden, bits=self.activation_bits)
         shares = split_secret(activation.values, count=2).shares
-        product = execute_grid(shares, operation.shares)
+        product = (
+            execute_grid(shares, operation.shares)
+            if self.grid_clients is None
+            else self.grid_clients[name].execute(shares, request_id=name)
+        )
         scales = activation.scales.unsqueeze(-1) if hidden.ndim == 2 else activation.scales
         return signed_ring(product).to(torch.float64) * scales * operation.quantized.scale
 
