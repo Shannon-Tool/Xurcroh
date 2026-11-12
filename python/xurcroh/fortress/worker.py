@@ -30,9 +30,13 @@ class FortressRoleWorker:
         client_ca: bytes,
         address: str = "127.0.0.1:0",
         session_capacity: int = 64,
+        rotation_interval: int = 64,
     ) -> None:
         import xurcroh_quic
 
+        if rotation_interval <= 0:
+            raise ValueError("rotation interval must be positive")
+        self._rotation_interval = rotation_interval
         self._quic = xurcroh_quic
         serialized = {"operation": artifacts} if isinstance(artifacts, bytes) else artifacts
         if not serialized:
@@ -113,6 +117,7 @@ class FortressRoleWorker:
         return name, activation
 
     def _execute(self, connection: Any) -> None:
+        completed = 0
         try:
             while not self._closed.is_set():
                 request_id, _, _, kind, dtype, shape, packet = connection.receive()
@@ -167,6 +172,9 @@ class FortressRoleWorker:
                         [len(response)],
                         response,
                     )
+                    completed += 1
+                    if completed % self._rotation_interval == 0:
+                        self.sessions.rotate(session_id, completed // self._rotation_interval)
                 finally:
                     activation.zero_()
                     for index in range(len(exact_payload)):

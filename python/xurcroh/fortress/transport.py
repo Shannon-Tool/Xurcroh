@@ -149,7 +149,11 @@ def native_role_matrix(artifact: RoleArtifact) -> Any:
 
 class _RoleTransport:
     def __init__(
-        self, role: RoleEndpoint, identity: MutualTLSIdentity, operation_name: str
+        self,
+        role: RoleEndpoint,
+        identity: MutualTLSIdentity,
+        operation_name: str,
+        rotation_interval: int,
     ) -> None:
         import xurcroh_quic
 
@@ -167,6 +171,8 @@ class _RoleTransport:
             identity.private_key,
         )
         self._used = False
+        self._rotation_interval = rotation_interval
+        self._completed = 0
 
     def execute(
         self, activation: torch.Tensor, request_id: str, sequence: int
@@ -210,6 +216,9 @@ class _RoleTransport:
             int.from_bytes(payload[offset : offset + 16], "little", signed=True)
             for offset in range(0, len(payload), 16)
         ]
+        self._completed += 1
+        if self._completed % self._rotation_interval == 0:
+            self.session.rotate(self._completed // self._rotation_interval)
         return result, sent, received
 
     def close(self) -> None:
@@ -272,7 +281,10 @@ class FortressRoleClient:
         identity: MutualTLSIdentity,
         *,
         operation_name: str = "operation",
+        rotation_interval: int = 64,
     ) -> None:
+        if rotation_interval <= 0:
+            raise ValueError("rotation interval must be positive")
         self.operation = operation
         self.roles = {(role.activation_index, role.weight_index): role for role in roles}
         expected = {
@@ -285,7 +297,8 @@ class FortressRoleClient:
         self._providers = {key: role.provider_id for key, role in self.roles.items()}
         self._executor = ThreadPoolExecutor(max_workers=len(roles))
         self._transports = {
-            key: _RoleTransport(role, identity, operation_name) for key, role in self.roles.items()
+            key: _RoleTransport(role, identity, operation_name, rotation_interval)
+            for key, role in self.roles.items()
         }
         self._lock = threading.Lock()
         self._closed = False

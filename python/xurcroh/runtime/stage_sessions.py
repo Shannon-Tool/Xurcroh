@@ -71,6 +71,12 @@ class ClientStageSession:
     def token_bytes(self) -> bytes:
         return self._token
 
+    def rotate(self, epoch: int) -> None:
+        if epoch <= 0:
+            raise ProtocolError("stage-session epoch must increase")
+        self.sender.rotate(epoch)
+        self.receiver.rotate(epoch)
+
     def wire_packet(self, packet: bytes) -> bytes:
         return (
             decode_session_public(self.client_public)
@@ -87,6 +93,7 @@ class _ServerSession:
     token_digest: bytes
     receiver: PipelineTensorInterceptor
     sender: PipelineTensorInterceptor
+    epoch: int = 0
 
 
 class StageSessionStore:
@@ -152,6 +159,16 @@ class StageSessionStore:
             existing = self._sessions.get(session_id)
             if existing is None or not hmac.compare_digest(existing.token_digest, token_digest):
                 raise ProtocolError("stage-session credentials are not authorized")
+
+    def rotate(self, session_id: str, epoch: int) -> None:
+        with self._lock:
+            self._prune()
+            existing = self._sessions.get(session_id)
+            if existing is None or epoch != existing.epoch + 1:
+                raise ProtocolError("stage-session rotation epoch is invalid")
+            existing.receiver.rotate(epoch)
+            existing.sender.rotate(epoch)
+            existing.epoch = epoch
 
     def remove(self, session_id: str) -> None:
         with self._lock:
