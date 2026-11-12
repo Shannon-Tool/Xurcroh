@@ -15,7 +15,20 @@ class PipelineTensorInterceptor:
         except ImportError as error:
             raise ProtocolError("Rust transport extension is not installed") from error
         self._quic = xurcroh_quic
+        self._master_key = master_key
+        self._send_label = send_label
+        self._receive_label = receive_label
+        self._context = context
         self._session = xurcroh_quic.AeadSession(master_key, send_label, receive_label, context)
+
+    def rotate(self, epoch: int) -> None:
+        self._session.rotate(
+            self._master_key,
+            self._send_label,
+            self._receive_label,
+            self._context,
+            epoch,
+        )
 
     def seal(
         self,

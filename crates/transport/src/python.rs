@@ -160,6 +160,24 @@ impl AeadSession {
         })
     }
 
+    fn rotate(
+        &self,
+        master: &[u8],
+        send_label: &[u8],
+        receive_label: &[u8],
+        context: &[u8],
+        epoch: u64,
+    ) -> PyResult<()> {
+        let master: &[u8; 32] = master
+            .try_into()
+            .map_err(|_| value_error("master key must be 32 bytes"))?;
+        self.inner
+            .lock()
+            .map_err(value_error)?
+            .rotate(master, send_label, receive_label, context, epoch)
+            .map_err(crypto_error)
+    }
+
     fn open(
         &self,
         associated_data: &[u8],

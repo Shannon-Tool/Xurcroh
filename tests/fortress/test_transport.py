@@ -63,6 +63,7 @@ def test_real_grid_transport_is_exact_and_isolates_duplicate_request_ids(
                 certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],
+                rotation_interval=1,
             )
             worker.start()
             workers.append(worker)
@@ -76,8 +77,8 @@ def test_real_grid_transport_is_exact_and_isolates_duplicate_request_ids(
                 )
             )
     clients = [
-        FortressRoleClient(operation, roles, identity),
-        FortressRoleClient(operation, roles, identity),
+        FortressRoleClient(operation, roles, identity, rotation_interval=1),
+        FortressRoleClient(operation, roles, identity, rotation_interval=1),
     ]
     shares = split_secret(torch.tensor([5, 7], dtype=torch.int64), count=2).shares
     try:
