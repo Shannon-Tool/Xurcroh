@@ -1,6 +1,6 @@
 # Multi-GPU and Hardware Validation
 
-No physical GPU results are asserted in the pre-GPU handoff. The following programs are ready for the Project Manager's Stage Two infrastructure.
+The following programs define the hardware acceptance procedure. Scoped RTX 4090 results, unsuccessful checks, and remaining gaps are recorded in `docs/validation-report.md`; executable tests alone are not hardware evidence.
 
 ## Native build and forensics
 
