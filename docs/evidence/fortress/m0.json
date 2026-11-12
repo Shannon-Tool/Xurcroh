@@ -1,16 +1,35 @@
 {
-  "bytes_received": 89728,
-  "bytes_sent": 117592,
+  "attack_results": {
+    "full_activation_collusion_exact": true,
+    "full_weight_collusion_exact": true,
+    "interpretation": "Algebraic fixture results only. Full-role collusion reconstructs the secret; single-share mismatch is not an information-theoretic proof. Search bits assume independent uniform 2^32 shares and no additional structure or side information.",
+    "missing_activation_share_search_bits": 64,
+    "missing_weight_share_search_bits": 256,
+    "single_activation_share_reconstructs": false,
+    "single_weight_share_reconstructs": false
+  },
+  "bytes_received": 91904,
+  "bytes_sent": 120208,
+  "canary_attributed_observers": [
+    "m0-role-0-0",
+    "m0-role-0-1"
+  ],
+  "canary_limitation": "attributes the observer set; does not prove which participant leaked",
+  "canary_method": "simulated external observation of an actually transmitted share",
+  "canary_tripped": true,
+  "decoy_calls": 1,
+  "decoy_role_requests": 8,
   "diffusion_steps": 2,
   "execution": "local CPU; four independent spawned worker processes; real Rust QUIC",
-  "inference_seconds": 0.5244002690014895,
+  "inference_role_requests": 328,
+  "inference_seconds": 0.5152817200287245,
   "latent_tokens": 3,
   "operations": 16,
   "original_model_max_abs_error": 0.006454601900779955,
   "quantized_reference_max_abs_error": 0.0,
-  "recorded_at": "2026-11-12T23:10:32.324488+00:00",
-  "revision": "6b8e0842e3c509b6f3a82acadcdd2a5751fec62a",
-  "role_requests": 328,
+  "recorded_at": "2026-11-12T23:27:30.180689+00:00",
+  "revision": "872b0615f6f483639197b39b245eee1b972f4957",
+  "role_requests": 336,
   "rung": "M0",
   "text_tokens": 2,
   "worker_exit_codes": [
@@ -19,5 +38,6 @@
     0,
     0
   ],
-  "worker_processes": 4
+  "worker_processes": 4,
+  "working_tree_dirty": "true"
 }

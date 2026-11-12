@@ -15,4 +15,6 @@ The byte counts include encoded tensor-frame and encrypted session-envelope byte
 
 `quantized_reference_max_abs_error` compares distributed execution with the local fixed-point reference. `original_model_max_abs_error` exposes quantization and numerical quality loss against the unquantized miniature model; it is not hidden by the exact-reference assertion. A zero first value does not imply acceptable model quality.
 
-The reports do not by themselves complete F0 or M0. Attack-suite and attributed-canary evidence, reproducibility on a clean revision, and the remaining roadmap acceptance gates are still required. No physical GPU, independent-host, production-security, or external-audit claim is attached to these files.
+The reports include mixed real/decoy calls, a simulated external observation of an actually transmitted canary share, observer-set revocation, and algebraic collusion/reconstruction results. The canary observation is a local security test, not an independent detection service; attribution names the observer set and does not prove which participant leaked. The attack results do not establish information-theoretic secrecy beyond the stated independent-uniform-share assumptions.
+
+A dirty-tree report is development evidence, not a clean-reproducibility attestation. No physical GPU, independent-host, production-security, or external-audit claim is attached to these files.

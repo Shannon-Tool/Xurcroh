@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.serialization import (
     PublicFormat,
 )
 from tests.fortress.conftest import MutualTLSIdentities
-from tests.fortress.evidence import write_fortress_evidence
+from tests.fortress.evidence import exercise_adversarial_evidence, write_fortress_evidence
 from tests.fortress.test_f0 import _role_process
 from tests.models.test_dit_stage import tiny_dit_weights
 
@@ -93,6 +93,8 @@ def test_m0_synthetic_dit_runs_over_four_independent_processes(
         original = combiner.original_reference(latent, text, steps=2)
         assert torch.isfinite(actual - original).all()
         assert sum(client.request_count for client in clients.values()) == 328
+        adversarial = exercise_adversarial_evidence(clients, roles, operations)
+        assert sum(client.request_count for client in clients.values()) == 336
         assert sum(client.bytes_sent for client in clients.values()) > 0
         assert sum(client.bytes_received for client in clients.values()) > 0
     finally:
@@ -112,7 +114,9 @@ def test_m0_synthetic_dit_runs_over_four_independent_processes(
             "worker_processes": len(processes),
             "worker_exit_codes": [process.exitcode for process in processes],
             "operations": len(operations),
+            "inference_role_requests": 328,
             "role_requests": sum(client.request_count for client in clients.values()),
+            **adversarial,
             "bytes_sent": sum(client.bytes_sent for client in clients.values()),
             "bytes_received": sum(client.bytes_received for client in clients.values()),
             "inference_seconds": inference_seconds,

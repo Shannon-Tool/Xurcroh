@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.serialization import (
     PublicFormat,
 )
 from tests.fortress.conftest import MutualTLSIdentities
-from tests.fortress.evidence import write_fortress_evidence
+from tests.fortress.evidence import exercise_adversarial_evidence, write_fortress_evidence
 from tests.fortress.test_combiner import build_combiner
 
 from xurcroh.fortress.combiner import FortressCombiner
@@ -162,6 +162,8 @@ def test_f0_full_model_runs_over_four_independent_processes(
                 rope_base=reference.rope_theta,
             )
         assert sum(client.request_count for client in clients.values()) == 168
+        adversarial = exercise_adversarial_evidence(clients, roles, reference.operations)
+        assert sum(client.request_count for client in clients.values()) == 176
         assert sum(client.bytes_sent for client in clients.values()) > 0
         assert sum(client.bytes_received for client in clients.values()) > 0
         combiner.drop_request("f0-request")
@@ -183,7 +185,9 @@ def test_f0_full_model_runs_over_four_independent_processes(
             "worker_processes": len(processes),
             "worker_exit_codes": [process.exitcode for process in processes],
             "operations": len(reference.operations),
+            "inference_role_requests": 168,
             "role_requests": sum(client.request_count for client in clients.values()),
+            **adversarial,
             "bytes_sent": sum(client.bytes_sent for client in clients.values()),
             "bytes_received": sum(client.bytes_received for client in clients.values()),
             "inference_seconds": inference_seconds,
