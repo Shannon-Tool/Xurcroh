@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import shutil
 import subprocess
 import sys
@@ -30,7 +31,11 @@ class AttestationVerifier:
     def __init__(self, *, expected_nonce: bytes) -> None:
         self.expected_nonce = expected_nonce
 
-    def verify_binding(self, evidence: AttestationEvidence) -> AttestationEvidence:
+    def verify_binding(
+        self, evidence: AttestationEvidence, signed_report_data: bytes | None = None
+    ) -> AttestationEvidence:
+        if signed_report_data is None:
+            raise AttestationError("hardware-signed report data is required")
         if not hmac.compare_digest(evidence.nonce, self.expected_nonce):
             raise AttestationError("attestation nonce is not fresh or does not match")
         expected = hashlib.sha256(
@@ -38,8 +43,12 @@ class AttestationVerifier:
             + evidence.workload_hash
             + evidence.artifact_hash
             + evidence.public_key_hash
-        ).hexdigest()
-        if not hmac.compare_digest(evidence.report_data, expected):
+        ).digest()
+        if (
+            len(signed_report_data) != 64
+            or not hmac.compare_digest(signed_report_data[:32], expected)
+            or any(signed_report_data[32:])
+        ):
             raise AttestationError(
                 "attestation workload, artifact, or public-key binding is invalid"
             )
@@ -47,10 +56,17 @@ class AttestationVerifier:
 
 
 class SNPGuestVerifier(AttestationVerifier):
+    @staticmethod
+    def extract_report_data(report: bytes | str | Path) -> bytes:
+        raw = Path(report).read_bytes() if isinstance(report, str | Path) else report
+        if len(raw) < 0x90:
+            raise AttestationError("SEV-SNP report is truncated")
+        return raw[0x50:0x90]
+
     def verify(
         self, evidence: AttestationEvidence, *, certificates: str | Path, report: str | Path
     ) -> None:
-        self.verify_binding(evidence)
+        self.verify_binding(evidence, self.extract_report_data(report))
         executable = shutil.which("snpguest")
         if executable is None:
             raise CompatibilityError("snpguest is required for SEV-SNP verification")
@@ -65,8 +81,20 @@ class SNPGuestVerifier(AttestationVerifier):
 
 
 class NVIDIAAttestationVerifier(AttestationVerifier):
-    def verify(self, evidence: AttestationEvidence) -> None:
-        self.verify_binding(evidence)
+    @staticmethod
+    def extract_report_data(report: bytes) -> bytes:
+        try:
+            document = json.loads(report)
+            signed = bytes.fromhex(document["report_data"])
+            signature = document["signature"]
+        except (ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+            raise AttestationError("NVIDIA signed evidence is malformed") from error
+        if not isinstance(signature, str) or not signature:
+            raise AttestationError("NVIDIA evidence is not signed")
+        return signed
+
+    def verify(self, evidence: AttestationEvidence, *, report: bytes) -> None:
+        self.verify_binding(evidence, self.extract_report_data(report))
         result = subprocess.run(  # noqa: S603 - current Python executable, no shell
             [sys.executable, "-m", "verifier.cc_admin", "--nonce", evidence.nonce.hex()],
             capture_output=True,
@@ -94,6 +122,12 @@ class DCAPCollateral:
 
 
 class IntelDCAPVerifier(AttestationVerifier):
+    @staticmethod
+    def extract_report_data(quote: bytes) -> bytes:
+        if len(quote) < 1024:
+            raise AttestationError("Intel TDX quote is truncated")
+        return quote[960:1024]
+
     def verify(
         self,
         evidence: AttestationEvidence,
@@ -101,7 +135,7 @@ class IntelDCAPVerifier(AttestationVerifier):
         quote: bytes,
         collateral: DCAPCollateral,
     ) -> Any:
-        self.verify_binding(evidence)
+        self.verify_binding(evidence, self.extract_report_data(quote))
         try:
             import sgx_dcap_quote_verify
         except ImportError as error:

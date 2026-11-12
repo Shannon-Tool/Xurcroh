@@ -42,6 +42,7 @@ def test_remote_attestation_binds_fresh_challenge_and_rejects_tampering(
     def verify_hardware(vendor, document, nonce):
         assert vendor == "amd"
         verified_nonces.append(nonce)
+        return bytes.fromhex(str(document["report_data"])) + bytes(32)
 
     with running_stage(compiled.manifest_path, 0, identities.private_keys[0], document) as endpoint:
         client = RemoteAttestationClient(httpx.Client(), hardware_verifier=verify_hardware)
@@ -68,7 +69,7 @@ def test_tee_stage_sdk_exchanges_and_verifies_evidence(
     monkeypatch.setenv("TEST_XURCROH_CLIENT_BOUNDARY_KEY", identities.boundary_key.hex())
     monkeypatch.setattr(
         "xurcroh.runtime.attestation._verify_hardware",
-        lambda vendor, document, nonce: None,
+        lambda vendor, document, nonce: bytes.fromhex(str(document["report_data"])) + bytes(32),
     )
     with (
         running_stage(
