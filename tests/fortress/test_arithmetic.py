@@ -66,7 +66,7 @@ def test_seeded_shares_are_deterministic_and_computational_not_information_theor
 def test_freivalds_verification_accepts_exact_products_and_detects_tampering() -> None:
     weight = torch.tensor([[1, 2], [3, 4]], dtype=torch.int64)
     activation = torch.tensor([5, 7], dtype=torch.int64)
-    product = activation @ weight
+    product = activation @ weight.T
     challenge = freivalds_challenge(weight, r=torch.tensor([11, 13], dtype=torch.int64))
 
     assert verify_freivalds(activation, product, challenge)

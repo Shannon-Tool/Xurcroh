@@ -26,11 +26,24 @@ class QuantizedTensor:
         if self.scale <= 0:
             raise ValueError("quantization scale must be positive")
 
+    def dequantize(self) -> torch.Tensor:
+        return (self.values - self.zero_point).to(torch.float64) * self.scale
+
 
 @dataclass(frozen=True)
 class QuantizedProduct:
     values: torch.Tensor
     scale: float
+
+    def dequantize(self) -> torch.Tensor:
+        return self.values.to(torch.float64) * self.scale
+
+
+@dataclass(frozen=True)
+class ActivationQuantization:
+    values: torch.Tensor
+    scales: torch.Tensor
+    zero_point: int
 
 
 class ShareSecurity(Enum):
@@ -67,6 +80,19 @@ def symmetric_quantize(values: torch.Tensor, *, bits: int) -> QuantizedTensor:
     return QuantizedTensor(quantized, scale, 0)
 
 
+def quantize_activations(values: torch.Tensor, *, bits: int) -> ActivationQuantization:
+    if not 8 <= bits <= 12:
+        raise ValueError("activation bits must be between 8 and 12")
+    if values.ndim not in {1, 2}:
+        raise ValueError("activation quantization requires a token vector or matrix")
+    maximum = 2 ** (bits - 1) - 1
+    minimum = -(2 ** (bits - 1))
+    largest = values.abs().amax(dim=-1)
+    scales = torch.where(largest > 0, largest / maximum, torch.ones_like(largest))
+    quantized = torch.round(values.to(torch.float64) / scales.unsqueeze(-1)).clamp(minimum, maximum)
+    return ActivationQuantization(quantized.to(torch.int64), scales, 0)
+
+
 def quantized_matmul(left: QuantizedTensor, right: QuantizedTensor) -> QuantizedProduct:
     if left.values.shape[1] != right.values.shape[0]:
         raise ValueError("matrix dimensions do not match")
@@ -94,6 +120,10 @@ def _secure_uniform(shape: tuple[int, ...], modulus: int) -> torch.Tensor:
         accepted.append(candidate if limit == 2**64 else candidate[candidate < limit])
         remaining = count - sum(tensor.numel() for tensor in accepted)
     return torch.cat(accepted).to(torch.int64).reshape(shape)
+
+
+def signed_ring(values: torch.Tensor) -> torch.Tensor:
+    return (values + 2**31).remainder(RING_MODULUS) - 2**31
 
 
 def split_secret(secret: torch.Tensor, *, count: int, modulus: int = RING_MODULUS) -> ShareGrid:
@@ -152,6 +182,28 @@ def seeded_split_secret(secret: torch.Tensor, *, seed: bytes, count: int) -> Sha
     return ShareGrid(shares, ShareSecurity.COMPUTATIONAL)
 
 
+def _modular_matmul(left: torch.Tensor, right: torch.Tensor, modulus: int) -> torch.Tensor:
+    if left.ndim not in {1, 2} or right.ndim not in {1, 2}:
+        raise ValueError("modular multiplication requires vectors or matrices")
+    left_matrix = left.reshape(1, -1) if left.ndim == 1 else left
+    right_matrix = right.reshape(-1, 1) if right.ndim == 1 else right
+    if left_matrix.shape[1] != right_matrix.shape[0]:
+        raise ValueError("matrix and vector dimensions do not match")
+    values = []
+    for left_row in left_matrix:
+        for right_column in right_matrix.T:
+            values.append(
+                sum(int(a) * int(b) for a, b in zip(left_row, right_column, strict=True)) % modulus
+            )
+    if left.ndim == 1 and right.ndim == 1:
+        return torch.tensor(values, dtype=torch.int64)
+    if left.ndim == 1:
+        return torch.tensor(values, dtype=torch.int64).reshape(right_matrix.shape[1])
+    return torch.tensor(values, dtype=torch.int64).reshape(
+        left_matrix.shape[0], right_matrix.shape[1]
+    )
+
+
 def _modular_matvec(matrix: torch.Tensor, vector: torch.Tensor, modulus: int) -> torch.Tensor:
     if matrix.ndim != 2 or vector.ndim != 1 or matrix.shape[1] != vector.shape[0]:
         raise ValueError("matrix and vector dimensions do not match")
@@ -173,16 +225,16 @@ def freivalds_challenge(
 ) -> ExactFreivaldsChallenge:
     if weight.ndim != 2 or weight.dtype != torch.int64 or r.dtype != torch.int64:
         raise ValueError("Freivalds inputs must be integer matrices")
-    if r.shape != (weight.shape[1],):
+    if r.shape != (weight.shape[0],):
         raise ValueError("challenge vector must match matrix output dimension")
-    return ExactFreivaldsChallenge(r=r, v=_modular_matvec(weight, r, prime), prime=prime)
+    return ExactFreivaldsChallenge(r=r, v=_modular_matvec(weight.T, r, prime), prime=prime)
 
 
 def verify_freivalds(
     activation: torch.Tensor, product: torch.Tensor, challenge: ExactFreivaldsChallenge
 ) -> bool:
-    if activation.shape[0] != challenge.v.shape[0] or product.shape[0] != challenge.r.shape[0]:
+    if activation.shape[-1] != challenge.v.shape[0] or product.shape[-1] != challenge.r.shape[0]:
         raise ValueError("input/output dimensions do not match challenge")
-    left = _modular_dot(activation, challenge.v, challenge.prime)
-    right = _modular_dot(product, challenge.r, challenge.prime)
-    return left == right
+    left = _modular_matmul(activation, challenge.v, challenge.prime)
+    right = _modular_matmul(product, challenge.r, challenge.prime)
+    return bool(torch.equal(left, right))
