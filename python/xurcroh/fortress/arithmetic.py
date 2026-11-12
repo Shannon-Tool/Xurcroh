@@ -152,6 +152,22 @@ def seeded_split_secret(secret: torch.Tensor, *, seed: bytes, count: int) -> Sha
     return ShareGrid(shares, ShareSecurity.COMPUTATIONAL)
 
 
+def _modular_matvec(matrix: torch.Tensor, vector: torch.Tensor, modulus: int) -> torch.Tensor:
+    if matrix.ndim != 2 or vector.ndim != 1 or matrix.shape[1] != vector.shape[0]:
+        raise ValueError("matrix and vector dimensions do not match")
+    values = [
+        sum(int(left) * int(right) for left, right in zip(row, vector, strict=True)) % modulus
+        for row in matrix
+    ]
+    return torch.tensor(values, dtype=torch.int64)
+
+
+def _modular_dot(left: torch.Tensor, right: torch.Tensor, modulus: int) -> int:
+    if left.ndim != 1 or right.ndim != 1 or left.shape != right.shape:
+        raise ValueError("dot-product dimensions do not match")
+    return sum(int(a) * int(b) for a, b in zip(left, right, strict=True)) % modulus
+
+
 def freivalds_challenge(
     weight: torch.Tensor, *, r: torch.Tensor, prime: int = PRIME_MODULUS
 ) -> ExactFreivaldsChallenge:
@@ -159,7 +175,7 @@ def freivalds_challenge(
         raise ValueError("Freivalds inputs must be integer matrices")
     if r.shape != (weight.shape[1],):
         raise ValueError("challenge vector must match matrix output dimension")
-    return ExactFreivaldsChallenge(r=r, v=(weight @ r).remainder(prime), prime=prime)
+    return ExactFreivaldsChallenge(r=r, v=_modular_matvec(weight, r, prime), prime=prime)
 
 
 def verify_freivalds(
@@ -167,6 +183,6 @@ def verify_freivalds(
 ) -> bool:
     if activation.shape[0] != challenge.v.shape[0] or product.shape[0] != challenge.r.shape[0]:
         raise ValueError("input/output dimensions do not match challenge")
-    left = (activation @ challenge.v).remainder(challenge.prime)
-    right = (product @ challenge.r).remainder(challenge.prime)
-    return bool(torch.equal(left, right))
+    left = _modular_dot(activation, challenge.v, challenge.prime)
+    right = _modular_dot(product, challenge.r, challenge.prime)
+    return left == right
