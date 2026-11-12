@@ -59,6 +59,7 @@ impl DataType {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FrameKind {
     Tensor,
+    Chunk,
     Cancel,
     Complete,
     Heartbeat,
@@ -69,6 +70,7 @@ impl FrameKind {
     fn code(self) -> u8 {
         match self {
             Self::Tensor => 1,
+            Self::Chunk => 6,
             Self::Cancel => 2,
             Self::Complete => 3,
             Self::Heartbeat => 4,
@@ -79,6 +81,7 @@ impl FrameKind {
     fn from_code(code: u8) -> Result<Self, FrameError> {
         match code {
             1 => Ok(Self::Tensor),
+            6 => Ok(Self::Chunk),
             2 => Ok(Self::Cancel),
             3 => Ok(Self::Complete),
             4 => Ok(Self::Heartbeat),
@@ -137,6 +140,22 @@ impl TensorFrame {
                 .checked_mul(dtype.element_size() as u64)
                 .ok_or(FrameError::InvalidShape)?;
             if expected != self.payload.len() as u64 {
+                return Err(FrameError::PayloadLength);
+            }
+        } else if self.kind == FrameKind::Chunk {
+            let dtype = self.dtype.ok_or(FrameError::MissingDataType)?;
+            if self.shape.len() > 8 || self.shape.contains(&0) {
+                return Err(FrameError::InvalidShape);
+            }
+            let elements = self.shape.iter().try_fold(1u64, |product, dimension| {
+                product
+                    .checked_mul(u64::from(*dimension))
+                    .ok_or(FrameError::InvalidShape)
+            })?;
+            let expected = elements
+                .checked_mul(dtype.element_size() as u64)
+                .ok_or(FrameError::InvalidShape)?;
+            if expected < self.payload.len() as u64 {
                 return Err(FrameError::PayloadLength);
             }
         } else {
