@@ -71,6 +71,27 @@ def scp(
     )
 
 
+def download(worker: dict[str, object], source: str, destination: Path) -> None:
+    scp_options = ["-P", str(worker.get("ssh_port", 22))]
+    if worker.get("ssh_key"):
+        scp_options.extend(["-o", "IdentitiesOnly=yes"])
+    if worker.get("known_hosts"):
+        scp_options.extend(
+            [
+                "-o",
+                f"UserKnownHostsFile={Path(str(worker['known_hosts'])).expanduser()}",
+                "-o",
+                "StrictHostKeyChecking=yes",
+            ]
+        )
+    if worker.get("ssh_key"):
+        scp_options.extend(["-i", str(Path(str(worker["ssh_key"])).expanduser())])
+    subprocess.run(  # noqa: S603, S607
+        ["scp", *scp_options, f"{destination(worker)}:{source}", str(destination)],
+        check=True,
+    )
+
+
 def prepare(index: int, worker: dict[str, object], config: dict[str, object], revision: str) -> str:
     remote_root = f"/tmp/xurcroh-{revision[:12]}"
     ssh(worker, f"rm -rf {shlex.quote(remote_root)} && mkdir -p {shlex.quote(remote_root)}")

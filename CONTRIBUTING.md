@@ -1,6 +1,6 @@
 # Contributing
 
-Work on a short-lived feature branch or isolated worktree. Read `AGENTS.md`, the three specifications, and `docs/requirements/matrix.yaml` before changing scope.
+Work on a short-lived feature branch or isolated worktree. Read `AGENTS.md`, `docs/roadmap.md`, and `docs/requirements-matrix.yaml` before changing scope. Fortress supersedes earlier performance-first production assumptions; existing vLLM/SGLang paths are numerical references unless a task explicitly retains them.
 
 For each change:
 
