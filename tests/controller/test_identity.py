@@ -43,3 +43,22 @@ def test_stale_registration_is_rejected() -> None:
         registry.register(
             registration, sign_registration(private, registration), private.public_key()
         )
+
+
+def test_worker_public_key_cannot_change_for_an_existing_identity() -> None:
+    first = Ed25519PrivateKey.generate()
+    second = Ed25519PrivateKey.generate()
+    registration = Registration(
+        worker_id="worker-a",
+        endpoint="https://worker-a.internal",
+        models=["tiny"],
+        modalities=["text"],
+        timestamp=time.time(),
+    )
+    registry = WorkerRegistry()
+    registry.register(registration, sign_registration(first, registration), first.public_key())
+
+    with pytest.raises(AttestationError, match="identity"):
+        registry.register(
+            registration, sign_registration(second, registration), second.public_key()
+        )

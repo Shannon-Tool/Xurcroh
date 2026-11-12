@@ -32,7 +32,7 @@ def running_controller(worker_endpoint: str) -> Iterator[str]:
     )
     registry = WorkerRegistry()
     registry.register(registration, sign_registration(private, registration), private.public_key())
-    app = create_controller_app(registry)
+    app = create_controller_app(registry, require_authentication=False)
     config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="error")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)

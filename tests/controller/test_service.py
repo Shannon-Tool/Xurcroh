@@ -36,7 +36,7 @@ def test_circuit_relays_real_stage_execution_without_plaintext_logs(
         registry.register(
             registration, sign_registration(private, registration), private.public_key()
         )
-        app = create_controller_app(registry)
+        app = create_controller_app(registry, require_authentication=False)
         with TestClient(app) as client:
             response = client.post(
                 "/v1/circuits",
