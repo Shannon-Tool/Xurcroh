@@ -80,3 +80,12 @@ Optimized dense stages use vLLM 0.15.0 `GPUModelRunner` with recipient-sealed sh
 ## ADR-014: SGLang private MoE stage contract
 
 Optimized MoE/long-context stages use SGLang 0.5.23 `TpModelWorker` with `LoadFormat.PRIVATE`, a `DefaultModelLoader` subclass that reads only the recipient-sealed stage. `ForwardBatch` carries transformed `input_embeds`, and `PPProxyTensors` preserves `hidden_states` plus `residual` for the next worker. RadixCache is disabled; KV/request cleanup wipes token slots before returning them to the free pool. CPU tests validate private loading, forward/proxy contracts, version rejection, and cleanup ordering. Actual SGLang MoE kernel compatibility and numerical quality require physical GPU validation and are not claimed from these tests.
+
+
+## ADR-015: Fortress replaces obfuscation-first production inference
+
+`docs/roadmap.md` supersedes the performance-first production architecture. Fortress outsources only exact quantized linear operations over additive integer shares and keeps nonlinear operations, attention mixing, routing, scheduling, and decoding at the trusted client combiner. Existing vLLM/SGLang/xDiT integrations remain plaintext numerical references and transition tools, not the Fortress production engine. A new Rust/CUDA engine is therefore required rather than another framework adapter.
+
+The initial arithmetic domain is modulo `2^32`, with wide intermediates and a proof that every unreduced quantized product fits before execution. A prime-field alternative must be benchmarked and recorded before changing that domain. Full independently generated random additive shares can provide information-theoretic hiding under explicit non-collusion and independence assumptions. Seed-expanded shares reduce storage and bandwidth but provide only computational hiding. Algebraic transforms remain an inner layer and are never counted as a confidentiality guarantee.
+
+Fortress has one security mode and does not silently fall back to plaintext, floating-point reference, or weaker transport execution. Every hardware ladder rung requires separate authorization and exact quantized, quality, attack, integrity, canary, cost, and teardown evidence. Independent attestation, second-party builds, external audits, and public red-team results remain external acceptance gates, not claims the implementation can make about itself.

@@ -2,9 +2,11 @@ version: 1
 production_accepted: false
 validation_report: docs/validation-report.md
 status_legend:
+  pending: requirement not implemented yet
   implemented: source and local verification present
   hardware_validated: scoped physical hardware evidence present; see validation report for limits
   hardware_pending: executable implementation present; physical hardware validation required
+  external_pending: independent authorization, hardware, reviewer, or public evidence required
   constrained: requirement limited by a documented mathematical or third-party constraint
 requirements:
   - {id: CORE-01, source: public-architecture, requirement: independent distributed GPU stages, status: hardware_pending, evidence: [python/xurcroh/runtime/stage.py, python/xurcroh/stage_worker.py, tests/integration/test_stage_sdk.py]}
@@ -143,3 +145,37 @@ requirements:
   - {id: VAL-23, source: phase-4, requirement: proof that all billable test instances were destroyed, status: hardware_validated, evidence: [docs/validation-report.md]}
   - {id: VAL-24, source: phase-4, requirement: remaining production blockers, status: implemented, evidence: [docs/security.md, docs/models.md, docs/validation-report.md]}
   - {id: VAL-25, source: phase-4, requirement: distinguish implemented locally validated hardware validated and production accepted, status: implemented, evidence: [docs/validation-report.md, docs/requirements-matrix.yaml]}
+  - {id: FRT-SEC-01, source: fortress-2.1, requirement: direction-separated AEAD keys and nonces across stage and media sessions, status: pending, evidence: [python/xurcroh/runtime/stage_sessions.py, python/xurcroh/runtime/media_sessions.py, crates/crypto/src/onion.rs]}
+  - {id: FRT-SEC-02, source: fortress-2.2, requirement: CSPRNG compiler secrets confined to the client boundary, status: pending, evidence: [python/xurcroh/cli.py, python/xurcroh/shards/compiler.py]}
+  - {id: FRT-SEC-03, source: fortress-2.3, requirement: session-scoped request state and authenticated cancellation and deletion, status: pending, evidence: [python/xurcroh/models/dense.py, python/xurcroh/stage_worker.py]}
+  - {id: FRT-SEC-04, source: fortress-2.4, requirement: authenticated discovery enrollment circuits and SSRF-safe relay, status: pending, evidence: [python/xurcroh/controller/service.py]}
+  - {id: FRT-SEC-05, source: fortress-2.5, requirement: nonce and workload binding parsed from hardware-signed attestation evidence, status: pending, evidence: [python/xurcroh/attestation.py]}
+  - {id: FRT-SEC-06, source: fortress-2.6, requirement: HKDF onion keys contextual authentication and bounded padding, status: pending, evidence: [crates/crypto/src/onion.rs]}
+  - {id: FRT-SEC-07, source: fortress-2.7, requirement: private keys excluded from engine configuration and serialized diagnostics, status: pending, evidence: [python/xurcroh/adapters/vllm_v1_stage.py]}
+  - {id: FRT-SEC-08, source: fortress-2.8, requirement: reproducible public validation harness key rotation and repository hygiene, status: pending, evidence: [scripts/gpu, .gitignore, README.md, CONTRIBUTING.md, SECURITY.md]}
+  - {id: FRT-MATH-01, source: fortress-3.1, requirement: exact fixed-point ring arithmetic with explicit overflow bounds and prime benchmark, status: pending, evidence: [python/xurcroh/fortress, crates/fortress]}
+  - {id: FRT-MATH-02, source: fortress-3.2, requirement: general additive weight and activation share grid with epoch refresh, status: pending, evidence: [python/xurcroh/fortress, crates/fortress]}
+  - {id: FRT-MATH-03, source: fortress-3.2, requirement: computational seed expansion benchmarked against stored shares without information-theoretic claims, status: pending, evidence: [native/cuda, crates/fortress, docs/architecture/decisions.md]}
+  - {id: FRT-MATH-04, source: fortress-3.3, requirement: AEAD AONT-RS dispersed storage threshold key release and loss recovery, status: pending, evidence: [python/xurcroh/fortress, python/xurcroh/shards]}
+  - {id: FRT-MATH-05, source: fortress-3.3, requirement: per-operation secret anti-adjacency placement replicas diversity and epoch reshuffling, status: pending, evidence: [python/xurcroh/fortress]}
+  - {id: FRT-MATH-06, source: fortress-3.5, requirement: exact Freivalds verification on every product with replica attribution, status: pending, evidence: [python/xurcroh/integrity.py, python/xurcroh/fortress]}
+  - {id: FRT-ENG-01, source: fortress-4.1, requirement: Rust stateless integer engine and CUDA matrix and seed-expansion kernels, status: pending, evidence: [crates/fortress, native/cuda]}
+  - {id: FRT-ENG-02, source: fortress-4.2, requirement: streaming quantization share check-vector operation and AONT-RS compiler, status: pending, evidence: [python/xurcroh/shards/compiler.py, python/xurcroh/fortress]}
+  - {id: FRT-ENG-03, source: fortress-4.3, requirement: trusted client nonlinear dense MoE and DiT combiner with KV and verification, status: pending, evidence: [python/xurcroh/client/boundary.py, python/xurcroh/runtime/stage.py, python/xurcroh/fortress]}
+  - {id: FRT-ENG-04, source: fortress-4.4, requirement: Fortress-only authenticated chunked Rust QUIC transport with rotation, status: pending, evidence: [crates/transport, crates/protocol]}
+  - {id: FRT-ENG-05, source: fortress-4.5-4.7, requirement: client placement multi-provider provisioning and real model and diffusers loaders, status: pending, evidence: [python/xurcroh/providers, python/xurcroh/shards, scripts/vast]}
+  - {id: FRT-F0, source: fortress-6, requirement: four-process miniature text Fortress with exact quality attack integrity canary and bandwidth evidence, status: pending, evidence: [tests/fortress, docs/validation-report.md]}
+  - {id: FRT-M0, source: fortress-6, requirement: four-process synthetic DiT Fortress with exact quality attack integrity canary and bandwidth evidence, status: pending, evidence: [tests/fortress, docs/validation-report.md]}
+  - {id: FRT-TRN-01, source: fortress-3.8, requirement: forward-secret mutual hybrid post-quantum TLS with negotiated-algorithm tests, status: pending, evidence: [crates/transport, Cargo.lock]}
+  - {id: FRT-TRN-02, source: fortress-3.8, requirement: Tamarin or ProVerif handshake model and CI protocol fuzzing, status: pending, evidence: [protocol, crates, .github/workflows/ci.yml]}
+  - {id: FRT-TRN-03, source: fortress-3.8, requirement: Tor I2P or oblivious relay with fixed-rate cover and measured classifier resistance, status: pending, evidence: [crates/transport, python/xurcroh/fortress, tests/security]}
+  - {id: FRT-SUR-01, source: fortress-3.8, requirement: attributed decoys canaries honeytokens and key revocation, status: pending, evidence: [python/xurcroh/fortress, tests/security]}
+  - {id: FRT-SUR-02, source: fortress-3.8, requirement: local prompt armour placeholder substitution and restoration, status: pending, evidence: [python/xurcroh/fortress, tests/security]}
+  - {id: FRT-SUR-03, source: fortress-3.8, requirement: sealed measured sandboxed workers with no shell or SSH and physical attestation, status: external_pending, evidence: [deploy, python/xurcroh/attestation.py]}
+  - {id: FRT-SUR-04, source: fortress-3.8, requirement: stateless host and GPU scrub probes with documented hardware limits, status: pending, evidence: [native/cuda, tests/hardware/test_cuda_forensics.py]}
+  - {id: FRT-SUR-05, source: fortress-3.8, requirement: reproducible signed releases SBOM and client-checked transparency log, status: pending, evidence: [.github, deploy, scripts]}
+  - {id: FRT-WEB-01, source: fortress-4.8, requirement: mounted existing labs plus share-grid placement and Freivalds laboratories and corrected manual, status: pending, evidence: [apps/web-manual]}
+  - {id: FRT-LADDER-01, source: fortress-6, requirement: authorized L0-L6 text and M1-M4 media ladders with exact quality attack cost and teardown evidence, status: external_pending, evidence: [docs/validation-report.md, scripts/gpu]}
+  - {id: FRT-EXT-01, source: fortress-3.11, requirement: independent confidential-hardware and second-party reproducibility evidence, status: external_pending, evidence: [docs/validation-report.md]}
+  - {id: FRT-EXT-02, source: fortress-3.11, requirement: published external cryptography and systems audit, status: external_pending, evidence: [docs/security.md]}
+  - {id: FRT-EXT-03, source: fortress-3.11, requirement: public per-threat comparison and unresolved-critical-free red-team or bounty period, status: external_pending, evidence: [apps/web-manual/content, docs/security.md]}
