@@ -139,8 +139,16 @@ impl TensorFrame {
             if expected != self.payload.len() as u64 {
                 return Err(FrameError::PayloadLength);
             }
-        } else if self.dtype.is_some() || !self.shape.is_empty() || !self.payload.is_empty() {
-            return Err(FrameError::InvalidControlFrame);
+        } else {
+            let authenticated_cancel = self.kind == FrameKind::Cancel
+                && self.dtype.is_none()
+                && self.shape.is_empty()
+                && self.payload.len() == 32;
+            let empty_control =
+                self.dtype.is_none() && self.shape.is_empty() && self.payload.is_empty();
+            if !authenticated_cancel && !empty_control {
+                return Err(FrameError::InvalidControlFrame);
+            }
         }
         if self.payload.len() > MAX_PAYLOAD_LEN {
             return Err(FrameError::PayloadTooLarge);

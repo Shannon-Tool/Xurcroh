@@ -12,7 +12,7 @@ from typing import Any, Literal, cast
 import torch
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from xurcroh.adapters.pipeline import PipelineTensorInterceptor
@@ -30,6 +30,7 @@ class StageExecutionRequest(BaseModel):
 
     request_id: str = Field(pattern=r"^[A-Za-z0-9._:-]{1,128}$")
     session_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    session_token: str = Field(min_length=44, max_length=44)
     client_public: str = Field(min_length=44, max_length=44)
     stage_index: int = Field(ge=0)
     dtype: Literal["f64", "f32", "f16", "bf16", "u8"] = "f64"
@@ -102,7 +103,9 @@ class DenseStage:
         self.stage_index = stage_index
         self.closed = False
 
-    def execute(self, hidden: torch.Tensor, request_id: str | None = None) -> torch.Tensor:
+    def execute(
+        self, hidden: torch.Tensor, request_id: str | None = None, *, state_key: str | None = None
+    ) -> torch.Tensor:
         if self.closed:
             raise ModelLoadError("stage worker is closed")
         dtype = next(
@@ -113,7 +116,7 @@ class DenseStage:
         output_dtype = hidden.dtype
         hidden = hidden.to(dtype)
         if request_id is not None:
-            output = self.runner.run_cached(request_id, hidden)
+            output = self.runner.run_cached(state_key or request_id, hidden)
         else:
             output = self.runner.run(hidden)
         return output.to(output_dtype)
@@ -250,14 +253,15 @@ def create_stage_app(
         request = StageExecutionRequest.model_validate(values)
         if request.stage_index != stage_index:
             raise ProtocolError("request was routed to the wrong stage")
+        state_key = f"{request.session_id}:{request.request_id}"
         event = threading.Event()
         with lock:
-            if request.request_id in cancelled:
-                raise ProtocolError("stage request ID is already active")
-            cancelled[request.request_id] = event
+            if state_key in cancelled:
+                raise ProtocolError("stage request ID is already active in this session")
+            cancelled[state_key] = event
         try:
             receiver, sender = stage.sessions.get_or_create(
-                request.session_id, request.client_public
+                request.session_id, request.client_public, request.session_token
             )
             packet = base64.b64decode(request.packet, validate=True)
             if engine != "reference":
@@ -285,7 +289,9 @@ def create_stage_app(
                     )
                 if event.is_set():
                     raise ProtocolError("stage request was cancelled")
-                output_any = cast(Any, stage.execute(hidden, request.request_id))
+                output_any = cast(
+                    Any, stage.execute(hidden, request.request_id, state_key=state_key)
+                )
                 if event.is_set():
                     raise ProtocolError("stage request was cancelled")
                 response_packet, shape = encode_intermediate(
@@ -301,7 +307,7 @@ def create_stage_app(
                 )
                 if event.is_set():
                     raise ProtocolError("stage request was cancelled")
-                output = stage.execute(hidden, request.request_id)
+                output = stage.execute(hidden, request.request_id, state_key=state_key)
                 if event.is_set():
                     raise ProtocolError("stage request was cancelled")
                 response_packet, shape = _encode_tensor(output, request.request_id, sender)
@@ -316,23 +322,37 @@ def create_stage_app(
             raise ProtocolError("invalid stage tensor encoding") from error
         finally:
             with lock:
-                cancelled.pop(request.request_id, None)
+                cancelled.pop(state_key, None)
 
     @app.post("/v1/relay")
     async def relay(request: Request) -> Any:
         values = await request.json()
         return execute(values)
 
+    def authorized_session(request: Request) -> str:
+        session_id = request.headers.get("X-Xurcroh-Session-Id")
+        session_token = request.headers.get("X-Xurcroh-Session-Token")
+        if session_id is None or session_token is None:
+            raise HTTPException(status_code=403, detail="session credentials are required")
+        try:
+            stage.sessions.authorize(session_id, session_token)
+        except ProtocolError as error:
+            raise HTTPException(status_code=403, detail="invalid session credentials") from error
+        return session_id
+
     @app.delete("/v1/stages/{request_id}", status_code=204)
-    def cancel(request_id: str) -> None:
+    def cancel(request_id: str, request: Request) -> None:
+        session_id = authorized_session(request)
+        state_key = f"{session_id}:{request_id}"
         with lock:
-            event = cancelled.get(request_id)
+            event = cancelled.get(state_key)
             if event is not None:
                 event.set()
-        stage.drop_request(request_id)
+        stage.drop_request(state_key)
 
     @app.delete("/v1/stages/sessions/{session_id}", status_code=204)
-    def close_session(session_id: str) -> None:
+    def close_session(session_id: str, request: Request) -> None:
+        authorized_session(request)
         stage.sessions.remove(session_id)
 
     return app

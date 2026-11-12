@@ -45,6 +45,25 @@ fn control_frames_cannot_carry_tensor_payloads() {
     assert!(result.is_err());
 }
 
+#[test]
+fn cancellation_carries_a_bounded_session_proof() {
+    let frame =
+        TensorFrame::new([0; 16], 0, 0, FrameKind::Cancel, None, vec![], vec![7; 32]).unwrap();
+    let decoded = TensorFrame::decode(&frame.encode().unwrap()).unwrap();
+    assert_eq!(decoded.payload, vec![7; 32]);
+    assert!(TensorFrame::new([0; 16], 0, 0, FrameKind::Cancel, None, vec![], vec![7; 31]).is_err());
+    assert!(TensorFrame::new(
+        [0; 16],
+        0,
+        0,
+        FrameKind::Complete,
+        None,
+        vec![],
+        vec![7; 32]
+    )
+    .is_err());
+}
+
 proptest! {
     #[test]
     fn arbitrary_bytes_never_panic(payload in proptest::collection::vec(any::<u8>(), 0..256)) {

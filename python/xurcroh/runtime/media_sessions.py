@@ -95,7 +95,7 @@ class ProtectedMediaSessionStore:
                 session_id=session_id,
                 expires_at=time.monotonic() + self.ttl_seconds,
                 receiver=PipelineTensorInterceptor(shared, b"worker", b"client", context),
-                sender=PipelineTensorInterceptor(shared, b"client", b"worker", context),
+                sender=PipelineTensorInterceptor(shared, b"worker", b"client", context),
             )
         return session_id, encode_public(private.public_key())
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import contextlib
 import sys
 import types
@@ -465,25 +466,33 @@ def test_vllm_request_drop_refreshes_persistent_batch_metadata() -> None:
     assert events == ["remove", "condense", "refresh"]
 
 
-def test_stage_worker_cancel_uses_stage_lifecycle(tmp_path, monkeypatch) -> None:
+def test_stage_worker_scopes_state_and_authenticates_cancellation(tmp_path, monkeypatch) -> None:
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
     from fastapi.testclient import TestClient
 
+    from xurcroh.runtime.stage_sessions import StageSessionStore, encode_session_public
     from xurcroh.stage_worker import create_stage_app
 
-    class Runner:
-        def drop_request(self, request_id):
-            raise AssertionError("worker bypassed stage lifecycle")
+    install_vllm_stubs(monkeypatch)
+    stage_private = X25519PrivateKey.generate()
+    client_private = X25519PrivateKey.generate()
+    session_id = "a" * 32
+    session_token = base64.b64encode(bytes(range(32))).decode()
+    dropped = []
 
     class Stage:
         def __init__(self):
-            self.runner = Runner()
-            self.sessions = types.SimpleNamespace(remove=lambda session_id: None)
+            self.runner = types.SimpleNamespace(cache_entries=0)
+            self.sessions = StageSessionStore(stage_private, 0)
             self.closed = False
-            self._positions = {"request": 9}
+            self.state_keys = []
+
+        def execute(self, hidden, request_id, *, state_key=None):
+            self.state_keys.append(state_key)
+            return Intermediate({"hidden_states": hidden})
 
         def drop_request(self, request_id):
-            self._positions.pop(request_id, None)
+            dropped.append(request_id)
 
         def close(self):
             self.closed = True
@@ -492,17 +501,75 @@ def test_stage_worker_cancel_uses_stage_lifecycle(tmp_path, monkeypatch) -> None
     monkeypatch.setattr(
         "xurcroh.adapters.vllm_v1_stage.create_vllm_stage", lambda *args, **kwargs: stage
     )
+    monkeypatch.setattr(
+        "xurcroh.adapters.vllm_v1_stage.decode_intermediate",
+        lambda packet, receiver: {"hidden_states": torch.ones(1, 4)},
+    )
+    monkeypatch.setattr(
+        "xurcroh.adapters.vllm_v1_stage.encode_intermediate",
+        lambda tensors, request_id, sender: (b"packet", [1]),
+    )
     app = create_stage_app(
         tmp_path / "manifest.json",
         stage_index=0,
-        private_key=X25519PrivateKey.generate(),
+        private_key=stage_private,
         engine="vllm",
         checkpoint=tmp_path,
     )
     with TestClient(app) as client:
-        response = client.delete("/v1/stages/request")
-    assert response.status_code == 204
-    assert stage._positions == {}
+        response = client.post(
+            "/v1/stages/execute",
+            json={
+                "request_id": "request",
+                "session_id": session_id,
+                "session_token": session_token,
+                "client_public": encode_session_public(client_private),
+                "stage_index": 0,
+                "dtype": "u8",
+                "shape": [1],
+                "packet": base64.b64encode(b"packet").decode(),
+            },
+        )
+        assert response.status_code == 200
+        second_session_id = "b" * 32
+        second_token = base64.b64encode(bytes([1]) * 32).decode()
+        second_response = client.post(
+            "/v1/stages/execute",
+            json={
+                "request_id": "request",
+                "session_id": second_session_id,
+                "session_token": second_token,
+                "client_public": encode_session_public(client_private),
+                "stage_index": 0,
+                "dtype": "u8",
+                "shape": [1],
+                "packet": base64.b64encode(b"packet").decode(),
+            },
+        )
+        assert second_response.status_code == 200
+        assert stage.state_keys == [f"{session_id}:request", f"{second_session_id}:request"]
+        assert client.delete("/v1/stages/request").status_code == 403
+        headers = {
+            "X-Xurcroh-Session-Id": session_id,
+            "X-Xurcroh-Session-Token": session_token,
+        }
+        assert client.delete("/v1/stages/request", headers=headers).status_code == 204
+        assert dropped == [f"{session_id}:request"]
+        assert client.delete(f"/v1/stages/sessions/{session_id}").status_code == 403
+        assert (
+            client.delete(f"/v1/stages/sessions/{session_id}", headers=headers).status_code == 204
+        )
+        second_headers = {
+            "X-Xurcroh-Session-Id": second_session_id,
+            "X-Xurcroh-Session-Token": second_token,
+        }
+        assert (
+            client.delete(
+                f"/v1/stages/sessions/{second_session_id}", headers=second_headers
+            ).status_code
+            == 204
+        )
+        assert stage.sessions.active_count == 0
 
 
 def test_stage_transition_also_transforms_residual_basis() -> None:
@@ -602,7 +669,11 @@ def test_vllm_handoff_preserves_unfused_hidden(monkeypatch: pytest.MonkeyPatch) 
 
     engine._client = types.SimpleNamespace(post=lambda *args, **kwargs: Response())
     session = types.SimpleNamespace(
-        session_id="session", client_public="client", sender=object(), receiver=object()
+        session_id="session",
+        session_token="token",
+        client_public="client",
+        sender=object(),
+        receiver=object(),
     )
     monkeypatch.setattr("xurcroh.runtime.stage.encode_intermediate", lambda *args: (b"packet", [1]))
     monkeypatch.setattr(
