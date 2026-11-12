@@ -9,10 +9,10 @@ from unittest.mock import PropertyMock, patch
 
 import torch
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
 
 from xurcroh.adapters.sglang_kv import scrub_sglang_request
 from xurcroh.errors import CompatibilityError, ModelLoadError, ProtocolError
+from xurcroh.shards.key_broker import register_stage_identity, revoke_stage_identity
 from xurcroh.shards.recipients import verify_manifest_digest
 
 SGLANG_VERSION = "0.5.23"
@@ -82,6 +82,7 @@ class SGLangStage:
         self.worker = worker
         self.runner = SGLangStageRunner(worker)
         self.sessions: Any = None
+        self._identity_handle: str | None = None
         self.stage_index = stage_index
         self.closed = False
         self._positions: dict[str, int] = {}
@@ -111,6 +112,9 @@ class SGLangStage:
                 self.drop_request(request_id)
             if self.sessions is not None:
                 self.sessions.close()
+            if self._identity_handle is not None:
+                revoke_stage_identity(self._identity_handle)
+                self._identity_handle = None
             self.closed = True
 
 
@@ -143,7 +147,7 @@ def create_sglang_stage(
 
     from xurcroh.runtime.stage_sessions import StageSessionStore
 
-    identity = private_key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+    identity_handle = register_stage_identity(private_key)
     server_args = ServerArgs(
         model_path=str(checkpoint),
         tokenizer_path=str(checkpoint),
@@ -156,17 +160,22 @@ def create_sglang_stage(
         model_loader_extra_config={
             "manifest_path": str(path),
             "stage_index": stage_index,
-            "stage_private_key": identity,
+            "stage_identity_handle": identity_handle,
         },
         enforce_eager=True,
     )
-    worker = TpModelWorker(server_args, device, 29616)
-    worker.alloc_memory_pool()
-    worker.init_attention_backends()
-    worker.init_cuda_graphs(capture_decode_cuda_graph=False)
-    stage = SGLangStage(worker, stage_index)
-    stage.sessions = StageSessionStore(private_key, stage_index)
-    return stage
+    try:
+        worker = TpModelWorker(server_args, device, 29616)
+        worker.alloc_memory_pool()
+        worker.init_attention_backends()
+        worker.init_cuda_graphs(capture_decode_cuda_graph=False)
+        stage = SGLangStage(worker, stage_index)
+        stage._identity_handle = identity_handle
+        stage.sessions = StageSessionStore(private_key, stage_index)
+        return stage
+    except Exception:
+        revoke_stage_identity(identity_handle)
+        raise
 
 
 def tensors_from_proxy(proxy: Any) -> dict[str, torch.Tensor]:

@@ -67,26 +67,27 @@ def test_sglang_version_is_required() -> None:
 
 
 def test_sglang_private_loader_opens_only_recipient_shard(tiny_llama_path, tmp_path) -> None:
-    from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
-
     from sglang.private.private_model_loader import PrivateModelLoader
     from shards.identities import StageIdentities
+    from xurcroh.shards.key_broker import register_stage_identity, revoke_stage_identity
 
     identities = StageIdentities.create(1)
     compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=457)
+    handle = register_stage_identity(identities.private_keys[0])
     loader = object.__new__(PrivateModelLoader)
     loader.load_config = SimpleNamespace(
         model_loader_extra_config={
             "manifest_path": str(compiled.manifest_path),
             "stage_index": 0,
-            "stage_private_key": identities.private_keys[0].private_bytes(
-                Encoding.Raw, PrivateFormat.Raw, NoEncryption()
-            ),
+            "stage_identity_handle": handle,
         }
     )
-    tensors = dict(loader._get_all_weights(SimpleNamespace(), SimpleNamespace()))
-    assert "model.layers.0.self_attn.q_proj.weight" in tensors
-    loader.download_model(SimpleNamespace())
+    try:
+        tensors = dict(loader._get_all_weights(SimpleNamespace(), SimpleNamespace()))
+        assert "model.layers.0.self_attn.q_proj.weight" in tensors
+        loader.download_model(SimpleNamespace())
+    finally:
+        revoke_stage_identity(handle)
 
 
 def test_sglang_kv_cleanup_zeroes_slots_before_free() -> None:

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -34,11 +35,13 @@ class CompilationConfig:
     stage_count: int
     boundary_key: bytes
     recipients: tuple[StageRecipient, ...]
-    seed: int
+    seed: int | None = None
     compute_dtype: torch.dtype = torch.float64
     shard_dtype: torch.dtype | None = None
 
     def __post_init__(self) -> None:
+        if self.seed is not None and self.seed < 0:
+            raise ValueError("seed must be non-negative")
         if self.stage_count < 1:
             raise ValueError("stage_count must be positive")
         if len(self.boundary_key) != 32:
@@ -338,6 +341,7 @@ class XurcrohWeightCompiler:
         return self._compile_dense_layer(tensors, prefix, basis, seed)
 
     def compile(self) -> CompilationResult:
+        seed = self.config.seed if self.config.seed is not None else secrets.randbits(63)
         text_config = self._text_config()
         hidden_size = int(text_config["hidden_size"])
         query_heads = int(text_config["num_attention_heads"])
@@ -349,7 +353,7 @@ class XurcrohWeightCompiler:
         partitions = partition_layers(layer_indices, self.config.stage_count)
         bases = [
             sample_orthogonal(
-                hidden_size, seed=self.config.seed + 1009 * index, dtype=self.config.compute_dtype
+                hidden_size, seed=seed + 1009 * index, dtype=self.config.compute_dtype
             )
             for index in range(self.config.stage_count)
         ]
@@ -396,7 +400,7 @@ class XurcrohWeightCompiler:
                     layer_tensors,
                     prefix,
                     basis,
-                    self.config.seed + index * 97 + stage_index,
+                    seed + index * 97 + stage_index,
                 )
                 converted = {
                     name: tensor.to(self.config.storage_dtype)

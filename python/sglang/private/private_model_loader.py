@@ -6,10 +6,10 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from xurcroh.errors import ModelLoadError
 from xurcroh.shards.format import read_shard, validate_shard_path
+from xurcroh.shards.key_broker import resolve_stage_identity
 from xurcroh.shards.recipients import open_stage_key, verify_manifest_digest
 
 try:
@@ -30,10 +30,10 @@ class PrivateModelLoader(DefaultModelLoader):  # type: ignore[misc]
         digest = verify_manifest_digest(document)
         stage_index = int(extra["stage_index"])
         stage = document["stages"][stage_index]
-        identity = extra.get("stage_private_key")
-        if not isinstance(identity, bytes) or len(identity) != 32:
-            raise ModelLoadError("SGLang private loading requires a recipient identity")
-        private_key = X25519PrivateKey.from_private_bytes(identity)
+        handle = extra.get("stage_identity_handle")
+        if not isinstance(handle, str) or not handle:
+            raise ModelLoadError("SGLang private loading requires a recipient identity handle")
+        private_key = resolve_stage_identity(handle)
         envelope = json.loads((manifest_path.parent / stage["key_envelope"]).read_text())
         key = open_stage_key(
             envelope,
