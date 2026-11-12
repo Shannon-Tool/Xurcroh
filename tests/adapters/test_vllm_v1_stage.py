@@ -399,6 +399,7 @@ def test_vllm_stage_constructs_explicit_worker_configs(
     assert config.scheduler_config.max_model_len == 64
     assert config.scheduler_config.is_encoder_decoder is False
     assert config.load_config.load_format == "xurcroh_sharded"
+    assert "stage_private_key" not in config.load_config.model_loader_extra_config
     assert config.load_config.model_loader_extra_config["stage_index"] == 0
     assert created[0].model_runner.model.model.start_layer == 0
     assert created[0].model_runner.model.model.end_layer == 2

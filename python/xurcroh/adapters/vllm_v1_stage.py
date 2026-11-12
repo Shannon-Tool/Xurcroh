@@ -9,9 +9,9 @@ from unittest.mock import PropertyMock, patch
 
 import torch
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
 
 from xurcroh.errors import CompatibilityError, ModelLoadError, ProtocolError
+from xurcroh.shards.key_broker import register_stage_identity, revoke_stage_identity
 from xurcroh.shards.recipients import verify_manifest_digest
 
 VLLM_VERSION = "0.15.0"
@@ -193,6 +193,7 @@ class VllmStage:
         self.runner = VllmStageRunner(model_runner)
         self.worker = worker
         self.sessions: Any = None
+        self._identity_handle: str | None = None
         self.stage_index = 0
         self.closed = False
 
@@ -225,6 +226,9 @@ class VllmStage:
                 self.sessions.close()
             if self.worker is not None:
                 self.worker.shutdown()
+            if self._identity_handle is not None:
+                revoke_stage_identity(self._identity_handle)
+                self._identity_handle = None
             self.closed = True
 
 
@@ -312,7 +316,7 @@ def create_vllm_stage(
     }.get(storage_dtype)
     if dtype is None:
         raise CompatibilityError(f"unsupported vLLM shard dtype: {storage_dtype}")
-    identity = private_key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+    identity_handle = register_stage_identity(private_key)
     model_config = ModelConfig(
         model=str(checkpoint),
         tokenizer=str(checkpoint),
@@ -339,7 +343,7 @@ def create_vllm_stage(
             model_loader_extra_config={
                 "manifest_path": str(path),
                 "stage_index": stage_index,
-                "stage_private_key": identity,
+                "stage_identity_handle": identity_handle,
             },
         ),
     )
@@ -354,11 +358,13 @@ def create_vllm_stage(
         with set_current_vllm_config(config):
             _initialize_vllm_cache(worker, config)
         stage = VllmStage(worker.model_runner, worker)
+        stage._identity_handle = identity_handle
         stage.stage_index = stage_index
         stage.runner.stage_index = stage_index
         stage.sessions = StageSessionStore(private_key, stage_index)
         return stage
     except Exception:
+        revoke_stage_identity(identity_handle)
         worker.shutdown()
         raise
 

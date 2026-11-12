@@ -178,3 +178,33 @@ def test_compiler_reads_original_weights_one_layer_at_a_time(
     ]
     assert layer_reads
     assert all(len(indices) <= 1 for indices in layer_reads)
+
+
+def test_compiler_seed_defaults_to_non_deterministic_client_secret(
+    tiny_llama_path: Path, tmp_path: Path
+) -> None:
+    identities = StageIdentities.create(1)
+    random_result = XurcrohWeightCompiler(
+        CompilationConfig(
+            checkpoint=tiny_llama_path,
+            output_dir=tmp_path / "random",
+            stage_count=1,
+            boundary_key=identities.boundary_key,
+            recipients=identities.recipients,
+        )
+    ).compile()
+    zero_result = XurcrohWeightCompiler(
+        CompilationConfig(
+            checkpoint=tiny_llama_path,
+            output_dir=tmp_path / "zero",
+            stage_count=1,
+            boundary_key=identities.boundary_key,
+            recipients=identities.recipients,
+            seed=0,
+        )
+    ).compile()
+
+    random_boundary, _ = read_shard(random_result.boundary_shard, identities.boundary_key)
+    zero_boundary, _ = read_shard(zero_result.boundary_shard, identities.boundary_key)
+    assert not torch.equal(random_boundary["basis.input"], zero_boundary["basis.input"])
+    assert "seed" not in json.loads(random_result.manifest_path.read_text())

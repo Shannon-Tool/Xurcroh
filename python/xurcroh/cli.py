@@ -27,7 +27,7 @@ def main() -> None:
     compile_parser.add_argument("--stages", type=int, required=True)
     compile_parser.add_argument("--boundary-key-env", default="XURCROH_CLIENT_BOUNDARY_KEY")
     compile_parser.add_argument("--stage-recipient", action="append", required=True)
-    compile_parser.add_argument("--seed", type=int, default=0)
+    compile_parser.add_argument("--seed", type=int)
     compile_parser.add_argument("--compute-dtype", choices=["f64", "f32"], default="f64")
     compile_parser.add_argument("--shard-dtype", choices=["f64", "f32", "f16", "bf16"])
     args = parser.parse_args()
