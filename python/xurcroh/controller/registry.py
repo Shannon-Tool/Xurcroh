@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import threading
 import time
 from dataclasses import dataclass, field
@@ -7,6 +8,7 @@ from typing import Any
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from xurcroh.controller.identity import Registration, registration_expired
 from xurcroh.errors import AttestationError, ClusterUnavailableError
@@ -25,6 +27,7 @@ class WorkerRecord:
     max_concurrent_requests: int = 8
     registered_at: float = 0
     last_heartbeat: float = 0
+    identity_fingerprint: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -46,10 +49,16 @@ class WorkerRegistry:
             public_key.verify(signature, registration.canonical())
         except InvalidSignature as error:
             raise AttestationError("worker registration signature is invalid") from error
+        fingerprint = hashlib.sha256(
+            public_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
+        ).hexdigest()
         with self._lock:
             existing = self._workers.get(registration.worker_id)
-            if existing is not None and existing.endpoint != registration.endpoint:
-                raise AttestationError("worker identity is already assigned to another endpoint")
+            if existing is not None and (
+                existing.endpoint != registration.endpoint
+                or existing.identity_fingerprint != fingerprint
+            ):
+                raise AttestationError("worker identity is already assigned to another identity")
             record = WorkerRecord(
                 worker_id=registration.worker_id,
                 endpoint=registration.endpoint,
@@ -62,6 +71,7 @@ class WorkerRegistry:
                 max_concurrent_requests=registration.max_concurrent_requests,
                 registered_at=registration.timestamp,
                 last_heartbeat=time.time(),
+                identity_fingerprint=fingerprint,
                 metadata=registration.public_metadata,
             )
             self._workers[record.worker_id] = record
