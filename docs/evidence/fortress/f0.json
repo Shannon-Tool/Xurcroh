@@ -1,0 +1,23 @@
+{
+  "bytes_received": 48768,
+  "bytes_sent": 62496,
+  "cache_entries_after_cleanup": 0,
+  "execution": "local CPU; four independent spawned worker processes; real Rust QUIC",
+  "inference_seconds": 0.315764194005169,
+  "operations": 14,
+  "original_model_max_abs_error": 0.20510334985776957,
+  "quantized_reference_max_abs_error": 0.0,
+  "recorded_at": "2026-11-12T23:14:43.601652+00:00",
+  "revision": "6b8e0842e3c509b6f3a82acadcdd2a5751fec62a",
+  "role_requests": 168,
+  "rung": "F0",
+  "tokens": 3,
+  "worker_exit_codes": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "worker_processes": 4,
+  "working_tree_dirty": true
+}

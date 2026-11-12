@@ -10,7 +10,8 @@ from xurcroh.models.dense import DenseLayerWeights
 
 
 def matrix(generator: torch.Generator, rows: int, cols: int) -> torch.Tensor:
-    return torch.randint(-2, 3, (rows, cols), generator=generator, dtype=torch.int64)
+    integers = torch.randint(-2, 3, (rows, cols), generator=generator, dtype=torch.int64)
+    return integers.to(torch.float64) / 4
 
 
 def build_combiner() -> FortressCombiner:
@@ -23,8 +24,8 @@ def build_combiner() -> FortressCombiner:
             k=matrix(generator, 4, 4),
             v=matrix(generator, 4, 4),
             o=matrix(generator, 4, 4),
-            q_norm=torch.ones(2, dtype=torch.int64),
-            k_norm=torch.ones(2, dtype=torch.int64),
+            q_norm=torch.ones(2, dtype=torch.float64),
+            k_norm=torch.ones(2, dtype=torch.float64),
         )
         feedforward = FeedForwardWeights(
             gate=matrix(generator, 8, 4),
@@ -35,8 +36,8 @@ def build_combiner() -> FortressCombiner:
             DenseLayerWeights(
                 attention=attention,
                 feedforward=feedforward,
-                input_gain=torch.ones(4, dtype=torch.int64),
-                post_attention_gain=torch.ones(4, dtype=torch.int64),
+                input_gain=torch.ones(4, dtype=torch.float64),
+                post_attention_gain=torch.ones(4, dtype=torch.float64),
             )
         )
         prefix = f"model.layers.{index}"
@@ -55,7 +56,7 @@ def build_combiner() -> FortressCombiner:
         operations=operations,
         query_heads=2,
         kv_heads=2,
-        final_norm=torch.ones(4, dtype=torch.int64),
+        final_norm=torch.ones(4, dtype=torch.float64),
         lm_head=matrix(generator, 16, 4),
     )
 
