@@ -90,6 +90,15 @@ impl Matrix {
         vector: &[i64],
         modulus: i128,
     ) -> Result<Vec<i64>, ArithmeticError> {
+        self.transpose_matvec_exact(vector).map(|values| {
+            values
+                .into_iter()
+                .map(|value| value.rem_euclid(modulus) as i64)
+                .collect()
+        })
+    }
+
+    pub fn transpose_matvec_exact(&self, vector: &[i64]) -> Result<Vec<i128>, ArithmeticError> {
         if vector.len() != self.cols {
             return Err(ArithmeticError::Dimension);
         }
@@ -102,7 +111,7 @@ impl Matrix {
                         .ok_or(ArithmeticError::Overflow)?;
                     sum = sum.checked_add(product).ok_or(ArithmeticError::Overflow)?;
                 }
-                Ok((sum.rem_euclid(modulus)) as i64)
+                Ok(sum)
             })
             .collect()
     }
@@ -232,7 +241,7 @@ pub fn freivalds_challenge(
 ) -> Result<FreivaldsChallenge, ArithmeticError> {
     Ok(FreivaldsChallenge {
         r: r.to_vec(),
-        v: weight.transpose_matvec(r, PRIME_MODULUS)?,
+        v: weight.matvec(r, PRIME_MODULUS)?,
         prime: PRIME_MODULUS,
     })
 }
@@ -280,7 +289,7 @@ pub fn execute_grid(
         for share in weight_shares {
             let product = share
                 .matrix
-                .matvec(activation, RING_MODULUS)
+                .transpose_matvec(activation, RING_MODULUS)
                 .map_err(|error| RoleExecutionError {
                     activation_index,
                     weight_index: share.weight_index,
@@ -289,7 +298,7 @@ pub fn execute_grid(
                 })?;
             let verified = share
                 .matrix
-                .matvec(activation, share.challenge.prime)
+                .transpose_matvec(activation, share.challenge.prime)
                 .map_err(|error| RoleExecutionError {
                     activation_index,
                     weight_index: share.weight_index,
@@ -316,7 +325,7 @@ pub fn execute_grid(
             if rng.gen_bool(replica_fraction) {
                 let replica = share
                     .matrix
-                    .matvec(activation, RING_MODULUS)
+                    .transpose_matvec(activation, RING_MODULUS)
                     .map_err(|error| RoleExecutionError {
                         activation_index,
                         weight_index: share.weight_index,

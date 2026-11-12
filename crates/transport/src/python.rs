@@ -313,6 +313,32 @@ impl TensorServer {
         })
     }
 
+    #[staticmethod]
+    fn bind_mutual(
+        address: &str,
+        certificates: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        client_ca: Vec<u8>,
+    ) -> PyResult<Self> {
+        let certificates = certificates.into_iter().map(CertificateDer::from).collect();
+        let key = PrivatePkcs8KeyDer::from(key);
+        let client_ca = CertificateDer::from(client_ca);
+        let server = Python::attach(|py| {
+            py.detach(|| {
+                runtime().block_on(crate::TensorServer::bind_mutual(
+                    address,
+                    certificates,
+                    key,
+                    client_ca,
+                ))
+            })
+        })
+        .map_err(value_error)?;
+        Ok(Self {
+            inner: Mutex::new(Some(Arc::new(server))),
+        })
+    }
+
     fn local_addr(&self) -> PyResult<String> {
         let server = self.inner.lock().map_err(value_error)?;
         server
@@ -363,6 +389,38 @@ impl TensorClient {
                     address,
                     server_name,
                     certificate,
+                ))
+            })
+        })
+        .map_err(value_error)?;
+        Ok(Self {
+            inner: Mutex::new(Some(Arc::new(client))),
+        })
+    }
+
+    #[staticmethod]
+    fn connect_mutual(
+        address: &str,
+        server_name: &str,
+        pinned_certificate: Vec<u8>,
+        client_certificates: Vec<Vec<u8>>,
+        client_key: Vec<u8>,
+    ) -> PyResult<Self> {
+        let address: SocketAddr = address.parse().map_err(value_error)?;
+        let pinned_certificate = CertificateDer::from(pinned_certificate);
+        let client_certificates = client_certificates
+            .into_iter()
+            .map(CertificateDer::from)
+            .collect();
+        let client_key = PrivatePkcs8KeyDer::from(client_key);
+        let client = Python::attach(|py| {
+            py.detach(|| {
+                runtime().block_on(crate::TensorClient::connect_mutual(
+                    address,
+                    server_name,
+                    pinned_certificate,
+                    client_certificates,
+                    client_key,
                 ))
             })
         })

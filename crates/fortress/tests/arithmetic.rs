@@ -22,7 +22,7 @@ fn exact_grid_reconstruction_and_refresh() {
         .collect::<Vec<_>>();
 
     let result = execute_grid(&activation_shares, &shares, 1.0).unwrap();
-    assert_eq!(result, vec![26, 38]);
+    assert_eq!(result, vec![19, 43]);
 
     let refreshed = refresh_shares(&shares[0].matrix, &shares[1].matrix);
     assert_eq!(refreshed.0 + refreshed.1, weight);

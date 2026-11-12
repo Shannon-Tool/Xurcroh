@@ -51,8 +51,21 @@ fn execute_fortress_grid(
     execute_grid(&activation_shares, &shares, replica_fraction).map_err(value_error)
 }
 
+#[pyfunction]
+fn execute_fortress_role(
+    activation: Vec<i64>,
+    weight_share: PyRef<FortressWeightShare>,
+) -> PyResult<Vec<i128>> {
+    weight_share
+        .inner
+        .matrix
+        .transpose_matvec_exact(&activation)
+        .map_err(value_error)
+}
+
 pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<FortressWeightShare>()?;
     module.add_function(wrap_pyfunction!(execute_fortress_grid, module)?)?;
+    module.add_function(wrap_pyfunction!(execute_fortress_role, module)?)?;
     Ok(())
 }
