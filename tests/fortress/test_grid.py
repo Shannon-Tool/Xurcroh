@@ -26,7 +26,7 @@ def test_grid_combines_every_role_and_verifies_each_product() -> None:
 
     result = execute_grid(activation_shares, shares, replica_fraction=1.0)
 
-    assert torch.equal(result, (activation @ weight).remainder(2**32))
+    assert torch.equal(result, (activation @ weight.T).remainder(2**32))
 
 
 def test_grid_attributes_invalid_products_to_the_responsible_role() -> None:

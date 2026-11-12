@@ -1415,6 +1415,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "xurcroh-fortress"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.8",
+ "rand_chacha",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "xurcroh-protocol"
 version = "0.1.0"
 dependencies = [

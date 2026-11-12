@@ -8,7 +8,7 @@ import torch
 from xurcroh.fortress.arithmetic import (
     RING_MODULUS,
     ExactFreivaldsChallenge,
-    _modular_matvec,
+    _modular_matmul,
     verify_freivalds,
 )
 
@@ -56,14 +56,14 @@ def execute_grid(
         for weight_index, share in weight_shares.items():
             if share.weight_index != weight_index or share.matrix.dtype != torch.int64:
                 raise ValueError("weight share index or dtype is invalid")
-            product = _modular_matvec(share.matrix.T, activation, RING_MODULUS)
-            verified_product = _modular_matvec(share.matrix.T, activation, share.challenge.prime)
+            product = _modular_matmul(activation, share.matrix.T, RING_MODULUS)
+            verified_product = _modular_matmul(activation, share.matrix.T, share.challenge.prime)
             if not verify_freivalds(activation, verified_product, share.challenge):
                 raise RoleExecutionError(
                     activation_index, weight_index, share.provider_id, "Freivalds check failed"
                 )
             if secrets.randbelow(100) < replica_fraction * 100:
-                replica = _modular_matvec(share.matrix.T, activation, RING_MODULUS)
+                replica = _modular_matmul(activation, share.matrix.T, RING_MODULUS)
                 if not torch.equal(product, replica):
                     raise RoleExecutionError(
                         activation_index,
@@ -72,4 +72,18 @@ def execute_grid(
                         "replica result does not match",
                     )
             results.append(product)
-    return torch.sum(torch.stack(results), dim=0).remainder(RING_MODULUS)
+    stacked = torch.stack(results)
+    combined: list[int | list[int]] = []
+    for feature in range(stacked.shape[-1]):
+        column = stacked[..., feature]
+        if column.ndim == 1:
+            combined.append(sum(int(value) for value in column) % RING_MODULUS)
+        else:
+            combined.append(
+                [
+                    sum(int(value) for value in column[:, index]) % RING_MODULUS
+                    for index in range(column.shape[1])
+                ]
+            )
+    result = torch.tensor(combined, dtype=torch.int64)
+    return result if result.ndim == 1 else result.mT
