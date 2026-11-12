@@ -19,7 +19,7 @@ from xurcroh.attestation import (
 from xurcroh.errors import AttestationError, CompatibilityError
 
 
-def _verify_hardware(vendor: str, document: dict[str, Any], nonce: bytes) -> None:
+def _verify_hardware(vendor: str, document: dict[str, Any], nonce: bytes) -> bytes:
     evidence = AttestationEvidence(
         vendor=vendor,
         nonce=nonce,
@@ -38,7 +38,7 @@ def _verify_hardware(vendor: str, document: dict[str, Any], nonce: bytes) -> Non
             SNPGuestVerifier(expected_nonce=nonce).verify(
                 evidence, certificates=certificates, report=report
             )
-        return
+        return SNPGuestVerifier.extract_report_data(report)
     if vendor == "intel":
         collateral_data = document["collateral"]
         collateral = DCAPCollateral(
@@ -52,12 +52,13 @@ def _verify_hardware(vendor: str, document: dict[str, Any], nonce: bytes) -> Non
             qe_identity=collateral_data["qe_identity"],
             expiration_date=datetime.fromisoformat(collateral_data["expiration_date"]),
         )
+        quote = base64.b64decode(document["quote"], validate=True)
         IntelDCAPVerifier(expected_nonce=nonce).verify(
             evidence,
-            quote=base64.b64decode(document["quote"], validate=True),
+            quote=quote,
             collateral=collateral,
         )
-        return
+        return IntelDCAPVerifier.extract_report_data(quote)
     if vendor == "nvidia":
         raise CompatibilityError(
             "remote NVIDIA evidence requires the vendor remote-attestation transport; "
@@ -71,7 +72,7 @@ class RemoteAttestationClient:
         self,
         client: httpx.Client,
         *,
-        hardware_verifier: Callable[[str, dict[str, Any], bytes], None] | None = None,
+        hardware_verifier: Callable[[str, dict[str, Any], bytes], bytes] | None = None,
     ) -> None:
         self._client = client
         self._hardware_verifier = hardware_verifier or _verify_hardware
@@ -105,8 +106,8 @@ class RemoteAttestationClient:
             artifact_hash=bytes.fromhex(document["artifact_hash"]),
             public_key_hash=bytes.fromhex(document["public_key_hash"]),
         )
-        AttestationVerifier(expected_nonce=nonce).verify_binding(evidence)
-        self._hardware_verifier(vendor, document, nonce)
+        signed_report_data = self._hardware_verifier(vendor, document, nonce)
+        AttestationVerifier(expected_nonce=nonce).verify_binding(evidence, signed_report_data)
 
     def close(self) -> None:
         return None
