@@ -8,6 +8,7 @@
     "single_activation_share_reconstructs": false,
     "single_weight_share_reconstructs": false
   },
+  "billable_resources": false,
   "bytes_received": 50944,
   "bytes_sent": 65448,
   "cache_entries_after_cleanup": 0,
@@ -18,16 +19,17 @@
   "canary_limitation": "attributes the observer set; does not prove which participant leaked",
   "canary_method": "simulated external observation of an actually transmitted share",
   "canary_tripped": true,
+  "cost_usd": 0,
   "decoy_calls": 1,
   "decoy_role_requests": 8,
   "execution": "local CPU; four independent spawned worker processes; real Rust QUIC",
   "inference_role_requests": 168,
-  "inference_seconds": 0.3209840359922964,
+  "inference_seconds": 0.32188820900046267,
   "operations": 14,
   "original_model_max_abs_error": 0.20510334985776957,
   "quantized_reference_max_abs_error": 0.0,
-  "recorded_at": "2026-11-12T23:26:06.089346+00:00",
-  "revision": "872b0615f6f483639197b39b245eee1b972f4957",
+  "recorded_at": "2026-11-12T23:31:02.677942+00:00",
+  "revision": "befa1910869679a3c0ed5993e404b5697a1389d5",
   "role_requests": 176,
   "rung": "F0",
   "tokens": 3,
@@ -38,5 +40,5 @@
     0
   ],
   "worker_processes": 4,
-  "working_tree_dirty": "true"
+  "working_tree_dirty": "false"
 }
