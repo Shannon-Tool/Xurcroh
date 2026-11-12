@@ -2,7 +2,7 @@
 
 ## Scope
 
-Xurcroh is under pre-GPU engineering validation. It must not be described as production-certified or cryptographically proven secure. Basis transformations are computational obfuscation and do not replace confidential computing, cryptographic secret sharing, or an independent security review.
+Xurcroh is designed for defence in depth; claims under evaluation. It must not be described as production-certified, most secure, or cryptographically proven secure before the Fortress evidence gates are complete. Basis transformations are computational obfuscation and do not replace exact secret sharing, confidential computing, or independent security review. Seed-expanded shares provide computational rather than information-theoretic hiding.
 
 ## Reporting
 

@@ -63,6 +63,7 @@ worktrees/
 /docs/handoff.md
 
 # Editors and operating systems
+.config/
 .DS_Store
 .vscode/
 .idea/

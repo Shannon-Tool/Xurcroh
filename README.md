@@ -1,8 +1,8 @@
 # Project Xurcroh
 
-Xurcroh is a production-oriented, zero-trust distributed inference platform for dense and Mixture-of-Experts language models, vision-language models, image diffusion, and video generation. The implementation combines client-owned boundaries, algebraic model transformations, encrypted model shards, a Rust QUIC data plane, memory lifecycle controls, and optional hardware attestation.
+Xurcroh is a distributed inference platform for dense and Mixture-of-Experts language models, vision-language models, image diffusion, and video generation. The Fortress architecture combines exact integer secret sharing, client-owned nonlinear computation, encrypted shards, a Rust QUIC data plane, memory lifecycle controls, and optional hardware attestation. Existing algebraic/vLLM paths are transition and numerical-reference components, not the Fortress production engine.
 
-> **Validation status:** substantial local verification with scoped single-GPU Qwen3 stage evidence. Independent multi-host numerical execution, production security acceptance, and hardware performance are not validated. Orthogonal transformations are computational obfuscation, not homomorphic encryption or a cryptographic non-reversibility proof. See `docs/validation-report.md`.
+> **Security status:** designed for defence in depth; claims under evaluation. Fortress implementation and independent evidence are incomplete. Orthogonal transformations are computational obfuscation, not homomorphic encryption or a cryptographic non-reversibility proof. See `docs/roadmap.md` and `docs/validation-report.md`.
 
 ## Public Python API
 
@@ -31,7 +31,7 @@ Synchronous, asynchronous, streaming, multimodal, advanced cluster, and security
 .venv/bin/pytest
 ```
 
-The requirement evidence lives under `docs/`. The interactive research manual source is under `apps/web-manual/` and is independent of the production runtime. GPU topology estimates and outstanding hardware risks are in `docs/resources.md`. `docs/handoff.md` distinguishes locally verified implementation from remaining pre-GPU engineering work.
+The Fortress roadmap and requirement evidence live under `docs/roadmap.md` and `docs/requirements-matrix.yaml`. The interactive research manual source is under `apps/web-manual/` and is independent of the production runtime. GPU topology estimates and outstanding hardware risks are in `docs/resources.md`. Actual validation evidence and remaining acceptance work are in `docs/validation-report.md`.
 
 ## Security
 
