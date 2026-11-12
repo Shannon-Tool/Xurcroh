@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
+import secrets
 import threading
 import time
 import uuid
@@ -28,6 +31,17 @@ def decode_session_public(value: str) -> bytes:
     return public
 
 
+def _token_digest(token: str | bytes) -> bytes:
+    if isinstance(token, str):
+        try:
+            token = base64.b64decode(token, validate=True)
+        except ValueError as error:
+            raise ProtocolError("invalid stage-session token") from error
+    if len(token) != 32:
+        raise ProtocolError("stage-session token must contain 32 bytes")
+    return hashlib.sha256(token).digest()
+
+
 def _context(stage_index: int, session_id: str) -> bytes:
     return f"xurcroh-stage-{stage_index}-session-v2:{session_id}".encode()
 
@@ -38,21 +52,39 @@ class ClientStageSession:
             raise ValueError("recipient public key must contain 32 bytes")
         self.stage_index = stage_index
         self.session_id = uuid.uuid4().hex
+        self._token = secrets.token_bytes(32)
+        self.session_token = base64.b64encode(self._token).decode()
         self._private = X25519PrivateKey.generate()
         self.client_public = encode_session_public(self._private)
         shared = self._private.exchange(X25519PublicKey.from_public_bytes(recipient_public))
         context = _context(stage_index, self.session_id)
         self.sender = PipelineTensorInterceptor(shared, b"client", b"stage", context)
-        self.receiver = PipelineTensorInterceptor(shared, b"stage", b"client", context)
+        self.receiver = PipelineTensorInterceptor(shared, b"client", b"stage", context)
+
+    def auth_headers(self) -> dict[str, str]:
+        return {
+            "X-Xurcroh-Session-Id": self.session_id,
+            "X-Xurcroh-Session-Token": self.session_token,
+        }
+
+    @property
+    def token_bytes(self) -> bytes:
+        return self._token
 
     def wire_packet(self, packet: bytes) -> bytes:
-        return decode_session_public(self.client_public) + self.session_id.encode() + packet
+        return (
+            decode_session_public(self.client_public)
+            + self.session_id.encode()
+            + self._token
+            + packet
+        )
 
 
 @dataclass
 class _ServerSession:
     expires_at: float
     client_public: bytes
+    token_digest: bytes
     receiver: PipelineTensorInterceptor
     sender: PipelineTensorInterceptor
 
@@ -79,7 +111,7 @@ class StageSessionStore:
             self._sessions.pop(session_id, None)
 
     def get_or_create(
-        self, session_id: str, client_public: str
+        self, session_id: str, client_public: str, session_token: str | bytes
     ) -> tuple[PipelineTensorInterceptor, PipelineTensorInterceptor]:
         if len(session_id) != 32:
             raise ProtocolError("invalid stage-session identifier")
@@ -88,12 +120,15 @@ class StageSessionStore:
         except ValueError as error:
             raise ProtocolError("invalid stage-session identifier") from error
         public = decode_session_public(client_public)
+        token_digest = _token_digest(session_token)
         with self._lock:
             self._prune()
             existing = self._sessions.get(session_id)
             if existing is not None:
-                if existing.client_public != public:
-                    raise ProtocolError("stage-session public key mismatch")
+                if existing.client_public != public or not hmac.compare_digest(
+                    existing.token_digest, token_digest
+                ):
+                    raise ProtocolError("stage-session credentials do not match")
                 existing.expires_at = time.monotonic() + self.ttl_seconds
                 return existing.receiver, existing.sender
             if len(self._sessions) >= self.capacity:
@@ -103,11 +138,20 @@ class StageSessionStore:
             session = _ServerSession(
                 expires_at=time.monotonic() + self.ttl_seconds,
                 client_public=public,
+                token_digest=token_digest,
                 receiver=PipelineTensorInterceptor(shared, b"stage", b"client", context),
-                sender=PipelineTensorInterceptor(shared, b"client", b"stage", context),
+                sender=PipelineTensorInterceptor(shared, b"stage", b"client", context),
             )
             self._sessions[session_id] = session
             return session.receiver, session.sender
+
+    def authorize(self, session_id: str, session_token: str | bytes) -> None:
+        token_digest = _token_digest(session_token)
+        with self._lock:
+            self._prune()
+            existing = self._sessions.get(session_id)
+            if existing is None or not hmac.compare_digest(existing.token_digest, token_digest):
+                raise ProtocolError("stage-session credentials are not authorized")
 
     def remove(self, session_id: str) -> None:
         with self._lock:

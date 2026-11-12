@@ -57,6 +57,7 @@ def test_circuit_relays_real_stage_execution_without_plaintext_logs(
             body = {
                 "request_id": "relay-request",
                 "session_id": session.session_id,
+                "session_token": session.session_token,
                 "client_public": session.client_public,
                 "stage_index": 0,
                 "dtype": "f64",

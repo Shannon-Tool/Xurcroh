@@ -56,6 +56,7 @@ class NativeStageServer:
                 request_id, _, _, kind, dtype, shape, packet = connection.receive()
                 if kind == "cancel":
                     session_id = request_id.hex()
+                    self.stage.sessions.authorize(session_id, packet)
                     with self._lock:
                         request_ids = self._session_requests.pop(session_id, set())
                     for cached_request in request_ids:
@@ -65,15 +66,19 @@ class NativeStageServer:
                     return
                 if kind != "tensor" or dtype != "u8" or shape != [len(packet)]:
                     raise ValueError("native stage expects a bounded byte tensor")
-                if len(packet) < 65:
+                if len(packet) < 97:
                     raise ValueError("native stage session envelope is truncated")
                 client_public = base64.b64encode(packet[:32]).decode()
                 session_id = packet[32:64].decode()
-                receiver, sender = self.stage.sessions.get_or_create(session_id, client_public)
+                session_token = packet[64:96]
+                receiver, sender = self.stage.sessions.get_or_create(
+                    session_id, client_public, session_token
+                )
+                state_key = f"{session_id}:{request_id.hex()}"
                 with self._lock:
-                    self._session_requests.setdefault(session_id, set()).add(request_id.hex())
-                hidden = _decode_tensor(packet[64:], receiver)
-                output = self.stage.execute(hidden, request_id.hex())
+                    self._session_requests.setdefault(session_id, set()).add(state_key)
+                hidden = _decode_tensor(packet[96:], receiver)
+                output = self.stage.execute(hidden, request_id.hex(), state_key=state_key)
                 response, _ = _encode_tensor(output, request_id.hex(), sender)
                 connection.send(
                     request_id,

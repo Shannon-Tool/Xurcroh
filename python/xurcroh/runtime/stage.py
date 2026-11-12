@@ -289,6 +289,7 @@ class DenseStageEngine:
                     json={
                         "request_id": request_id,
                         "session_id": session.session_id,
+                        "session_token": session.session_token,
                         "client_public": session.client_public,
                         "stage_index": index,
                         "dtype": "u8",
@@ -348,6 +349,7 @@ class DenseStageEngine:
                 json={
                     "request_id": request_id,
                     "session_id": session.session_id,
+                    "session_token": session.session_token,
                     "client_public": session.client_public,
                     "stage_index": index,
                     "dtype": expected_dtype,
@@ -380,12 +382,6 @@ class DenseStageEngine:
         sessions: list[ClientStageSession],
     ) -> None:
         self._residuals.pop(request_id, None)
-        if circuit_id is not None:
-            with suppress(httpx.HTTPError):
-                self._client.delete(
-                    self._controller_url(f"/v1/relay/{circuit_id}/stages/{request_id}"),
-                    timeout=10,
-                )
         for index, (worker, session) in enumerate(zip(self.workers, sessions, strict=False)):
             if (worker.endpoint or "").startswith("quic://"):
                 client = self._native_clients.get(index)
@@ -396,6 +392,7 @@ class DenseStageEngine:
                         client: Any = client,
                         session_uuid: bytes = session_uuid,
                         index: int = index,
+                        token: bytes = session.token_bytes,
                     ) -> None:
                         client.send(
                             session_uuid,
@@ -404,7 +401,7 @@ class DenseStageEngine:
                             "cancel",
                             "",
                             [],
-                            b"",
+                            token,
                         )
                         response = client.receive()
                         if response[3] != "complete":
@@ -419,11 +416,14 @@ class DenseStageEngine:
             else:
                 with suppress(httpx.HTTPError):
                     self._client.delete(
-                        f"{self._endpoint(worker)}/v1/stages/{request_id}", timeout=10
+                        f"{self._endpoint(worker)}/v1/stages/{request_id}",
+                        headers=session.auth_headers(),
+                        timeout=10,
                     )
                 with suppress(httpx.HTTPError):
                     self._client.delete(
                         f"{self._endpoint(worker)}/v1/stages/sessions/{session.session_id}",
+                        headers=session.auth_headers(),
                         timeout=10,
                     )
 

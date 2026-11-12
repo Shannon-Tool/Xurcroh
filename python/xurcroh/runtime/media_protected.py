@@ -123,7 +123,7 @@ class RemoteProtectedMediaEngine:
             shared = private.exchange(decode_public(session["worker_public"]))
             context = session_id.encode()
             sender = PipelineTensorInterceptor(shared, b"client", b"worker", context)
-            receiver = PipelineTensorInterceptor(shared, b"worker", b"client", context)
+            receiver = PipelineTensorInterceptor(shared, b"client", b"worker", context)
             response = self._client.post(
                 f"{self._endpoint(worker)}{path}",
                 json={

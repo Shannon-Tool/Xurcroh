@@ -1,3 +1,7 @@
+use chacha20poly1305::{
+    aead::{Aead, KeyInit, Payload},
+    ChaCha20Poly1305,
+};
 use x25519_dalek::{PublicKey, StaticSecret};
 use xurcroh_crypto::{seal_onion, unwrap_onion, OnionHop};
 
@@ -49,4 +53,47 @@ fn wrong_hop_key_cannot_unwrap_onion() {
     )
     .unwrap();
     assert!(unwrap_onion(&bad, &packet.layers[0]).is_err());
+}
+
+#[test]
+fn onion_rejects_raw_diffie_hellman_key() {
+    let secret = StaticSecret::from([8u8; 32]);
+    let packet = seal_onion(
+        &[OnionHop {
+            public: PublicKey::from(&secret),
+            next_hop: "return".into(),
+        }],
+        [9u8; 32],
+        42,
+        b"short payload".to_vec(),
+    )
+    .unwrap();
+    let layer = &packet.layers[0];
+    let ephemeral = PublicKey::from(<[u8; 32]>::try_from(&layer[..32]).unwrap());
+    let shared = secret.diffie_hellman(&ephemeral);
+    let raw_cipher = ChaCha20Poly1305::new(shared.as_bytes().into());
+    let raw_plaintext = raw_cipher.decrypt(
+        (&layer[40..52]).into(),
+        Payload {
+            msg: &layer[52..],
+            aad: b"xurcroh-onion-v1",
+        },
+    );
+    assert!(raw_plaintext.is_err());
+}
+
+#[test]
+fn onion_pads_payloads_to_fixed_blocks() {
+    let secret = StaticSecret::from([10u8; 32]);
+    let packet = seal_onion(
+        &[OnionHop {
+            public: PublicKey::from(&secret),
+            next_hop: "return".into(),
+        }],
+        [11u8; 32],
+        43,
+        b"short payload".to_vec(),
+    )
+    .unwrap();
+    assert_eq!((packet.layers[0].len() - 52 - 16) % 1024, 0);
 }

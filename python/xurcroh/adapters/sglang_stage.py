@@ -86,16 +86,19 @@ class SGLangStage:
         self.closed = False
         self._positions: dict[str, int] = {}
 
-    def execute(self, hidden: Any, request_id: str | None = None) -> Any:
+    def execute(
+        self, hidden: Any, request_id: str | None = None, *, state_key: str | None = None
+    ) -> Any:
         if self.closed:
             raise ModelLoadError("SGLang stage is closed")
         if request_id is None:
             raise ProtocolError("SGLang stage execution requires a request ID")
-        position = self._positions.get(request_id, 0)
+        state_key = state_key or request_id
+        position = self._positions.get(state_key, 0)
         proxy = hidden if hasattr(hidden, "tensors") else None
         tensor = hidden.tensors["hidden_states"] if proxy is not None else hidden
-        output = self.runner.execute(tensor, request_id, position, proxy)
-        self._positions[request_id] = position + tensor.shape[0]
+        output = self.runner.execute(tensor, state_key, position, proxy)
+        self._positions[state_key] = position + tensor.shape[0]
         return output
 
     def drop_request(self, request_id: str) -> None:

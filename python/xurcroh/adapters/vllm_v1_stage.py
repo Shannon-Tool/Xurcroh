@@ -196,18 +196,21 @@ class VllmStage:
         self.stage_index = 0
         self.closed = False
 
-    def execute(self, hidden: Any, request_id: str | None = None) -> Any:
+    def execute(
+        self, hidden: Any, request_id: str | None = None, *, state_key: str | None = None
+    ) -> Any:
         if self.closed:
             raise ModelLoadError("vLLM stage is closed")
         if request_id is None:
             raise ProtocolError("vLLM stage execution requires a request ID")
-        position = getattr(self, "_positions", {}).get(request_id, 0)
+        state_key = state_key or request_id
+        position = getattr(self, "_positions", {}).get(state_key, 0)
         intermediate = hidden if hasattr(hidden, "tensors") else None
         tensor = hidden.tensors["hidden_states"] if intermediate is not None else hidden
-        output = self.runner.execute(tensor, request_id, position, intermediate)
+        output = self.runner.execute(tensor, state_key, position, intermediate)
         if not hasattr(self, "_positions"):
             self._positions = {}
-        self._positions[request_id] = position + tensor.shape[0]
+        self._positions[state_key] = position + tensor.shape[0]
         return output
 
     def drop_request(self, request_id: str) -> None:

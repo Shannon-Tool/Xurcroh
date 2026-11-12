@@ -44,3 +44,28 @@ def test_media_session_capacity_fails_closed() -> None:
     with pytest.raises(ProtocolError, match="capacity"):
         store.create(encode_public(private.public_key()))
     store.close()
+
+
+def test_media_session_directions_use_distinct_keys_for_the_same_sequence() -> None:
+    client_private = X25519PrivateKey.generate()
+    store = ProtectedMediaSessionStore()
+    session_id, worker_public = store.create(encode_public(client_private.public_key()))
+    shared = client_private.exchange(
+        X25519PublicKey.from_public_bytes(base64.b64decode(worker_public))
+    )
+    context = session_id.encode()
+    client_sender = PipelineTensorInterceptor(shared, b"client", b"worker", context)
+    client_receiver = PipelineTensorInterceptor(shared, b"client", b"worker", context)
+    session = store.get(session_id)
+
+    request = seal_tensors({"value": torch.tensor([1])}, "shared-request", client_sender)
+    response = seal_tensors({"value": torch.tensor([1])}, "shared-request", session.sender)
+
+    assert request != response
+    assert open_tensors(request, "shared-request", session.receiver)["value"].item() == 1
+    assert open_tensors(response, "shared-request", client_receiver)["value"].item() == 1
+    with pytest.raises(ProtocolError, match="authentication"):
+        open_tensors(response, "shared-request", session.receiver)
+    with pytest.raises(ProtocolError, match="authentication"):
+        open_tensors(request, "shared-request", client_receiver)
+    store.close()
