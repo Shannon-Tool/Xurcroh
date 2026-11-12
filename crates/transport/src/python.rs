@@ -3,6 +3,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+mod fortress;
+
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes};
 use xurcroh_crypto::CryptoError;
 use xurcroh_protocol::{DataType, FrameKind, TensorFrame};
@@ -21,6 +23,7 @@ fn crypto_error(error: CryptoError) -> PyErr {
 fn parse_kind(kind: &str) -> PyResult<FrameKind> {
     match kind {
         "tensor" => Ok(FrameKind::Tensor),
+        "chunk" => Ok(FrameKind::Chunk),
         "cancel" => Ok(FrameKind::Cancel),
         "complete" => Ok(FrameKind::Complete),
         "heartbeat" => Ok(FrameKind::Heartbeat),
@@ -32,6 +35,7 @@ fn parse_kind(kind: &str) -> PyResult<FrameKind> {
 fn kind_name(kind: FrameKind) -> String {
     match kind {
         FrameKind::Tensor => "tensor",
+        FrameKind::Chunk => "chunk",
         FrameKind::Cancel => "cancel",
         FrameKind::Complete => "complete",
         FrameKind::Heartbeat => "heartbeat",
@@ -434,5 +438,6 @@ fn xurcroh_quic(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(encode_frame, module)?)?;
     module.add_function(wrap_pyfunction!(decode_frame, module)?)?;
     module.add_function(wrap_pyfunction!(generate_self_signed, module)?)?;
+    fortress::register(module)?;
     Ok(())
 }

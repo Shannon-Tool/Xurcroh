@@ -166,7 +166,7 @@ requirements:
   - {id: FRT-ENG-05, source: fortress-4.5-4.7, requirement: client placement multi-provider provisioning and real model and diffusers loaders, status: pending, evidence: [python/xurcroh/providers, python/xurcroh/shards, scripts/vast]}
   - {id: FRT-F0, source: fortress-6, requirement: four-process miniature text Fortress with exact quality attack integrity canary and bandwidth evidence, status: pending, evidence: [tests/fortress, docs/validation-report.md]}
   - {id: FRT-M0, source: fortress-6, requirement: four-process synthetic DiT Fortress with exact quality attack integrity canary and bandwidth evidence, status: pending, evidence: [tests/fortress, docs/validation-report.md]}
-  - {id: FRT-TRN-01, source: fortress-3.8, requirement: forward-secret mutual hybrid post-quantum TLS with negotiated-algorithm tests, status: pending, evidence: [crates/transport, Cargo.lock]}
+  - {id: FRT-TRN-01, source: fortress-3.8, requirement: forward-secret mutual hybrid post-quantum TLS with negotiated-algorithm tests, status: implemented, evidence: [crates/transport, crates/transport/tests/quic.rs, Cargo.lock]}
   - {id: FRT-TRN-02, source: fortress-3.8, requirement: Tamarin or ProVerif handshake model and CI protocol fuzzing, status: pending, evidence: [protocol, crates, .github/workflows/ci.yml]}
   - {id: FRT-TRN-03, source: fortress-3.8, requirement: Tor I2P or oblivious relay with fixed-rate cover and measured classifier resistance, status: pending, evidence: [crates/transport, python/xurcroh/fortress, tests/security]}
   - {id: FRT-SUR-01, source: fortress-3.8, requirement: attributed decoys canaries honeytokens and key revocation, status: pending, evidence: [python/xurcroh/fortress, tests/security]}

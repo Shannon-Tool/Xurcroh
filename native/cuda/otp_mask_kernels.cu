@@ -62,3 +62,40 @@ extern "C" int xurcroh_mask_words(uint16_t* data, size_t count, const uint32_t* 
     mask_kernel<<<blocks, threads, 0, stream>>>(data, count, key, nonce, unmask);
     return static_cast<int>(cudaGetLastError());
 }
+
+__global__ void fortress_matvec_kernel(const uint32_t* weights, const uint32_t* activations, uint32_t* output, int rows, int cols) {
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (col >= cols) return;
+    uint64_t sum = 0;
+    for (int row = 0; row < rows; ++row) {
+        sum += static_cast<uint64_t>(weights[row * cols + col]) * static_cast<uint64_t>(activations[row]);
+    }
+    output[col] = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
+}
+
+__global__ void fortress_chacha_kernel(uint32_t* output, size_t count, const uint32_t* key, const uint8_t* nonce) {
+    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index >= count) return;
+    uint64_t block = index / 16;
+    uint32_t stream[16];
+    chacha20_block(key, static_cast<uint32_t>(block), nonce, stream);
+    output[index] = stream[index % 16];
+}
+
+extern "C" int xurcroh_fortress_matvec_u32(const uint32_t* weights, const uint32_t* activations, uint32_t* output, int rows, int cols, cudaStream_t stream) {
+    if (weights == nullptr || activations == nullptr || output == nullptr || rows <= 0 || cols <= 0) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    int threads = 32;
+    int blocks = (cols + threads - 1) / threads;
+    fortress_matvec_kernel<<<blocks, threads, 0, stream>>>(weights, activations, output, rows, cols);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int xurcroh_fortress_chacha_words(uint32_t* output, size_t count, const uint32_t* key, const uint8_t* nonce, cudaStream_t stream) {
+    if (output == nullptr || key == nullptr || nonce == nullptr) return static_cast<int>(cudaErrorInvalidValue);
+    size_t threads = 256;
+    size_t blocks = (count + threads - 1) / threads;
+    fortress_chacha_kernel<<<blocks, threads, 0, stream>>>(output, count, key, nonce);
+    return static_cast<int>(cudaGetLastError());
+}

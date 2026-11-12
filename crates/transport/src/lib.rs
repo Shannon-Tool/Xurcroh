@@ -1,6 +1,10 @@
 //! Authenticated QUIC tensor transport for Xurcroh.
 
-use std::{fmt::Display, net::SocketAddr, sync::Arc};
+use std::{
+    fmt::Display,
+    net::SocketAddr,
+    sync::{Arc, OnceLock},
+};
 
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use rcgen::generate_simple_self_signed;
@@ -9,7 +13,10 @@ use rustls::{
     RootCertStore,
 };
 use thiserror::Error;
-use xurcroh_protocol::{TensorFrame, HEADER_LEN, MAX_PAYLOAD_LEN};
+use xurcroh_protocol::{DataType, FrameKind, TensorFrame, HEADER_LEN, MAX_PAYLOAD_LEN};
+
+pub const CHUNK_PAYLOAD_LEN: usize = 1024 * 1024;
+pub const MAX_STREAM_PAYLOAD_LEN: usize = 16 * 1024 * 1024 * 1024;
 
 #[derive(Debug, Error)]
 pub enum TransportError {
@@ -40,7 +47,11 @@ pub fn generate_self_signed(
 }
 
 fn provider() -> Arc<rustls::crypto::CryptoProvider> {
-    Arc::new(rustls::crypto::ring::default_provider())
+    static INSTALL: OnceLock<()> = OnceLock::new();
+    INSTALL.get_or_init(|| {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    });
+    Arc::new(rustls::crypto::aws_lc_rs::default_provider())
 }
 
 pub struct TensorServer {
@@ -58,6 +69,33 @@ impl TensorServer {
             .map_err(setup)?
             .with_no_client_auth()
             .with_single_cert(vec![certificate], key.into())
+            .map_err(setup)?;
+        crypto.alpn_protocols = vec![b"xurcroh-v1".to_vec()];
+        let config = ServerConfig::with_crypto(Arc::new(
+            quinn::crypto::rustls::QuicServerConfig::try_from(crypto).map_err(setup)?,
+        ));
+        let socket: SocketAddr = address.parse().map_err(setup)?;
+        let endpoint = Endpoint::server(config, socket).map_err(setup)?;
+        Ok(Self { endpoint })
+    }
+
+    pub async fn bind_mutual(
+        address: &str,
+        certificates: Vec<CertificateDer<'static>>,
+        key: PrivatePkcs8KeyDer<'static>,
+        client_ca: CertificateDer<'static>,
+    ) -> Result<Self, TransportError> {
+        let mut roots = RootCertStore::empty();
+        roots.add(client_ca).map_err(setup)?;
+        let verifier =
+            rustls::server::WebPkiClientVerifier::builder_with_provider(roots.into(), provider())
+                .build()
+                .map_err(setup)?;
+        let mut crypto = rustls::ServerConfig::builder_with_provider(provider())
+            .with_safe_default_protocol_versions()
+            .map_err(setup)?
+            .with_client_cert_verifier(verifier)
+            .with_single_cert(certificates, key.into())
             .map_err(setup)?;
         crypto.alpn_protocols = vec![b"xurcroh-v1".to_vec()];
         let config = ServerConfig::with_crypto(Arc::new(
@@ -127,6 +165,134 @@ impl TensorServer {
         let connection = self.accept_connection().await?;
         Self::receive_frame(&connection).await
     }
+
+    pub async fn send_chunked(
+        connection: &Connection,
+        request_id: [u8; 16],
+        stream_id: u16,
+        dtype: DataType,
+        shape: &[u32],
+        payload: &[u8],
+    ) -> Result<(), TransportError> {
+        for frame in chunk_frames(request_id, stream_id, dtype, shape, payload)? {
+            Self::send_frame(connection, &frame).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn receive_chunked(connection: &Connection) -> Result<Vec<u8>, TransportError> {
+        let first = Self::receive_frame(connection).await?;
+        let expected = first
+            .shape
+            .iter()
+            .try_fold(1u64, |product, dimension| {
+                product.checked_mul(u64::from(*dimension))
+            })
+            .and_then(|elements| elements.checked_mul(first.dtype?.element_size() as u64))
+            .ok_or_else(|| TransportError::Protocol("stream length overflow".into()))?
+            as usize;
+        let mut frames = vec![first];
+        let mut received = frames[0].payload.len();
+        while received < expected {
+            let frame = Self::receive_frame(connection).await?;
+            received = received
+                .checked_add(frame.payload.len())
+                .ok_or_else(|| TransportError::Protocol("stream length overflow".into()))?;
+            if received > expected {
+                return Err(TransportError::Protocol(
+                    "stream exceeds declared length".into(),
+                ));
+            }
+            frames.push(frame);
+        }
+        reassemble_chunks(&frames)
+    }
+}
+
+pub fn chunk_frames(
+    request_id: [u8; 16],
+    stream_id: u16,
+    dtype: DataType,
+    shape: &[u32],
+    payload: &[u8],
+) -> Result<Vec<TensorFrame>, TransportError> {
+    let expected = shape
+        .iter()
+        .try_fold(1u64, |product, dimension| {
+            product.checked_mul(u64::from(*dimension))
+        })
+        .and_then(|elements| elements.checked_mul(dtype.element_size() as u64))
+        .ok_or_else(|| TransportError::Protocol("stream length overflow".into()))?;
+    if expected != payload.len() as u64 || payload.len() > MAX_STREAM_PAYLOAD_LEN {
+        return Err(TransportError::Protocol(
+            "invalid stream payload length".into(),
+        ));
+    }
+    payload
+        .chunks(CHUNK_PAYLOAD_LEN)
+        .enumerate()
+        .map(|(sequence, chunk)| {
+            TensorFrame::new(
+                request_id,
+                stream_id,
+                sequence as u64,
+                FrameKind::Chunk,
+                Some(dtype),
+                shape.to_vec(),
+                chunk.to_vec(),
+            )
+            .map_err(|error| TransportError::Protocol(error.to_string()))
+        })
+        .collect()
+}
+
+pub fn reassemble_chunks(frames: &[TensorFrame]) -> Result<Vec<u8>, TransportError> {
+    let first = frames
+        .first()
+        .ok_or_else(|| TransportError::Protocol("empty chunk stream".into()))?;
+    let dtype = first
+        .dtype
+        .ok_or_else(|| TransportError::Protocol("missing dtype".into()))?;
+    let shape = first.shape.clone();
+    let expected = shape
+        .iter()
+        .try_fold(1u64, |product, dimension| {
+            product.checked_mul(u64::from(*dimension))
+        })
+        .and_then(|elements| elements.checked_mul(dtype.element_size() as u64))
+        .ok_or_else(|| TransportError::Protocol("stream length overflow".into()))?
+        as usize;
+    let mut payload = Vec::with_capacity(expected);
+    for (index, frame) in frames.iter().enumerate() {
+        if frame.request_id != first.request_id
+            || frame.stream_id != first.stream_id
+            || frame.sequence != index as u64
+            || frame.kind != FrameKind::Chunk
+            || frame.dtype != Some(dtype)
+            || frame.shape != shape
+        {
+            return Err(TransportError::Protocol(
+                "inconsistent chunk sequence".into(),
+            ));
+        }
+        if payload.len() + frame.payload.len() > expected {
+            return Err(TransportError::Protocol(
+                "stream exceeds declared length".into(),
+            ));
+        }
+        payload.extend_from_slice(&frame.payload);
+    }
+    if payload.len() != expected {
+        return Err(TransportError::Protocol("incomplete chunk stream".into()));
+    }
+    Ok(payload)
+}
+
+impl TensorServer {
+    pub async fn accept_chunked(&self) -> Result<Vec<u8>, TransportError> {
+        let connection = self.accept_connection().await?;
+        Self::receive_chunked(&connection).await
+    }
 }
 
 pub struct TensorClient {
@@ -147,6 +313,39 @@ impl TensorClient {
             .map_err(setup)?
             .with_root_certificates(roots)
             .with_no_client_auth();
+        crypto.alpn_protocols = vec![b"xurcroh-v1".to_vec()];
+        let config = ClientConfig::new(Arc::new(
+            quinn::crypto::rustls::QuicClientConfig::try_from(crypto).map_err(setup)?,
+        ));
+        let socket: SocketAddr = "0.0.0.0:0".parse().map_err(setup)?;
+        let mut endpoint = Endpoint::client(socket).map_err(setup)?;
+        endpoint.set_default_client_config(config);
+        let connection = endpoint
+            .connect(address, server_name)
+            .map_err(connection_error)?
+            .await
+            .map_err(connection_error)?;
+        Ok(Self {
+            endpoint,
+            connection,
+        })
+    }
+
+    pub async fn connect_mutual(
+        address: SocketAddr,
+        server_name: &str,
+        pinned_certificate: CertificateDer<'static>,
+        client_certificates: Vec<CertificateDer<'static>>,
+        client_key: PrivatePkcs8KeyDer<'static>,
+    ) -> Result<Self, TransportError> {
+        let mut roots = RootCertStore::empty();
+        roots.add(pinned_certificate).map_err(setup)?;
+        let mut crypto = rustls::ClientConfig::builder_with_provider(provider())
+            .with_safe_default_protocol_versions()
+            .map_err(setup)?
+            .with_root_certificates(roots)
+            .with_client_auth_cert(client_certificates, client_key.into())
+            .map_err(setup)?;
         crypto.alpn_protocols = vec![b"xurcroh-v1".to_vec()];
         let config = ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(crypto).map_err(setup)?,
