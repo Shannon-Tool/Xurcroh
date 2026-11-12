@@ -5,6 +5,7 @@ All adapters are checkpoint-driven. A strict deployment must pin an immutable ch
 | Model family | Official identifier and inspected `main` revision | Engine path | Implemented workflows | Validation status |
 |---|---|---|---|---|
 | Llama dense | `meta-llama/Llama-3.1-8B-Instruct` @ `0e9e39f249a16976918f6564b8830bc894c89659` | vLLM / local Transformers | Encrypted dense sharding, GQA/RoPE, client boundary, streaming chat | Miniature Llama numerical and two-stage tests pass; manually gated Llama license |
+| Qwen dense validation target | `Qwen/Qwen3-0.6B` @ `c1899de289a04d12100db370d81485cdf75e47ca` | vLLM | Ten encrypted FP32 layer shards, GQA/QK norms, half-split RoPE, client boundaries | Scoped RTX 4090 stage results in `docs/validation-report.md`; independent-host and production acceptance pending; Apache-2.0 |
 | DeepSeek MoE / MLA | `deepseek-ai/DeepSeek-V3` @ `e815299b0bcbac849fa540c768ef21845365c9eb` | SGLang | MoE sharding, expert permutation, MLA algebra, constant-load dispatch, chunked prefill | FP64 reference and adversarial dispatch tests pass; full kernel/hardware pending |
 | Qwen MoE | `Qwen/Qwen3-235B-A22B` @ `8efa61729e24bd65b1d152b5ab5409052aa80e65` | SGLang | MoE routing, expert parallel planning, chunked prefill | Reference tests pass; full checkpoint pending |
 | Gemma 4 Unified | `google/gemma-4-12B-it` @ `43c9d014b231474fa7212dbb48a762566c2b255d` | SGLang / client boundary | Local image/audio embedding, chaff masks, decoder basis transforms | Local preprocessing tests pass; Apache-2.0 |

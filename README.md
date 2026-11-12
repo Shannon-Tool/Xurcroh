@@ -2,7 +2,7 @@
 
 Xurcroh is a production-oriented, zero-trust distributed inference platform for dense and Mixture-of-Experts language models, vision-language models, image diffusion, and video generation. The implementation combines client-owned boundaries, algebraic model transformations, encrypted model shards, a Rust QUIC data plane, memory lifecycle controls, and optional hardware attestation.
 
-> **Validation status:** pre-GPU engineering. Physical multi-GPU execution, production security acceptance, and hardware performance are not yet validated. Orthogonal transformations are computational obfuscation, not homomorphic encryption or a cryptographic non-reversibility proof.
+> **Validation status:** substantial local verification with scoped single-GPU Qwen3 stage evidence. Independent multi-host numerical execution, production security acceptance, and hardware performance are not validated. Orthogonal transformations are computational obfuscation, not homomorphic encryption or a cryptographic non-reversibility proof. See `docs/validation-report.md`.
 
 ## Public Python API
 
