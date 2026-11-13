@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import threading
 from collections.abc import Mapping
 from pathlib import Path
@@ -87,8 +88,10 @@ class FortressRoleWorker:
                 raise ValueError("Fortress CUDA worker requires an available CUDA device")
             from xurcroh.fortress.native import FortressNativeController
 
-            library = cuda_library or (
-                Path(__file__).resolve().parents[3] / "native/build/xurcroh_burn_alloc.so"
+            library = (
+                cuda_library
+                or os.environ.get("XURCROH_NATIVE_LIBRARY")
+                or Path(__file__).resolve().parents[3] / "native/build/xurcroh_burn_alloc.so"
             )
             if not Path(library).is_file():
                 raise ValueError("Fortress CUDA worker requires the compiled native library")
