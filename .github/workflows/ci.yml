@@ -64,6 +64,26 @@ jobs:
       - run: npm audit
         working-directory: apps/web-manual
 
+  protocol:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.2"
+      - name: Install ProVerif
+        run: opam install proverif --yes
+      - name: Verify the Fortress session model
+        run: opam exec -- proverif protocol/fortress_session.pv
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Smoke-fuzz protocol parsers and cryptographic decoders
+        run: |
+          for target in frame_decode aead_open hpke_open; do
+            cargo +nightly fuzz run "$target" -- -max_total_time=30 -timeout=10
+          done
+
   secrets:
     runs-on: ubuntu-24.04
     steps:

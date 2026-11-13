@@ -1,0 +1,33 @@
+[package]
+name = "xurcroh-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.10"
+xurcroh-crypto = { path = "../crates/crypto" }
+xurcroh-protocol = { path = "../crates/protocol" }
+
+[[bin]]
+name = "frame_decode"
+path = "fuzz_targets/frame_decode.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "aead_open"
+path = "fuzz_targets/aead_open.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "hpke_open"
+path = "fuzz_targets/hpke_open.rs"
+test = false
+doc = false
