@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 
+import pytest
 import torch
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import (
@@ -13,12 +14,14 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from tests.fortress.conftest import MutualTLSIdentities
 
-from xurcroh.fortress.arithmetic import RING_MODULUS, split_secret
+from xurcroh.fortress.arithmetic import PRIME_MODULUS, split_secret
 from xurcroh.fortress.compiler import compile_operation
+from xurcroh.fortress.grid import RoleExecutionError
 from xurcroh.fortress.transport import (
     FortressRoleClient,
     MutualTLSIdentity,
     RoleEndpoint,
+    combine_role_results,
     decode_role_artifact,
     encode_role_artifact,
 )
@@ -105,7 +108,7 @@ def test_real_grid_transport_is_exact_and_isolates_duplicate_request_ids(
     ]
     shares = split_secret(torch.tensor([5, 7], dtype=torch.int64), count=2).shares
     try:
-        expected = (operation.quantized.values @ torch.tensor([5, 7])).remainder(RING_MODULUS)
+        expected = (operation.quantized.values @ torch.tensor([5, 7])).remainder(PRIME_MODULUS)
         for client in clients:
             assert torch.equal(client.execute(shares, request_id="duplicate"), expected)
         clients[0].close()
@@ -190,7 +193,7 @@ def test_three_by_three_grid_executes_exactly(
                 )
         client = FortressRoleClient(operation, roles, identity, cover_interval=60)
         shares = split_secret(torch.tensor([5, 7], dtype=torch.int64), count=3).shares
-        expected = (operation.quantized.values @ torch.tensor([5, 7])).remainder(RING_MODULUS)
+        expected = (operation.quantized.values @ torch.tensor([5, 7])).remainder(PRIME_MODULUS)
         assert torch.equal(client.execute(shares), expected)
         assert client.request_count == 9
     finally:
@@ -215,7 +218,7 @@ def test_client_verifies_exact_products_and_attributes_a_malicious_role() -> Non
             sum(
                 int(activation) * int(value)
                 for activation, value in zip(
-                    activation_shares[activation_index].remainder(RING_MODULUS), row, strict=True
+                    activation_shares[activation_index].remainder(PRIME_MODULUS), row, strict=True
                 )
             )
             for row in share.matrix
@@ -233,3 +236,98 @@ def test_client_verifies_exact_products_and_attributes_a_malicious_role() -> Non
     results[(0, 0)][0] += 1
     with pytest.raises(RoleExecutionError, match="role-0-0"):
         combine_role_results(activation_shares, operation.shares, results, providers)
+
+
+def test_prime_multiple_forgery_cannot_change_reconstructed_field_result() -> None:
+    operation = compile_operation(
+        torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
+    )
+    activation_shares = split_secret(torch.tensor([5, 7], dtype=torch.int64), count=2).shares
+    results = {
+        (activation_index, weight_index): [
+            sum(
+                int(activation) * int(value)
+                for activation, value in zip(
+                    activation_shares[activation_index].remainder(PRIME_MODULUS), row, strict=True
+                )
+            )
+            % PRIME_MODULUS
+            for row in share.matrix
+        ]
+        for (activation_index, weight_index), share in (
+            (key, operation.shares[key[1]])
+            for key in (
+                (activation_index, weight_index)
+                for activation_index in range(2)
+                for weight_index in range(2)
+            )
+        )
+    }
+    providers = {key: f"role-{key[0]}-{key[1]}" for key in results}
+    results[(0, 0)][0] += PRIME_MODULUS
+    with pytest.raises(RoleExecutionError, match="role-0-0"):
+        combine_role_results(activation_shares, operation.shares, results, providers)
+
+
+def test_integrity_failure_quarantines_the_role_client(
+    mtls_identities: MutualTLSIdentities,
+) -> None:
+    from xurcroh.errors import ProtocolError
+
+    operation = compile_operation(
+        torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
+    )
+    identity = MutualTLSIdentity(
+        certificates=(mtls_identities["client_certificate"], mtls_identities["ca"]),
+        private_key=mtls_identities["client_key"],
+        pinned_ca=mtls_identities["ca"],
+    )
+    workers: list[FortressRoleWorker] = []
+    roles: list[RoleEndpoint] = []
+    client = None
+    try:
+        for activation_index in range(2):
+            for weight_index in range(2):
+                private = X25519PrivateKey.generate()
+                public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+                worker = FortressRoleWorker(
+                    encode_role_artifact(operation, weight_index, public),
+                    private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                    certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
+                    private_key=mtls_identities["server_key"],
+                    client_ca=mtls_identities["ca"],
+                )
+                worker.start()
+                workers.append(worker)
+                roles.append(
+                    RoleEndpoint(
+                        activation_index,
+                        weight_index,
+                        worker.address,
+                        public,
+                        f"quarantine-{activation_index}-{weight_index}",
+                    )
+                )
+        client = FortressRoleClient(operation, roles, identity, cover_interval=60)
+        operation.shares[0].challenge.v.add_(1)
+        shares = split_secret(torch.tensor([5, 7], dtype=torch.int64), count=2).shares
+        with pytest.raises(RoleExecutionError):
+            client.execute(shares)
+        with pytest.raises(ProtocolError, match="quarantined"):
+            client.execute(shares)
+    finally:
+        if client is not None:
+            client.close()
+        for worker in workers:
+            worker.close()
+
+
+def test_field_activation_wire_format_uses_four_bytes() -> None:
+    from types import SimpleNamespace
+
+    worker = FortressRoleWorker.__new__(FortressRoleWorker)
+    worker.artifacts = {"op": SimpleNamespace(matrix=torch.zeros(2, 2, dtype=torch.int64))}
+    payload = b"\x02\x00op" + (5).to_bytes(4, "little") + (7).to_bytes(4, "little")
+    name, activation = worker._decode_activation(payload)
+    assert name == "op"
+    assert activation.tolist() == [5, 7]

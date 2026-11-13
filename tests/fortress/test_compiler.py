@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from xurcroh.fortress.arithmetic import combine_shares
+from xurcroh.fortress.arithmetic import PRIME_MODULUS, combine_shares
 from xurcroh.fortress.compiler import compile_operation, reap_prune_experts
 from xurcroh.fortress.storage import reconstruct_shard
 
@@ -23,7 +23,7 @@ def test_compiler_quantizes_shares_and_disperses_every_weight_share() -> None:
             compiled.shares[index].matrix,
         )
     combined = combine_shares([share.matrix for share in compiled.shares.values()])
-    assert torch.equal(combined, compiled.quantized.values.remainder(2**32))
+    assert torch.equal(combined, compiled.quantized.values.remainder(PRIME_MODULUS))
 
 
 def test_metadata_only_shares_can_be_reconstructed_for_client_attacks() -> None:
@@ -39,7 +39,7 @@ def test_metadata_only_shares_can_be_reconstructed_for_client_attacks() -> None:
     )
     shares = compiler.materialize_weight_shares(operation)
     assert all(share.dtype == torch.int64 for share in shares)
-    assert torch.equal(combine_shares(shares), operation.quantized.values.remainder(2**32))
+    assert torch.equal(combine_shares(shares), operation.quantized.values.remainder(PRIME_MODULUS))
 
 
 def test_reap_pruning_precedes_compilation() -> None:

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from xurcroh.fortress.arithmetic import FIELD_MODULUS
 from xurcroh.fortress.native import FortressNativeController
 
 pytestmark = pytest.mark.hardware
@@ -76,17 +77,17 @@ def _chacha_reference(key: list[int], nonce: bytes, count: int) -> list[int]:
 
 
 @pytest.mark.parametrize("rows,cols", [(1, 1), (7, 5), (65, 33), (257, 129), (1024, 768)])
-def test_integer_matvec_matches_ring_reference(rows: int, cols: int) -> None:
+def test_integer_matvec_matches_field_reference(rows: int, cols: int) -> None:
     require_cuda()
     root = Path(__file__).parents[2]
     controller = FortressNativeController(root / "native/build/xurcroh_burn_alloc.so")
     weights = [
-        [((row + 1) * 0x9E3779B1 + (col + 3) * 0x85EBCA6B) % 2**32 for col in range(cols)]
+        [((row + 1) * 0x9E3779B1 + (col + 3) * 0x85EBCA6B) % FIELD_MODULUS for col in range(cols)]
         for row in range(rows)
     ]
-    activations = [((index + 1) * 0xC2B2AE35) % 2**32 for index in range(rows)]
+    activations = [((index + 1) * 0xC2B2AE35) % FIELD_MODULUS for index in range(rows)]
     expected = [
-        sum(weights[row][col] * activations[row] for row in range(rows)) % 2**32
+        sum(weights[row][col] * activations[row] for row in range(rows)) % FIELD_MODULUS
         for col in range(cols)
     ]
     assert controller.matvec(weights, activations) == expected

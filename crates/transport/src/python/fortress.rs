@@ -55,11 +55,11 @@ fn execute_fortress_grid(
 fn execute_fortress_role(
     activation: Vec<i64>,
     weight_share: PyRef<FortressWeightShare>,
-) -> PyResult<Vec<i128>> {
+) -> PyResult<Vec<i64>> {
     weight_share
         .inner
         .matrix
-        .transpose_matvec_exact(&activation)
+        .transpose_matvec(&activation, xurcroh_fortress::PRIME_MODULUS)
         .map_err(value_error)
 }
 

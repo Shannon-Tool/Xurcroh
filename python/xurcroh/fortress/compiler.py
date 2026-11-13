@@ -8,8 +8,8 @@ import torch
 
 from xurcroh.algebra.modulation import SignedPermutation
 from xurcroh.fortress.arithmetic import (
+    FIELD_MODULUS,
     PRIME_MODULUS,
-    RING_MODULUS,
     QuantizedTensor,
     freivalds_challenge,
     seeded_split_secret,
@@ -84,7 +84,7 @@ def compile_operation(
         weight = inner_transform(weight)
     quantized = symmetric_quantize(weight, bits=4)
     if seed is None:
-        grid = split_secret(quantized.values, count=share_count, modulus=RING_MODULUS)
+        grid = split_secret(quantized.values, count=share_count, modulus=FIELD_MODULUS)
     else:
         grid = seeded_split_secret(quantized.values, seed=seed, count=share_count)
     shares: dict[int, WeightShare] = {}
@@ -139,8 +139,8 @@ def materialize_weight_shares(operation: CompiledOperation) -> list[torch.Tensor
         elif index == len(operation.shares) - 1:
             total = torch.sum(torch.stack(matrices), dim=0)
             matrix = (
-                operation.quantized.values.to(torch.int64).remainder(RING_MODULUS) - total
-            ).remainder(RING_MODULUS)
+                operation.quantized.values.to(torch.int64).remainder(FIELD_MODULUS) - total
+            ).remainder(FIELD_MODULUS)
         else:
             raise ValueError("non-final weight share has neither a matrix nor a seed")
         matrices.append(matrix)

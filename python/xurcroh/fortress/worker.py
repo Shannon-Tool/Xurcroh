@@ -7,11 +7,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from xurcroh.errors import ProtocolError
-from xurcroh.fortress.arithmetic import RING_MODULUS
+from xurcroh.fortress.arithmetic import FIELD_MODULUS
 from xurcroh.fortress.transport import (
     DEFAULT_FRAME_BYTES,
     decode_role_artifact,
@@ -87,7 +88,7 @@ class FortressRoleWorker:
                 raise ValueError("Fortress CUDA worker requires the compiled native library")
             self._cuda_controller = FortressNativeController(library)
             self._cuda_weights = {
-                name: artifact.matrix.remainder(RING_MODULUS).to(torch.int32).T.contiguous().cuda()
+                name: artifact.matrix.remainder(FIELD_MODULUS).to(torch.int32).T.contiguous().cuda()
                 for name, artifact in self.artifacts.items()
             }
         self.server = xurcroh_quic.TensorServer.bind_mutual(
@@ -147,10 +148,14 @@ class FortressRoleWorker:
         activation_payload = payload[name_end:]
         if (
             input_features > MAX_ACTIVATION_ELEMENTS
-            or len(activation_payload) != input_features * 8
+            or len(activation_payload) != input_features * 4
         ):
             raise ProtocolError("Fortress activation dimensions are invalid")
-        activation = torch.frombuffer(bytearray(activation_payload), dtype=torch.int64).clone()
+        activation = torch.from_numpy(
+            np.frombuffer(activation_payload, dtype=np.uint32).astype(np.int64)
+        )
+        if bool(torch.any((activation < 0) | (activation >= FIELD_MODULUS))):
+            raise ProtocolError("Fortress activation must contain canonical field elements")
         return name, activation
 
     def _execute_activation(self, name: str, activation: torch.Tensor) -> list[int]:
@@ -158,14 +163,14 @@ class FortressRoleWorker:
             return [
                 int(value)
                 for value in self._quic.execute_fortress_role(
-                    activation.remainder(RING_MODULUS).tolist(), self._native_weights[name]
+                    activation.remainder(FIELD_MODULUS).tolist(), self._native_weights[name]
                 )
             ]
-        activation_device = activation.remainder(RING_MODULUS).to(torch.int32).cuda()
+        activation_device = activation.remainder(FIELD_MODULUS).to(torch.int32).cuda()
         output = torch.empty(self.artifacts[name].matrix.shape[0], dtype=torch.int32, device="cuda")
         try:
             self._cuda_controller.matvec_device(self._cuda_weights[name], activation_device, output)
-            return output.cpu().to(torch.int64).remainder(RING_MODULUS).tolist()
+            return output.cpu().to(torch.int64).remainder(FIELD_MODULUS).tolist()
         finally:
             activation_device.zero_()
             output.zero_()
@@ -222,7 +227,7 @@ class FortressRoleWorker:
                     name, activation = self._decode_activation(payload)
                     values = self._execute_activation(name, activation)
                     exact_payload = bytearray(
-                        b"".join(value.to_bytes(16, "little", signed=True) for value in values)
+                        b"".join(value.to_bytes(4, "little", signed=False) for value in values)
                     )
                     response = pad_packet(
                         sender.seal(

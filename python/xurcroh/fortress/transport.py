@@ -14,7 +14,7 @@ from typing import Any
 import torch
 
 from xurcroh.errors import ProtocolError
-from xurcroh.fortress.arithmetic import PRIME_MODULUS, RING_MODULUS
+from xurcroh.fortress.arithmetic import FIELD_MODULUS, PRIME_MODULUS
 from xurcroh.fortress.compiler import CompiledOperation
 from xurcroh.fortress.grid import RoleExecutionError, WeightShare
 from xurcroh.fortress.storage import DispersedShard, reconstruct_shard
@@ -277,7 +277,14 @@ class _RoleTransport:
         self, activation: torch.Tensor, request_id: str, sequence: int
     ) -> tuple[list[int], int, int]:
         request_hash = hashlib.sha256(request_id.encode()).digest()[:16]
-        canonical = activation.detach().cpu().to(torch.int64).remainder(RING_MODULUS).contiguous()
+        canonical = (
+            activation.detach()
+            .cpu()
+            .to(torch.int64)
+            .remainder(FIELD_MODULUS)
+            .to(torch.int32)
+            .contiguous()
+        )
         operation_payload = (
             len(self._operation_name).to_bytes(2, "little")
             + self._operation_name
@@ -324,13 +331,13 @@ class _RoleTransport:
             result_dtype != "u8"
             or len(result_shape) != 1
             or result_shape[0] == 0
-            or result_shape[0] % 16
+            or result_shape[0] % 4
             or len(payload) != result_shape[0]
         ):
-            raise ProtocolError("role result must contain exact 128-bit products")
+            raise ProtocolError("role result must contain canonical 32-bit field elements")
         result = [
-            int.from_bytes(payload[offset : offset + 16], "little", signed=True)
-            for offset in range(0, len(payload), 16)
+            int.from_bytes(payload[offset : offset + 4], "little", signed=False)
+            for offset in range(0, len(payload), 4)
         ]
         self._completed += 1
         if self._completed % self._rotation_interval == 0:
@@ -368,12 +375,19 @@ def combine_role_results(
     if any(len(product) != output_size for product in results.values()):
         raise ProtocolError("grid response dimensions are inconsistent")
     for activation_index, activation in enumerate(activation_shares):
-        canonical = activation.remainder(RING_MODULUS)
+        canonical = activation.remainder(FIELD_MODULUS)
         for weight_index, share in weight_shares.items():
             key = (activation_index, weight_index)
             exact_product = results[key]
             prime = share.challenge.prime
-            product = torch.tensor([value % prime for value in exact_product], dtype=torch.int64)
+            if any(value < 0 or value >= prime for value in exact_product):
+                raise RoleExecutionError(
+                    activation_index,
+                    weight_index,
+                    providers[key],
+                    "worker returned a non-canonical field result",
+                )
+            product = torch.tensor(exact_product, dtype=torch.int64)
             if not xurcroh_quic.verify_fortress_product(
                 canonical.tolist(),
                 product.tolist(),
@@ -394,7 +408,7 @@ def combine_role_results(
             for activation_index in range(len(activation_shares))
             for weight_index in weight_shares
         )
-        columns.append(total % RING_MODULUS)
+        columns.append(total % FIELD_MODULUS)
     return torch.tensor(columns, dtype=torch.int64)
 
 
@@ -412,7 +426,7 @@ def execute_native_grid(
     results: dict[tuple[int, int], list[int]] = {}
     providers: dict[tuple[int, int], str] = {}
     for activation_index, activation in enumerate(activation_shares):
-        canonical = activation.remainder(RING_MODULUS).tolist()
+        canonical = activation.remainder(FIELD_MODULUS).tolist()
         for weight_index, share in weight_shares.items():
             key = (activation_index, weight_index)
             results[key] = xurcroh_quic.execute_fortress_role(
@@ -464,6 +478,7 @@ class FortressRoleClient:
         self._cover_interval = cover_interval
         self._cover_stop = threading.Event()
         self._cover_error: Exception | None = None
+        self._quarantined: RoleExecutionError | None = None
         self._cover_thread = threading.Thread(target=self._cover_loop, daemon=True)
         self._cover_thread.start()
 
@@ -513,16 +528,21 @@ class FortressRoleClient:
                     self.request_count += 1
                     self.bytes_sent += sent
                     self.bytes_received += received
-        return combine_role_results(
-            activation_shares, self.operation.shares, results, self._providers
-        )
+        try:
+            return combine_role_results(
+                activation_shares, self.operation.shares, results, self._providers
+            )
+        except RoleExecutionError as error:
+            with self._lock:
+                self._quarantined = self._quarantined or error
+            raise
 
     def _cover_loop(self) -> None:
         features = self.operation.quantized.values.shape[1]
         while not self._cover_stop.wait(self._cover_interval):
             try:
                 shares = [
-                    torch.randint(0, 2**32, (features,), dtype=torch.int64)
+                    torch.randint(0, FIELD_MODULUS, (features,), dtype=torch.int64)
                     for _ in range(len(self.operation.shares))
                 ]
                 self._execute_token(shares, f"cover:{uuid.uuid4().hex}", 0, cover=True)
@@ -536,6 +556,8 @@ class FortressRoleClient:
         with self._lock:
             if self._closed:
                 raise ProtocolError("Fortress role client is closed")
+            if self._quarantined is not None:
+                raise ProtocolError("Fortress role client is quarantined") from self._quarantined
             if self._cover_error is not None:
                 raise ProtocolError("Fortress cover traffic failed") from self._cover_error
         if len(activation_shares) != len(self.operation.shares):

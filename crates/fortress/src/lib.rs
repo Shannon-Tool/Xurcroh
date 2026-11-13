@@ -2,8 +2,8 @@ use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use thiserror::Error;
 
-pub const RING_MODULUS: i128 = 1i128 << 32;
-pub const PRIME_MODULUS: i128 = RING_MODULUS - 5;
+pub const PRIME_MODULUS: i128 = (1i128 << 32) - 5;
+pub const FIELD_MODULUS: i128 = PRIME_MODULUS;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Matrix {
@@ -124,7 +124,7 @@ impl Matrix {
         Self::from_values(
             rows,
             cols,
-            (0..rows * cols).map(|_| (rng.next_u64() % RING_MODULUS as u64) as i64),
+            (0..rows * cols).map(|_| (rng.next_u64() % FIELD_MODULUS as u64) as i64),
         )
     }
 
@@ -154,13 +154,13 @@ impl std::ops::Add for Matrix {
 
     fn add(self, rhs: Self) -> Self::Output {
         assert_eq!((self.rows, self.cols), (rhs.rows, rhs.cols));
-        let combined = self.add_mod(&rhs, RING_MODULUS);
+        let combined = self.add_mod(&rhs, FIELD_MODULUS);
         Self::from_values(
             combined.rows,
             combined.cols,
             combined.data.into_iter().map(|value| {
-                if value >= RING_MODULUS as i64 / 2 {
-                    value - RING_MODULUS as i64
+                if value >= FIELD_MODULUS as i64 / 2 {
+                    value - FIELD_MODULUS as i64
                 } else {
                     value
                 }
@@ -176,9 +176,9 @@ pub fn split_matrix(secret: &Matrix, count: usize) -> Vec<Matrix> {
         .collect::<Vec<_>>();
     let total = shares.iter().fold(
         Matrix::new(secret.rows, secret.cols, vec![0; secret.data.len()]).unwrap(),
-        |sum, share| sum.add_mod(share, RING_MODULUS),
+        |sum, share| sum.add_mod(share, FIELD_MODULUS),
     );
-    shares.push(secret.sub_mod(&total, RING_MODULUS));
+    shares.push(secret.sub_mod(&total, FIELD_MODULUS));
     shares
 }
 
@@ -194,9 +194,9 @@ pub fn seeded_split_matrix(secret: &Matrix, count: usize, seed: [u8; 32]) -> Vec
         .collect::<Vec<_>>();
     let total = shares.iter().fold(
         Matrix::new(secret.rows, secret.cols, vec![0; secret.data.len()]).unwrap(),
-        |sum, share| sum.add_mod(share, RING_MODULUS),
+        |sum, share| sum.add_mod(share, FIELD_MODULUS),
     );
-    shares.push(secret.sub_mod(&total, RING_MODULUS));
+    shares.push(secret.sub_mod(&total, FIELD_MODULUS));
     shares
 }
 
@@ -207,7 +207,7 @@ pub fn split_vector(secret: &[i64], count: usize) -> Vec<Vec<i64>> {
         .map(|_| {
             secret
                 .iter()
-                .map(|_| (rng.next_u64() % RING_MODULUS as u64) as i64)
+                .map(|_| (rng.next_u64() % FIELD_MODULUS as u64) as i64)
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
@@ -217,7 +217,7 @@ pub fn split_vector(secret: &[i64], count: usize) -> Vec<Vec<i64>> {
                 .iter()
                 .map(|share| i128::from(share[index]))
                 .sum::<i128>()
-                .rem_euclid(RING_MODULUS) as i64
+                .rem_euclid(FIELD_MODULUS) as i64
         })
         .collect::<Vec<_>>();
     shares.push(
@@ -225,7 +225,7 @@ pub fn split_vector(secret: &[i64], count: usize) -> Vec<Vec<i64>> {
             .iter()
             .zip(total)
             .map(|(value, mask)| {
-                (i128::from(*value) - i128::from(mask)).rem_euclid(RING_MODULUS) as i64
+                (i128::from(*value) - i128::from(mask)).rem_euclid(FIELD_MODULUS) as i64
             })
             .collect(),
     );
@@ -235,8 +235,8 @@ pub fn split_vector(secret: &[i64], count: usize) -> Vec<Vec<i64>> {
 pub fn refresh_shares(first: &Matrix, second: &Matrix) -> (Matrix, Matrix) {
     let delta = Matrix::random(first.rows, first.cols, None);
     (
-        first.add_mod(&delta, RING_MODULUS),
-        second.sub_mod(&delta, RING_MODULUS),
+        first.add_mod(&delta, FIELD_MODULUS),
+        second.sub_mod(&delta, FIELD_MODULUS),
     )
 }
 
@@ -294,7 +294,7 @@ pub fn execute_grid(
         for share in weight_shares {
             let product = share
                 .matrix
-                .transpose_matvec(activation, RING_MODULUS)
+                .transpose_matvec(activation, FIELD_MODULUS)
                 .map_err(|error| RoleExecutionError {
                     activation_index,
                     weight_index: share.weight_index,
@@ -330,7 +330,7 @@ pub fn execute_grid(
             if rng.gen_bool(replica_fraction) {
                 let replica = share
                     .matrix
-                    .transpose_matvec(activation, RING_MODULUS)
+                    .transpose_matvec(activation, FIELD_MODULUS)
                     .map_err(|error| RoleExecutionError {
                         activation_index,
                         weight_index: share.weight_index,
@@ -370,7 +370,7 @@ pub fn execute_grid(
                 .iter()
                 .map(|result| i128::from(result[col]))
                 .sum::<i128>()
-                .rem_euclid(RING_MODULUS) as i64
+                .rem_euclid(FIELD_MODULUS) as i64
         })
         .collect())
 }

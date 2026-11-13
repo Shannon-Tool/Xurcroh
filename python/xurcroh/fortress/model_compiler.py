@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import re
 import secrets
 from collections.abc import Callable
@@ -9,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from xurcroh.algebra.modulation import SignedPermutation
 from xurcroh.errors import ConfigurationError
@@ -60,6 +61,17 @@ def _layer_family(names: list[str]) -> tuple[str, list[int]]:
     return family, sorted(families[family])
 
 
+def _derived_seed(seed: int, operation: str, purpose: str) -> bytes:
+    if not 0 <= seed < 2**256:
+        raise ValueError("Fortress seed must fit in 256 bits")
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b"xurcroh-fortress-v1",
+        info=f"{purpose}:{operation}".encode(),
+    ).derive(seed.to_bytes(32, "big"))
+
+
 def _compile_matrix(
     name: str,
     weight: torch.Tensor,
@@ -78,19 +90,25 @@ def _compile_matrix(
     input_basis = None
     output_basis = None
     if inner_bases:
-        operation_index = len(operations)
-        input_seed = seed + operation_index * 2 if seed is not None else secrets.randbits(63)
-        output_seed = seed + operation_index * 2 + 1 if seed is not None else secrets.randbits(63)
+        input_seed = (
+            int.from_bytes(_derived_seed(seed, name, "input-basis")) % 2**63
+            if seed is not None
+            else secrets.randbits(63)
+        )
+        output_seed = (
+            int.from_bytes(_derived_seed(seed, name, "output-basis")) % 2**63
+            if seed is not None
+            else secrets.randbits(63)
+        )
         input_basis = SignedPermutation.generate(weight.shape[1], seed=input_seed)
         output_basis = SignedPermutation.generate(weight.shape[0], seed=output_seed)
-    share_seed = hashlib.sha256(f"{seed}:{name}".encode()).digest() if seed is not None else None
+    share_seed = _derived_seed(seed, name, "weight-share") if seed is not None else None
     operation = compile_operation(
         weight.to(torch.float64),
         threshold=threshold,
         slice_count=slice_count,
         share_count=share_count,
         seed=share_seed,
-        challenge_seed=seed + len(operations) if seed is not None else None,
         input_basis=input_basis,
         output_basis=output_basis,
         materialize_shares=materialize_shares,

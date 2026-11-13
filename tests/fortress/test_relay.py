@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.serialization import (
 from tests.fortress.conftest import MutualTLSIdentities
 
 from xurcroh.errors import ProtocolError
-from xurcroh.fortress.arithmetic import RING_MODULUS, split_secret
+from xurcroh.fortress.arithmetic import PRIME_MODULUS, split_secret
 from xurcroh.fortress.compiler import compile_operation
 from xurcroh.fortress.relay import ObliviousRelay, RelayRoute
 from xurcroh.fortress.transport import (
@@ -99,7 +99,7 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
     client = FortressRoleClient(operation, roles, identity, cover_interval=60)
     shares = split_secret(torch.tensor([5, 7], dtype=torch.int64), count=2).shares
     try:
-        expected = (operation.quantized.values @ torch.tensor([5, 7])).remainder(RING_MODULUS)
+        expected = (operation.quantized.values @ torch.tensor([5, 7])).remainder(PRIME_MODULUS)
         assert torch.equal(client.execute(shares), expected)
         assert relay.forward_count == 4
     finally:

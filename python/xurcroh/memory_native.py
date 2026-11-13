@@ -28,6 +28,8 @@ class NativeMemoryController:
         self.library = ctypes.CDLL(str(path))
         self.library.xurcroh_get_scrubbed_bytes.restype = ctypes.c_uint64
         self.library.xurcroh_get_scrub_calls.restype = ctypes.c_uint64
+        self.library.xurcroh_get_quarantined_bytes.restype = ctypes.c_uint64
+        self.library.xurcroh_get_quarantined_allocations.restype = ctypes.c_uint64
         self.library.xurcroh_launch_shared_scrub.argtypes = [ctypes.c_int, ctypes.c_void_p]
         self.library.xurcroh_run_leftover_probe.argtypes = [
             ctypes.c_void_p,
@@ -53,6 +55,8 @@ class NativeMemoryController:
         return {
             "scrubbed_bytes": self.library.xurcroh_get_scrubbed_bytes(),
             "scrub_calls": self.library.xurcroh_get_scrub_calls(),
+            "quarantined_bytes": self.library.xurcroh_get_quarantined_bytes(),
+            "quarantined_allocations": self.library.xurcroh_get_quarantined_allocations(),
         }
 
     def scrub_shared_memory(self, device: int = 0) -> None:

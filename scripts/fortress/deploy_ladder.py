@@ -281,7 +281,7 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
     seed = (
         int(os.environ["XURCROH_FORTRESS_SEED"])
         if "XURCROH_FORTRESS_SEED" in os.environ
-        else secrets.randbits(63)
+        else secrets.randbits(256)
     )
     output.mkdir(parents=True, exist_ok=True)
     client = output / "client"

@@ -1,16 +1,20 @@
 from __future__ import annotations
 
-import hashlib
 import os
 from dataclasses import dataclass
 from enum import Enum
 
+import numpy as np
 import torch
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 RING_MODULUS = 2**32
 PRIME_MODULUS = 2**32 - 5
+FIELD_MODULUS = PRIME_MODULUS
 MAX_SIGNED_RING_VALUE = 2**31 - 1
+MAX_SIGNED_FIELD_VALUE = PRIME_MODULUS // 2
 
 
 @dataclass(frozen=True)
@@ -102,8 +106,8 @@ def quantized_matmul(left: QuantizedTensor, right: QuantizedTensor) -> Quantized
     inner = left_values.shape[1]
     left_bound = int(left_values.abs().max().item()) if left_values.numel() else 0
     right_bound = int(right_values.abs().max().item()) if right_values.numel() else 0
-    if left_bound * right_bound * inner > MAX_SIGNED_RING_VALUE:
-        raise OverflowError("unreduced product exceeds the signed 2^32 ring bound")
+    if left_bound * right_bound * inner > MAX_SIGNED_FIELD_VALUE:
+        raise OverflowError("unreduced product exceeds the signed field decoding bound")
     return QuantizedProduct(left_values @ right_values, left.scale * right.scale)
 
 
@@ -113,21 +117,29 @@ def _secure_uniform(shape: tuple[int, ...], modulus: int) -> torch.Tensor:
     count = 1
     for dimension in shape:
         count *= dimension
+    if count < 1:
+        raise ValueError("share shape must be nonempty")
     limit = (2**64 // modulus) * modulus
     accepted: list[torch.Tensor] = []
     remaining = count
     while remaining:
-        candidate = torch.frombuffer(bytearray(os.urandom(remaining * 8)), dtype=torch.uint64)
-        accepted.append(candidate if limit == 2**64 else candidate[candidate < limit])
+        candidate = np.frombuffer(os.urandom(remaining * 8), dtype=np.uint64)
+        selected = candidate[candidate < limit].astype(np.int64)
+        accepted.append(torch.from_numpy(selected).remainder(modulus))
         remaining = count - sum(tensor.numel() for tensor in accepted)
-    return torch.cat(accepted).to(torch.int64).reshape(shape)
+    return torch.cat(accepted).reshape(shape)
 
 
 def signed_ring(values: torch.Tensor) -> torch.Tensor:
     return (values + 2**31).remainder(RING_MODULUS) - 2**31
 
 
-def split_secret(secret: torch.Tensor, *, count: int, modulus: int = RING_MODULUS) -> ShareGrid:
+def signed_field(values: torch.Tensor) -> torch.Tensor:
+    canonical = values.remainder(FIELD_MODULUS)
+    return torch.where(canonical > MAX_SIGNED_FIELD_VALUE, canonical - FIELD_MODULUS, canonical)
+
+
+def split_secret(secret: torch.Tensor, *, count: int, modulus: int = FIELD_MODULUS) -> ShareGrid:
     if count < 2:
         raise ValueError("additive sharing requires at least two roles")
     if secret.dtype != torch.int64:
@@ -138,14 +150,14 @@ def split_secret(secret: torch.Tensor, *, count: int, modulus: int = RING_MODULU
     return ShareGrid(shares, ShareSecurity.INFORMATION_THEORETIC)
 
 
-def combine_shares(shares: list[torch.Tensor], *, modulus: int = RING_MODULUS) -> torch.Tensor:
+def combine_shares(shares: list[torch.Tensor], *, modulus: int = FIELD_MODULUS) -> torch.Tensor:
     if not shares:
         raise ValueError("at least one share is required")
     return torch.sum(torch.stack(shares), dim=0).remainder(modulus)
 
 
 def refresh_shares(
-    shares: list[torch.Tensor], *, first: int, second: int, modulus: int = RING_MODULUS
+    shares: list[torch.Tensor], *, first: int, second: int, modulus: int = FIELD_MODULUS
 ) -> list[torch.Tensor]:
     if first == second or not 0 <= first < len(shares) or not 0 <= second < len(shares):
         raise ValueError("share refresh requires two distinct roles")
@@ -167,7 +179,7 @@ def _seeded_uniform(seed: bytes, shape: tuple[int, ...]) -> torch.Tensor:
     return (
         torch.frombuffer(bytearray(stream), dtype=torch.uint64)
         .to(torch.int64)
-        .remainder(RING_MODULUS)
+        .remainder(FIELD_MODULUS)
         .reshape(shape)
     )
 
@@ -175,7 +187,12 @@ def _seeded_uniform(seed: bytes, shape: tuple[int, ...]) -> torch.Tensor:
 def seeded_share_seed(seed: bytes, index: int) -> bytes:
     if len(seed) != 32 or index < 0:
         raise ValueError("a 32-byte seed and nonnegative share index are required")
-    return hashlib.sha256(seed + b"xurcroh-weight-share" + index.to_bytes(4, "big")).digest()
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b"xurcroh-fortress-v1",
+        info=b"weight-share:" + index.to_bytes(4, "big"),
+    ).derive(seed)
 
 
 def seeded_split_secret(secret: torch.Tensor, *, seed: bytes, count: int) -> ShareGrid:
@@ -183,11 +200,11 @@ def seeded_split_secret(secret: torch.Tensor, *, seed: bytes, count: int) -> Sha
         raise ValueError("additive sharing requires at least two roles")
     if secret.dtype != torch.int64:
         raise ValueError("shared secrets must use int64")
-    canonical = secret.remainder(RING_MODULUS)
+    canonical = secret.remainder(FIELD_MODULUS)
     shares = [
         _seeded_uniform(seeded_share_seed(seed, index), secret.shape) for index in range(count - 1)
     ]
-    shares.append((canonical - torch.sum(torch.stack(shares), dim=0)).remainder(RING_MODULUS))
+    shares.append((canonical - torch.sum(torch.stack(shares), dim=0)).remainder(FIELD_MODULUS))
     return ShareGrid(shares, ShareSecurity.COMPUTATIONAL)
 
 
