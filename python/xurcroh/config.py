@@ -203,15 +203,16 @@ class ClusterConfig(StrictModel):
 class ModelDefinition(StrictModel):
     path: str
     revision: str | None = None
-    engine: Literal["auto", "reference", "transformers", "vllm", "sglang", "diffusion", "xdit"] = (
-        "auto"
-    )
+    engine: Literal[
+        "auto", "reference", "transformers", "vllm", "sglang", "diffusion", "xdit", "fortress"
+    ] = "auto"
     modality: Literal["auto", "text", "vlm", "image", "video"] = "auto"
     allow_download: bool = False
     manifest_path: str | None = None
     boundary_key_env: str | None = None
     protect_latents: bool = False
     latent_security: Literal["equivariant", "transport_only"] = "equivariant"
+    fortress_seed: int | None = None
 
 
 class ModelRegistry:

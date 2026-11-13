@@ -84,3 +84,32 @@ The command-line interface provides real local inference:
 ```bash
 xurcroh chat --model tiny --model-path /models/tiny --prompt 'Hello!' --max-tokens 32
 ```
+
+
+## Fortress execution
+
+Select `engine="fortress"` to compile every attention and feed-forward projection into quantized additive share grids. Embeddings, normalization gains, routers, the LM head, and sampling stay on the client. The same public chat API works for local execution and four-role remote grids:
+
+```python
+from Xurcroh import Xurcroh
+
+client = Xurcroh(
+    cluster=cluster_config,
+    model_path={
+        "qwen": {
+            "path": "/models/qwen",
+            "engine": "fortress",
+            "fortress_seed": 731,
+        }
+    },
+)
+response = client.chat.completions.create(
+    model="qwen",
+    messages=[{"role": "user", "content": "Hello!"}],
+    temperature=0,
+)
+```
+
+Each remote worker needs `activation_index`, `weight_index`, and `recipient_public` labels plus a QUIC endpoint. The client identity uses `client_certificate_path`, `client_key_path`, and `ca_path`; optional labels set `server_name`, `frame_bytes`, and `cover_interval`. Every worker and the client must use the same compiled operation set. `fortress_seed` makes bases, weight shares, and Freivalds challenges reproducible for a distributed deployment and must remain a client-held secret; omit it for fresh local compilation. Do not compile workers and client independently without a shared seed or an exported shared package.
+
+Fortress is not production-accepted merely because these API tests pass. Model quality, multi-host hardware execution, side-channel resistance, and external security review remain separate gates.

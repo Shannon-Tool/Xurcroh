@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import secrets
 from dataclasses import dataclass
@@ -52,18 +53,25 @@ def _compile_matrix(
     threshold: int,
     slice_count: int,
     inner_bases: bool,
+    seed: int | None,
 ) -> None:
     if name in operations:
         raise ConfigurationError(f"duplicate Fortress operation: {name}")
     input_basis = None
     output_basis = None
     if inner_bases:
-        input_basis = SignedPermutation.generate(weight.shape[1], seed=secrets.randbits(63))
-        output_basis = SignedPermutation.generate(weight.shape[0], seed=secrets.randbits(63))
+        operation_index = len(operations)
+        input_seed = seed + operation_index * 2 if seed is not None else secrets.randbits(63)
+        output_seed = seed + operation_index * 2 + 1 if seed is not None else secrets.randbits(63)
+        input_basis = SignedPermutation.generate(weight.shape[1], seed=input_seed)
+        output_basis = SignedPermutation.generate(weight.shape[0], seed=output_seed)
+    share_seed = hashlib.sha256(f"{seed}:{name}".encode()).digest() if seed is not None else None
     operations[name] = compile_operation(
         weight.to(torch.float64),
         threshold=threshold,
         slice_count=slice_count,
+        seed=share_seed,
+        challenge_seed=seed + len(operations) if seed is not None else None,
         input_basis=input_basis,
         output_basis=output_basis,
     )
@@ -85,6 +93,7 @@ def compile_fortress_checkpoint(
     slice_count: int = 3,
     inner_bases: bool = True,
     activation_bits: int = 12,
+    seed: int | None = None,
 ) -> FortressCheckpoint:
     reader = CheckpointReader(Path(checkpoint))
     config = _text_config(reader)
@@ -121,6 +130,7 @@ def compile_fortress_checkpoint(
                 threshold=threshold,
                 slice_count=slice_count,
                 inner_bases=inner_bases,
+                seed=seed,
             )
         mlp_prefix = f"{prefix}.mlp"
         if expert_indices:
@@ -133,6 +143,7 @@ def compile_fortress_checkpoint(
                         threshold=threshold,
                         slice_count=slice_count,
                         inner_bases=inner_bases,
+                        seed=seed,
                     )
         else:
             for projection in ("gate_proj", "up_proj", "down_proj"):
@@ -143,6 +154,7 @@ def compile_fortress_checkpoint(
                     threshold=threshold,
                     slice_count=slice_count,
                     inner_bases=inner_bases,
+                    seed=seed,
                 )
         router = tensors[f"{mlp_prefix}.gate.weight"].to(torch.float64) if expert_indices else None
         top_k = int(
