@@ -7,7 +7,11 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
-from xurcroh.transparency import TransparencyError, verify_transparency_log
+from xurcroh.transparency import (
+    TransparencyError,
+    fetch_transparency_log,
+    verify_transparency_log,
+)
 from xurcroh.transparency_cli import main as transparency_main
 from xurcroh.transparency_service import TransparencyService
 
@@ -65,3 +69,28 @@ def test_transparency_cli_uses_indirect_secret_configuration(
     output = capsys.readouterr().out
     assert "--write-token-env" in output
     assert "--signing-key" in output
+
+
+def test_remote_transparency_log_is_verified_before_use(tmp_path: Path) -> None:
+    import httpx
+
+    key = Ed25519PrivateKey.generate()
+    service = TransparencyService(
+        tmp_path / "log.json", signing_key=key, write_token="write-secret"
+    )
+    client = TestClient(service.app)
+    client.post(
+        "/v1/entries",
+        json={"image_digest": "a" * 64, "measurement": "b" * 64},
+        headers={"Authorization": "Bearer write-secret"},
+    )
+    document = client.get("/v1/log").json()
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=document))
+    remote = httpx.Client(base_url="https://transparency.example", transport=transport)
+    document = fetch_transparency_log(
+        "https://transparency.example",
+        public_key=key.public_key().public_bytes_raw(),
+        expected_measurements={"a" * 64: "b" * 64},
+        client=remote,
+    )
+    assert document["entries"][0]["measurement"] == "b" * 64
