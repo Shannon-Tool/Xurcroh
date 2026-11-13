@@ -78,3 +78,29 @@ def test_zero_on_free_and_reallocation() -> None:
     assert after["scrubbed_bytes"] > before["scrubbed_bytes"]
     reallocated = torch.empty((4096,), dtype=torch.int32, device="cuda")
     assert torch.count_nonzero(reallocated).item() == 0
+
+
+def test_failed_scrub_quarantines_allocation() -> None:
+    require_cuda()
+    import ctypes
+
+    root = Path(__file__).parents[2]
+    library = root / "native/build/xurcroh_burn_alloc.so"
+    controller = NativeMemoryController(library)
+    native = ctypes.CDLL(str(library))
+    native.xurcroh_burn_malloc.argtypes = [ctypes.c_ssize_t, ctypes.c_int, ctypes.c_void_p]
+    native.xurcroh_burn_malloc.restype = ctypes.c_void_p
+    native.xurcroh_burn_free.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_ssize_t,
+        ctypes.c_int,
+        ctypes.c_void_p,
+    ]
+    native.xurcroh_burn_free.restype = None
+    before = controller.telemetry()
+    pointer = native.xurcroh_burn_malloc(16, 0, None)
+    assert pointer is not None
+    native.xurcroh_burn_free(pointer, 16, 99, None)
+    after = controller.telemetry()
+    assert after["quarantined_allocations"] == before["quarantined_allocations"] + 1
+    assert after["quarantined_bytes"] >= before["quarantined_bytes"] + 16
