@@ -93,3 +93,26 @@ def test_moe_checkpoint_keeps_router_local_and_compiles_each_expert(tmp_path: Pa
     actual = combiner.run_cached("moe-request", hidden)
     torch.testing.assert_close(actual, expected, atol=1e-7, rtol=1e-7)
     combiner.drop_request("moe-request")
+
+
+def test_language_model_prefixed_checkpoint_compiles(tiny_llama_path: Path, tmp_path: Path) -> None:
+    from safetensors import safe_open
+    from safetensors.torch import save_file
+
+    with safe_open(tiny_llama_path / "model.safetensors", framework="pt") as handle:
+        tensors = {
+            (
+                name.replace("model.", "model.language_model.", 1)
+                if name.startswith("model.")
+                else name
+            ): handle.get_tensor(name)
+            for name in handle.keys()  # noqa: SIM118
+        }
+    config = __import__("json").loads((tiny_llama_path / "config.json").read_text())
+    config["model_type"] = "test_prefixed"
+    (tmp_path / "config.json").write_text(__import__("json").dumps(config))
+    save_file(tensors, str(tmp_path / "model.safetensors"))
+    compiled = compile_fortress_checkpoint(tmp_path)
+    assert compiled.embedding.shape[0] > 0
+    assert compiled.operations
+    assert all(name.startswith("model.language_model.layers.") for name in compiled.operations)

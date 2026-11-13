@@ -13,7 +13,7 @@ from xurcroh.algebra.modulation import SignedPermutation
 from xurcroh.errors import ConfigurationError
 from xurcroh.fortress.combiner import FortressCombiner, FortressLayerMetadata
 from xurcroh.fortress.compiler import CompiledOperation, compile_operation
-from xurcroh.shards.compiler import LAYER_PATTERN, CheckpointReader
+from xurcroh.shards.compiler import CheckpointReader
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,18 @@ class FortressCheckpoint:
 
 def _text_config(reader: CheckpointReader) -> dict[str, Any]:
     return {**reader.config, **reader.config.get("text_config", {})}
+
+
+def _layer_family(names: list[str]) -> tuple[str, list[int]]:
+    families: dict[str, set[int]] = {}
+    for name in names:
+        match = re.search(r"((?:^|.*\.)layers)\.(\d+)\.", name)
+        if match is not None:
+            families.setdefault(match.group(1), set()).add(int(match.group(2)))
+    if not families:
+        raise ConfigurationError("checkpoint contains no transformer layers")
+    family = max(families, key=lambda name: len(families[name]))
+    return family, sorted(families[family])
 
 
 def _compile_matrix(
@@ -112,18 +124,14 @@ def compile_fortress_checkpoint(
     reader = CheckpointReader(Path(checkpoint))
     config = _text_config(reader)
     names = list(reader.tensor_names())
-    layer_indices = sorted(
-        {int(match.group(1)) for name in names if (match := LAYER_PATTERN.search(name))}
-    )
-    if not layer_indices:
-        raise ConfigurationError("checkpoint contains no transformer layers")
+    layer_family, layer_indices = _layer_family(names)
     query_heads = int(config["num_attention_heads"])
     kv_heads = int(config.get("num_key_value_heads", query_heads))
     head_dimension = int(config.get("head_dim", config["hidden_size"] // query_heads))
     layers: list[FortressLayerMetadata] = []
     operations: dict[str, CompiledOperation] = {}
     for index in layer_indices:
-        prefix = f"model.layers.{index}"
+        prefix = f"{layer_family}.{index}"
         layer_names = [name for name in names if name.startswith(prefix + ".")]
         expert_indices = sorted(
             {
