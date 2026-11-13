@@ -69,6 +69,8 @@ def normalize_wheel_sbom(wheel_path: str | Path, *, project_root: str | Path) ->
         with ZipFile(temporary, "w") as destination:
             for info, _ in entries:
                 info.compress_type = ZIP_STORED
+                executable = (info.external_attr >> 16) & 0o111
+                info.external_attr = (0o100755 if executable else 0o100644) << 16
                 destination.writestr(info, payloads[info.filename])
         with ZipFile(temporary) as verification:
             if verification.testzip() is not None:

@@ -4,6 +4,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 PYTHON="${PYTHON:-$ROOT/.venv/bin/python}"
 OUT="${WHEEL_DIR:-$ROOT/dist}"
+home="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}"
+cargo_home="${CARGO_HOME:-$home/.cargo}"
+export RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }--remap-path-prefix=${cargo_home}=/cargo --remap-path-prefix=${ROOT}=/workspace"
 if [[ -n "${CARGO_BIN:-}" ]]; then
   export PATH="$(dirname "$CARGO_BIN"):$PATH"
 fi
