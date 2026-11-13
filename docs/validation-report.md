@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Validated implementation revision: `4fd352061ef4290d8852ec251e97c306e99e2067`
+- Validated implementation revision: `87ba81b707c16ed597e2224f65ccc53ac737b0c2`
 - Local implementation and CI: **passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -15,7 +15,7 @@ The earlier “PRE-GPU IMPLEMENTATION COMPLETE” declaration remains withdrawn.
 
 ## Local and CI evidence
 
-The following local checks and GitHub Actions run [43405981467](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43405981467) cover implementation revision `4fd352061ef4290d8852ec251e97c306e99e2067`:
+The following local checks and GitHub Actions run [43408983710](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43408983710) cover implementation revision `87ba81b707c16ed597e2224f65ccc53ac737b0c2`:
 
 | Check | Actual result |
 |---|---|
@@ -23,11 +23,11 @@ The following local checks and GitHub Actions run [43405981467](https://github.c
 | Python branch coverage | **82.85%**, above the 80% requirement |
 | Ruff format and lint | Passed |
 | Strict mypy, 118 source files | Passed |
-| Rust tests | **28 passed** |
+| Rust tests | **29 passed** |
 | Rust formatting, Clippy, RustSec | Passed; no known advisories |
 | Frontend interaction tests | **32 passed** |
 | Frontend typecheck, lint, production build, content validation | Passed; 22 sections, equations, links, and Mermaid syntax validated |
-| ProVerif model and protocol fuzzing | Passed in GitHub Actions run [43405981467](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43405981467) |
+| ProVerif model and protocol fuzzing | Passed in GitHub Actions run [43408983710](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43408983710) |
 | Clean reproducible wheel builds | **Passed on the development machine and a GitHub-hosted runner**; both wheel hashes match across hosts |
 | `pip-audit` | No known vulnerabilities in audited dependencies |
 | `npm audit` | 0 vulnerabilities |
