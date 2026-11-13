@@ -15,6 +15,7 @@ from xurcroh.errors import (
     RequestCancelledError,
     RequestTimeoutError,
 )
+from xurcroh.fortress.diffusion_engine import FortressDiffusionEngine
 from xurcroh.fortress.engine import FortressEngine
 from xurcroh.provisioning import provision_cluster_sync
 from xurcroh.requests import CompletionRequest, ImageGenerationRequest, VideoGenerationRequest
@@ -63,7 +64,8 @@ class RuntimeService:
             | LocalVisionLanguageEngine
             | RemoteMediaEngine
             | RemoteProtectedMediaEngine
-            | FortressEngine,
+            | FortressEngine
+            | FortressDiffusionEngine,
         ] = {}
         self._requests: dict[str, RequestHandle] = {}
         self._lock = threading.RLock()
@@ -110,6 +112,7 @@ class RuntimeService:
         | RemoteMediaEngine
         | RemoteProtectedMediaEngine
         | FortressEngine
+        | FortressDiffusionEngine
     ):
         definition = self.models.get(name)
         workers = self._workers_for_model(name)
@@ -118,7 +121,10 @@ class RuntimeService:
             engine = self._engines.get(name)
             if engine is None:
                 if definition.engine == "fortress":
-                    engine = FortressEngine(name, definition, workers)
+                    if definition.modality in {"image", "video"}:
+                        engine = FortressDiffusionEngine(name, definition, workers)
+                    else:
+                        engine = FortressEngine(name, definition, workers)
                 elif definition.manifest_path is not None and definition.modality in {
                     "image",
                     "video",
@@ -222,7 +228,8 @@ class RuntimeService:
             LocalDiffusionEngine
             | CompiledDiTStageEngine
             | RemoteMediaEngine
-            | RemoteProtectedMediaEngine,
+            | RemoteProtectedMediaEngine
+            | FortressDiffusionEngine,
         ):
             raise CapabilityError("diffusion engines do not expose text chat completions")
         handle = self._register(request)
@@ -279,7 +286,8 @@ class RuntimeService:
             LocalDiffusionEngine
             | CompiledDiTStageEngine
             | RemoteMediaEngine
-            | RemoteProtectedMediaEngine,
+            | RemoteProtectedMediaEngine
+            | FortressDiffusionEngine,
         ):
             raise CapabilityError("diffusion engines do not expose text chat completions")
         handle = self._register(request)
@@ -354,7 +362,8 @@ class RuntimeService:
             LocalDiffusionEngine
             | CompiledDiTStageEngine
             | RemoteMediaEngine
-            | RemoteProtectedMediaEngine,
+            | RemoteProtectedMediaEngine
+            | FortressDiffusionEngine,
         ):
             raise ClusterUnavailableError(
                 f"model {request.model!r} requires an initialized diffusion worker"
@@ -392,7 +401,8 @@ class RuntimeService:
             LocalDiffusionEngine
             | CompiledDiTStageEngine
             | RemoteMediaEngine
-            | RemoteProtectedMediaEngine,
+            | RemoteProtectedMediaEngine
+            | FortressDiffusionEngine,
         ):
             raise ClusterUnavailableError(
                 f"model {request.model!r} requires an initialized video worker"
