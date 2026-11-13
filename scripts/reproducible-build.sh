@@ -12,7 +12,7 @@ cp -a "$first/." "$second/"
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1700000000}"
 export CARGO_INCREMENTAL=0
 "$first/scripts/bootstrap-python.sh"
-cp -a "$first/.venv" "$second/.venv"
+ln -s "$first/.venv" "$second/.venv"
 "$first/scripts/build-wheels.sh"
 "$second/scripts/build-wheels.sh"
 diff -u <(cd "$first" && sha256sum dist/* | sort -k2) <(cd "$second" && sha256sum dist/* | sort -k2)
