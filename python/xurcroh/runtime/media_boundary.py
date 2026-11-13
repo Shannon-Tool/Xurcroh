@@ -193,6 +193,12 @@ class DiffusionMediaBoundary:
         import numpy as np
 
         frames = np.asarray(pixels)
+        if frames.ndim == 5:
+            if frames.shape[0] != 1:
+                raise CapabilityError("client video decoder returned an unexpected batch size")
+            frames = frames[0]
+        if frames.ndim == 4 and frames.shape[-1] != 3 and frames.shape[0] == 3:
+            frames = frames.transpose(1, 2, 3, 0)
         if frames.ndim == 3:
             frames = frames[None, ...]
         if frames.ndim != 4 or frames.shape[-1] != 3:

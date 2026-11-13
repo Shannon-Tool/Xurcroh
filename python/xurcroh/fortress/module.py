@@ -10,7 +10,6 @@ from xurcroh.fortress.compiler import (
     apply_input_basis,
     apply_output_basis,
 )
-from xurcroh.fortress.grid import execute_grid
 
 if TYPE_CHECKING:
     from xurcroh.fortress.transport import FortressRoleClient
@@ -36,6 +35,8 @@ class FortressLinear(torch.nn.Module):
         self.bias = bias
 
     def forward(self, hidden: torch.Tensor) -> torch.Tensor:
+        from xurcroh.fortress.transport import execute_native_grid
+
         operation = self.operation
         original_shape = hidden.shape
         flattened = hidden.reshape(-1, hidden.shape[-1])
@@ -43,11 +44,11 @@ class FortressLinear(torch.nn.Module):
         activation = quantize_activations(transformed, bits=self.activation_bits)
         shares = split_secret(activation.values, count=2).shares
         product = (
-            execute_grid(shares, operation.shares)
+            execute_native_grid(shares, operation.shares)
             if self.grid_client is None
             else self.grid_client.execute(shares, request_id=self.name)
         )
-        scales = activation.scales.unsqueeze(-1) if hidden.ndim == 2 else activation.scales
+        scales = activation.scales.unsqueeze(-1)
         result = signed_ring(product).to(torch.float64) * scales * operation.quantized.scale
         result = apply_output_basis(operation, result).to(hidden.dtype)
         if self.bias is not None:

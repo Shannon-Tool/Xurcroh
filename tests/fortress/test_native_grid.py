@@ -18,6 +18,8 @@ def test_native_grid_executes_rust_engine_and_attributes_tampering() -> None:
     )
     assert xurcroh_quic.execute_fortress_grid([[5, 7]], [share], 1.0) == [19, 43]
     assert xurcroh_quic.execute_fortress_role([5, 7], share) == [19, 43]
+    assert xurcroh_quic.verify_fortress_product([5, 7], [19, 43], [11, 13], [50, 74], 2**32 - 5)
+    assert not xurcroh_quic.verify_fortress_product([5, 7], [20, 43], [11, 13], [50, 74], 2**32 - 5)
 
     tampered = xurcroh_quic.FortressWeightShare(
         0,

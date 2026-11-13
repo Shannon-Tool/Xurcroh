@@ -11,6 +11,8 @@ git -C "$root" archive HEAD | tar -x -C "$first"
 cp -a "$first/." "$second/"
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1700000000}"
 export CARGO_INCREMENTAL=0
+"$first/scripts/bootstrap-python.sh"
+"$second/scripts/bootstrap-python.sh"
 "$first/scripts/build-wheels.sh"
 "$second/scripts/build-wheels.sh"
 diff -u <(cd "$first" && sha256sum dist/* | sort -k2) <(cd "$second" && sha256sum dist/* | sort -k2)
