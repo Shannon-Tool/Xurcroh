@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import torch
 
 from xurcroh.fortress.arithmetic import FIELD_MODULUS
 from xurcroh.fortress.native import FortressNativeController
@@ -32,7 +33,7 @@ def test_integer_matvec_and_chacha_expansion() -> None:
     subprocess.run([str(root / "scripts/build-native.sh")], check=True)  # noqa: S603
     controller = FortressNativeController(root / "native/build/xurcroh_burn_alloc.so")
 
-    assert controller.matvec([[1, 2], [3, 4]], [5, 7]) == [19, 43]
+    assert controller.matvec([[1, 2], [3, 4]], [5, 7]) == [26, 38]
     first = controller.chacha_words(list(range(8)), bytes(12), 32)
     second = controller.chacha_words(list(range(8)), bytes(12), 32)
     assert first == second
@@ -74,6 +75,20 @@ def _chacha_reference(key: list[int], nonce: bytes, count: int) -> list[int]:
             (left + right) & 0xFFFFFFFF for left, right in zip(state, working, strict=True)
         )
     return output[:count]
+
+
+def test_field_kernel_matches_torch_single_product() -> None:
+    require_cuda()
+    root = Path(__file__).parents[2]
+    controller = FortressNativeController(root / "native/build/xurcroh_burn_alloc.so")
+    weight = 804968700
+    activation = 3266489909
+    torch_result = (
+        torch.tensor(weight, dtype=torch.int64, device="cuda")
+        * torch.tensor(activation, dtype=torch.int64, device="cuda")
+    ).remainder(FIELD_MODULUS)
+    expected = int(torch_result.cpu().item())
+    assert controller.matvec([[weight]], [activation]) == [expected]
 
 
 @pytest.mark.parametrize("rows,cols", [(1, 1), (7, 5), (65, 33), (257, 129), (1024, 768)])
