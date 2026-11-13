@@ -1,0 +1,24 @@
+{
+  "billable_resources": false,
+  "cost_usd": 0,
+  "cover_bytes_received": 1712048,
+  "cover_bytes_sent": 1712048,
+  "cover_request_count": 104,
+  "execution": "local CPU; four in-process role workers; real Rust QUIC",
+  "fixed_frame_bytes": [
+    16384
+  ],
+  "recorded_at": "2026-11-13T01:31:05.181189+00:00",
+  "revision": "a00e4e23b3c56d9cff4f24e70f445cb860630a98",
+  "rung": "TRANSPORT",
+  "timing_classifier": {
+    "balanced_baseline": 0.5,
+    "cover_samples": 104,
+    "interpretation": "Local leave-one-out nearest-mean timing result, not a general side-channel proof. Fixed-size frames and constant-rate cover do not eliminate scheduling, network, cache, power, or Whisper-Leak-class leakage.",
+    "leave_one_out_accuracy": 0.6339285714285714,
+    "leave_one_out_balanced_accuracy": 0.5721153846153846,
+    "majority_baseline": 0.9285714285714286,
+    "real_samples": 8
+  },
+  "working_tree_dirty": "true"
+}

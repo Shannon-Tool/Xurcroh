@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import secrets
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -43,6 +45,25 @@ class RoleArtifact:
     matrix: torch.Tensor
     provider_id: str
     replica_provider_id: str | None
+
+
+DEFAULT_FRAME_BYTES = 16_384
+
+
+def pad_packet(packet: bytes, frame_bytes: int) -> bytes:
+    if frame_bytes < 256 or len(packet) + 8 > frame_bytes:
+        raise ProtocolError("Fortress packet exceeds the configured fixed frame size")
+    padding = frame_bytes - len(packet) - 8
+    return len(packet).to_bytes(8, "little") + packet + secrets.token_bytes(padding)
+
+
+def unpad_packet(packet: bytes, frame_bytes: int) -> bytes:
+    if len(packet) != frame_bytes or len(packet) < 8:
+        raise ProtocolError("Fortress fixed-size frame is invalid")
+    inner_length = int.from_bytes(packet[:8], "little")
+    if inner_length > frame_bytes - 8:
+        raise ProtocolError("Fortress inner packet exceeds its frame")
+    return packet[8 : 8 + inner_length]
 
 
 def _encode_bytes(value: bytes) -> str:
@@ -154,6 +175,7 @@ class _RoleTransport:
         identity: MutualTLSIdentity,
         operation_name: str,
         rotation_interval: int,
+        frame_bytes: int,
     ) -> None:
         import xurcroh_quic
 
@@ -173,8 +195,26 @@ class _RoleTransport:
         self._used = False
         self._rotation_interval = rotation_interval
         self._completed = 0
+        self._frame_bytes = frame_bytes
+        self._call_lock = threading.Lock()
+        self._frame_sizes: set[int] = set()
+        self.observations: list[tuple[float, bool]] = []
 
     def execute(
+        self,
+        activation: torch.Tensor,
+        request_id: str,
+        sequence: int,
+        *,
+        cover: bool = False,
+    ) -> tuple[list[int], int, int]:
+        started = time.perf_counter()
+        with self._call_lock:
+            result = self._execute(activation, request_id, sequence)
+        self.observations.append((time.perf_counter() - started, cover))
+        return result
+
+    def _execute(
         self, activation: torch.Tensor, request_id: str, sequence: int
     ) -> tuple[list[int], int, int]:
         request_hash = hashlib.sha256(request_id.encode()).digest()[:16]
@@ -187,13 +227,14 @@ class _RoleTransport:
         sealed = self.session.sender.seal(
             request_id, "u8", [len(operation_payload)], operation_payload
         )
-        packet = self.session.wire_packet(sealed)
+        packet = pad_packet(self.session.wire_packet(sealed), self._frame_bytes)
         sent = len(
             self._quic.encode_frame(
                 request_hash, 0, sequence, "tensor", "u8", [len(packet)], packet
             )
         )
         self.client.send(request_hash, 0, sequence, "tensor", "u8", [len(packet)], packet)
+        self._frame_sizes.add(len(packet))
         self._used = True
         response_id, _, _, kind, dtype, shape, response = self.client.receive()
         received = len(
@@ -201,9 +242,12 @@ class _RoleTransport:
         )
         if response_id != request_hash or kind != "tensor" or dtype != "u8":
             raise ProtocolError(f"role {self.role.provider_id} returned an invalid response")
-        if shape != [len(response)]:
+        if shape != [self._frame_bytes] or len(response) != self._frame_bytes:
             raise ProtocolError("role response tensor descriptor is invalid")
-        result_dtype, result_shape, payload = self.session.receiver.open_tensor(response)
+        self._frame_sizes.add(len(response))
+        result_dtype, result_shape, payload = self.session.receiver.open_tensor(
+            unpad_packet(response, self._frame_bytes)
+        )
         if (
             result_dtype != "u8"
             or len(result_shape) != 1
@@ -282,9 +326,13 @@ class FortressRoleClient:
         *,
         operation_name: str = "operation",
         rotation_interval: int = 64,
+        frame_bytes: int = DEFAULT_FRAME_BYTES,
+        cover_interval: float = 1.0,
     ) -> None:
         if rotation_interval <= 0:
             raise ValueError("rotation interval must be positive")
+        if frame_bytes < 256 or cover_interval <= 0:
+            raise ValueError("frame size and cover interval must be positive")
         self.operation = operation
         self.roles = {(role.activation_index, role.weight_index): role for role in roles}
         expected = {
@@ -297,7 +345,7 @@ class FortressRoleClient:
         self._providers = {key: role.provider_id for key, role in self.roles.items()}
         self._executor = ThreadPoolExecutor(max_workers=len(roles))
         self._transports = {
-            key: _RoleTransport(role, identity, operation_name, rotation_interval)
+            key: _RoleTransport(role, identity, operation_name, rotation_interval, frame_bytes)
             for key, role in self.roles.items()
         }
         self._lock = threading.Lock()
@@ -305,9 +353,37 @@ class FortressRoleClient:
         self.request_count = 0
         self.bytes_sent = 0
         self.bytes_received = 0
+        self.cover_request_count = 0
+        self.cover_bytes_sent = 0
+        self.cover_bytes_received = 0
+        self._cover_interval = cover_interval
+        self._cover_stop = threading.Event()
+        self._cover_error: Exception | None = None
+        self._cover_thread = threading.Thread(target=self._cover_loop, daemon=True)
+        self._cover_thread.start()
+
+    @property
+    def frame_sizes(self) -> set[int]:
+        sizes: set[int] = set()
+        for transport in self._transports.values():
+            sizes.update(transport._frame_sizes)
+        return sizes
+
+    @property
+    def timing_observations(self) -> list[tuple[float, bool]]:
+        return [
+            observation
+            for transport in self._transports.values()
+            for observation in transport.observations
+        ]
 
     def _execute_token(
-        self, activation_shares: list[torch.Tensor], request_id: str, sequence: int
+        self,
+        activation_shares: list[torch.Tensor],
+        request_id: str,
+        sequence: int,
+        *,
+        cover: bool = False,
     ) -> torch.Tensor:
         futures = {
             key: self._executor.submit(
@@ -315,6 +391,7 @@ class FortressRoleClient:
                 activation_shares[key[0]],
                 request_id,
                 sequence,
+                cover=cover,
             )
             for key in self._transports
         }
@@ -323,12 +400,27 @@ class FortressRoleClient:
             result, sent, received = future.result()
             results[key] = result
             with self._lock:
-                self.request_count += 1
-                self.bytes_sent += sent
-                self.bytes_received += received
+                if cover:
+                    self.cover_request_count += 1
+                    self.cover_bytes_sent += sent
+                    self.cover_bytes_received += received
+                else:
+                    self.request_count += 1
+                    self.bytes_sent += sent
+                    self.bytes_received += received
         return combine_role_results(
             activation_shares, self.operation.shares, results, self._providers
         )
+
+    def _cover_loop(self) -> None:
+        features = self.operation.quantized.values.shape[1]
+        while not self._cover_stop.wait(self._cover_interval):
+            try:
+                shares = [torch.randint(0, 2**32, (features,), dtype=torch.int64) for _ in range(2)]
+                self._execute_token(shares, f"cover:{uuid.uuid4().hex}", 0, cover=True)
+            except Exception as error:
+                self._cover_error = error
+                return
 
     def execute(
         self, activation_shares: list[torch.Tensor], *, request_id: str | None = None
@@ -336,6 +428,8 @@ class FortressRoleClient:
         with self._lock:
             if self._closed:
                 raise ProtocolError("Fortress role client is closed")
+            if self._cover_error is not None:
+                raise ProtocolError("Fortress cover traffic failed") from self._cover_error
         if len(activation_shares) != 2:
             raise ValueError("the Fortress grid requires two activation shares")
         correlation_id = request_id or uuid.uuid4().hex
@@ -357,8 +451,10 @@ class FortressRoleClient:
             if self._closed:
                 return
             self._closed = True
+        self._cover_stop.set()
+        self._cover_thread.join(timeout=30)
         self._executor.shutdown(wait=True)
-        first_error: Exception | None = None
+        first_error: Exception | None = self._cover_error
         for transport in self._transports.values():
             try:
                 transport.close()

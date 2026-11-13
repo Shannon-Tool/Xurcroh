@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import torch
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
@@ -78,7 +79,7 @@ def test_real_grid_transport_is_exact_and_isolates_duplicate_request_ids(
             )
     clients = [
         FortressRoleClient(operation, roles, identity, rotation_interval=1),
-        FortressRoleClient(operation, roles, identity, rotation_interval=1),
+        FortressRoleClient(operation, roles, identity, rotation_interval=1, cover_interval=0.01),
     ]
     shares = split_secret(torch.tensor([5, 7], dtype=torch.int64), count=2).shares
     try:
@@ -90,6 +91,32 @@ def test_real_grid_transport_is_exact_and_isolates_duplicate_request_ids(
         assert clients[1].request_count == 8
         assert clients[1].bytes_sent > 0
         assert clients[1].bytes_received > 0
+        assert clients[0].frame_sizes == {16_384}
+        time.sleep(0.05)
+        assert clients[1].cover_request_count > 0
+        assert clients[1].cover_bytes_sent > 0
+        from xurcroh.fortress.attacks import measure_timing_classifier
+
+        classifier = measure_timing_classifier(clients[1].timing_observations)
+        assert classifier.cover_samples > 0
+        assert classifier.real_samples == 8
+        assert 0.0 <= classifier.leave_one_out_accuracy <= 1.0
+        assert 0.0 <= classifier.leave_one_out_balanced_accuracy <= 1.0
+        from dataclasses import asdict
+
+        from tests.fortress.evidence import write_fortress_evidence
+
+        write_fortress_evidence(
+            "TRANSPORT",
+            {
+                "execution": "local CPU; four in-process role workers; real Rust QUIC",
+                "fixed_frame_bytes": sorted(clients[0].frame_sizes),
+                "cover_request_count": clients[1].cover_request_count,
+                "cover_bytes_sent": clients[1].cover_bytes_sent,
+                "cover_bytes_received": clients[1].cover_bytes_received,
+                "timing_classifier": asdict(classifier),
+            },
+        )
     finally:
         for client in clients:
             client.close()

@@ -11,7 +11,13 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from xurcroh.errors import ProtocolError
 from xurcroh.fortress.arithmetic import RING_MODULUS
-from xurcroh.fortress.transport import decode_role_artifact, native_role_matrix
+from xurcroh.fortress.transport import (
+    DEFAULT_FRAME_BYTES,
+    decode_role_artifact,
+    native_role_matrix,
+    pad_packet,
+    unpad_packet,
+)
 from xurcroh.runtime.stage_sessions import SESSION_ENVELOPE_BYTES, StageSessionStore
 
 MAX_ROLE_PACKET_BYTES = 16 * 1024 * 1024
@@ -31,9 +37,13 @@ class FortressRoleWorker:
         address: str = "127.0.0.1:0",
         session_capacity: int = 64,
         rotation_interval: int = 64,
+        frame_bytes: int = DEFAULT_FRAME_BYTES,
     ) -> None:
         import xurcroh_quic
 
+        if frame_bytes < 256:
+            raise ValueError("fixed frame size is too small")
+        self._frame_bytes = frame_bytes
         if rotation_interval <= 0:
             raise ValueError("rotation interval must be positive")
         self._rotation_interval = rotation_interval
@@ -133,11 +143,13 @@ class FortressRoleWorker:
                 if (
                     kind != "tensor"
                     or dtype != "u8"
-                    or shape != [len(packet)]
-                    or len(packet) > MAX_ROLE_PACKET_BYTES
-                    or len(packet) <= SESSION_ENVELOPE_BYTES
+                    or shape != [self._frame_bytes]
+                    or len(packet) != self._frame_bytes
                 ):
-                    raise ProtocolError("Fortress role expects a bounded encrypted byte tensor")
+                    raise ProtocolError("Fortress role expects a fixed-size encrypted frame")
+                packet = unpad_packet(packet, self._frame_bytes)
+                if len(packet) <= SESSION_ENVELOPE_BYTES:
+                    raise ProtocolError("Fortress role session envelope is truncated")
                 client_public = base64.b64encode(packet[:32]).decode()
                 session_id = packet[32:64].decode()
                 session_token = packet[64:96]
@@ -163,8 +175,11 @@ class FortressRoleWorker:
                     exact_payload = bytearray(
                         b"".join(value.to_bytes(16, "little", signed=True) for value in values)
                     )
-                    response = sender.seal(
-                        request_id.hex(), "u8", [len(exact_payload)], bytes(exact_payload)
+                    response = pad_packet(
+                        sender.seal(
+                            request_id.hex(), "u8", [len(exact_payload)], bytes(exact_payload)
+                        ),
+                        self._frame_bytes,
                     )
                     connection.send(
                         request_id,
