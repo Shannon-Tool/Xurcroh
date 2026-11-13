@@ -14,6 +14,7 @@ from xurcroh.providers.vast import (
     BudgetPolicy,
     StateStore,
     VastClient,
+    sanitize_offer,
     write_deployment_config,
 )
 
@@ -95,6 +96,22 @@ def test_state_store_is_atomic_and_does_not_contain_api_keys(tmp_path: Path) -> 
     assert "test-credential" not in path.read_text()
     with pytest.raises(ProviderError, match="already tracked"):
         store.add_instance(record(time.time()))
+
+
+def test_offer_sanitizer_preserves_operator_and_capacity_metadata() -> None:
+    result = sanitize_offer(
+        {
+            **offer(),
+            "host_id": 483833,
+            "cpu_name": "AMD EPYC 7542 32-Core Processor",
+            "cpu_ram": 36822,
+            "secret": "excluded",
+        }
+    )
+    assert result["provider_id"] == "vast-host-483833"
+    assert result["cpu_vendor"] == "AMD"
+    assert result["cpu_ram"] == 36822
+    assert "secret" not in result
 
 
 def test_offers_create_and_instance_responses_are_sanitized() -> None:
@@ -461,6 +478,7 @@ def test_provision_preserves_offer_diversity_metadata(
             "hard_limit_usd": 30,
             "gpu_name": None,
             "min_gpu_ram_gb": 1,
+            "min_host_ram_gb": 0,
             "max_hourly_usd": 10,
             "planned_hours": 1,
             "disk_gb": 40,

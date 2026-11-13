@@ -71,6 +71,7 @@ def provision(args: argparse.Namespace) -> None:
             offer
             for offer in offers
             if float(offer.get("gpu_ram", 0)) >= args.min_gpu_ram_gb * 1024
+            and float(offer.get("cpu_ram", 0)) >= args.min_host_ram_gb * 1024
             and float(offer["dph_total"]) <= args.max_hourly_usd
         ]
         selected, forecasts = select_diverse_offers(
@@ -98,6 +99,7 @@ def provision(args: argparse.Namespace) -> None:
                         "offer_id": offer["id"],
                         "machine_id": offer["machine_id"],
                         "gpu_name": offer.get("gpu_name"),
+                        "host_ram_mb": offer.get("cpu_ram"),
                         "provider_id": offer.get("provider_id", "vast"),
                         "geolocation": offer.get("geolocation", "unknown"),
                         "cpu_vendor": offer.get("cpu_vendor", "unknown"),
@@ -177,6 +179,7 @@ def main() -> None:
     parser.add_argument("--max-provider-fraction", type=float, default=0.5)
     parser.add_argument("--gpu-name")
     parser.add_argument("--min-gpu-ram-gb", type=float, default=12)
+    parser.add_argument("--min-host-ram-gb", type=float, default=0)
     parser.add_argument("--max-hourly-usd", type=float, default=0.75)
     parser.add_argument("--disk-gb", type=float, default=40)
     parser.add_argument("--planned-hours", type=float, default=1.0)
