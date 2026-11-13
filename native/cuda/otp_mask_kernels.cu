@@ -100,6 +100,7 @@ extern "C" int xurcroh_fortress_matvec_u32(const uint32_t* weights, const uint32
     }
     size_t threads = 32;
     size_t blocks = (cols + threads - 1) / threads;
+    cudaGetLastError();
     fortress_matvec_kernel<<<blocks, threads, 0, stream>>>(weights, activations, output, rows, cols);
     return static_cast<int>(cudaGetLastError());
 }
