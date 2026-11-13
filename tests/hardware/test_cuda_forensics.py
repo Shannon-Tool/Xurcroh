@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 import torch
 
-from xurcroh.memory_native import NativeMemoryController
+from xurcroh.memory_native import NativeMemoryController, activate_burn_on_read_allocator
 
 pytestmark = pytest.mark.hardware
 
@@ -42,3 +44,37 @@ def test_chacha20_mask_round_trip() -> None:
     assert not torch.equal(masked, original)
     controller.mask_words(masked, key, nonce, unmask=True)
     torch.testing.assert_close(masked, original)
+
+
+def test_zero_on_free_and_reallocation() -> None:
+    require_cuda()
+    if os.environ.get("XURCROH_ALLOCATOR_TEST_CHILD") != "1":
+        environment = dict(os.environ)
+        environment["XURCROH_ALLOCATOR_TEST_CHILD"] = "1"
+        subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                f"{Path(__file__).resolve()}::test_zero_on_free_and_reallocation",
+                "-q",
+                "--runxfail",
+            ],
+            env=environment,
+            check=True,
+        )
+        return
+    root = Path(__file__).parents[2]
+    subprocess.run([str(root / "scripts/build-native.sh")], check=True)  # noqa: S603
+    library = root / "native/build/xurcroh_burn_alloc.so"
+    activate_burn_on_read_allocator(library)
+    controller = NativeMemoryController(library)
+    before = controller.telemetry()
+    sensitive = torch.full((4096,), 0x5A5A, dtype=torch.int32, device="cuda")
+    del sensitive
+    torch.cuda.empty_cache()
+    after = controller.telemetry()
+    assert after["scrub_calls"] > before["scrub_calls"]
+    assert after["scrubbed_bytes"] > before["scrubbed_bytes"]
+    reallocated = torch.empty((4096,), dtype=torch.int32, device="cuda")
+    assert torch.count_nonzero(reallocated).item() == 0
