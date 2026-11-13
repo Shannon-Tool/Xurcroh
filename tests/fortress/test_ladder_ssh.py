@@ -127,3 +127,28 @@ def test_host_key_is_pinned_per_worker(tmp_path: Path, monkeypatch: pytest.Monke
     module.pin_host_key(worker, tmp_path / "known_hosts")
     assert worker["known_hosts"] == str(tmp_path / "known_hosts")
     assert "public-key" in (tmp_path / "known_hosts").read_text()
+
+
+def test_host_key_pinning_retries_until_ssh_starts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = load_module()
+    results = iter(
+        [
+            type("Result", (), {"returncode": 1, "stdout": "", "stderr": "refused"})(),
+            type(
+                "Result",
+                (),
+                {
+                    "returncode": 0,
+                    "stdout": "[192.0.2.1]:22 ssh-ed25519 public-key\n",
+                    "stderr": "",
+                },
+            )(),
+        ]
+    )
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: next(results))
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
+    worker = {"host": "192.0.2.1", "ssh_port": 22}
+    module.pin_host_key(worker, tmp_path / "known_hosts")
+    assert "public-key" in (tmp_path / "known_hosts").read_text()

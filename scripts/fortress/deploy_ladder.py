@@ -107,27 +107,32 @@ def source_revision() -> str:
     ).stdout.strip()
 
 
-def pin_host_key(worker: dict[str, Any], path: Path) -> None:
+def pin_host_key(worker: dict[str, Any], path: Path, timeout: float = 900) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.is_file():
-        result = subprocess.run(  # noqa: S603
-            [
-                SSH_KEYSCAN,
-                "-T",
-                "10",
-                "-p",
-                str(worker.get("ssh_port", 22)),
-                worker["host"],
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        keys = "\n".join(
-            line for line in result.stdout.splitlines() if line and not line.startswith("#")
-        )
-        if result.returncode != 0 or not keys:
-            raise RuntimeError("could not obtain the worker SSH host key")
+        deadline = time.monotonic() + timeout
+        while True:
+            result = subprocess.run(  # noqa: S603
+                [
+                    SSH_KEYSCAN,
+                    "-T",
+                    "10",
+                    "-p",
+                    str(worker.get("ssh_port", 22)),
+                    worker["host"],
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            keys = "\n".join(
+                line for line in result.stdout.splitlines() if line and not line.startswith("#")
+            )
+            if result.returncode == 0 and keys:
+                break
+            if time.monotonic() >= deadline:
+                raise RuntimeError("could not obtain the worker SSH host key")
+            time.sleep(5)
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "w") as handle:
             handle.write(keys + "\n")
