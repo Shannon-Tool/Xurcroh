@@ -7,21 +7,20 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+import numpy as np
+import torch
+
 from xurcroh.config import ModelDefinition, WorkerConfig
 from xurcroh.errors import CapabilityError, ConfigurationError, ModelLoadError
 from xurcroh.fortress.combiner import FortressCombiner
 from xurcroh.fortress.model_compiler import FortressCheckpoint, compile_fortress_checkpoint
+from xurcroh.models.vlm import GemmaAudioEmbedder, GemmaVisionEmbedder
+from xurcroh.requests import AudioContentPart, ImageContentPart, TextContentPart
 
 if TYPE_CHECKING:
     from xurcroh.fortress.transport import FortressRoleClient, MutualTLSIdentity, RoleEndpoint
+    from xurcroh.runtime.generation import GenerationEvent
 from xurcroh.requests import CompletionRequest
-from xurcroh.runtime.generation import (
-    GenerationEvent,
-    GenerationSummary,
-    check_request_health,
-    sample_next_token,
-    stopping_strings,
-)
 
 
 class FortressEngine:
@@ -43,8 +42,9 @@ class FortressEngine:
         self._closed = False
 
     def require_modality(self, expected: str) -> None:
-        if expected != "text":
-            raise CapabilityError("Fortress text engine supports only text completions")
+        supported = {"text", "vlm"} if self.definition.modality == "vlm" else {"text"}
+        if expected not in supported:
+            raise CapabilityError(f"Fortress engine does not support {expected}")
 
     def _identity(self) -> MutualTLSIdentity:
         from xurcroh.fortress.transport import MutualTLSIdentity
@@ -148,6 +148,62 @@ class FortressEngine:
                 self.close()
                 raise
 
+    def _text_hidden(self, text: str) -> torch.Tensor:
+        compiled = self._compiled
+        assert compiled is not None
+        input_ids = self._tokenizer(text, return_tensors="pt", add_special_tokens=False)[
+            "input_ids"
+        ]
+        if input_ids.numel() == 0:
+            return compiled.embedding.new_empty((0, compiled.embedding.shape[1]))
+        if int(input_ids.max()) >= compiled.embedding.shape[0]:
+            raise ModelLoadError("tokenizer emits IDs outside the model vocabulary")
+        return compiled.embedding[input_ids[0]]
+
+    def _prepare_hidden(self, request: CompletionRequest) -> tuple[torch.Tensor, int]:
+        from xurcroh.runtime.vlm import _decode_audio, _decode_image
+
+        self._load()
+        compiled = self._compiled
+        assert compiled is not None
+        if all(isinstance(message.content, str) for message in request.messages):
+            prompt = "\n".join(
+                f"{message.role}: {message.plain_text()}" for message in request.messages
+            )
+            hidden = self._text_hidden(prompt)
+            if hidden.shape[0] == 0:
+                raise ConfigurationError("Fortress tokenizer produced an empty prompt")
+            return hidden, hidden.shape[0]
+        chunks = []
+        for message in request.messages:
+            parts = (
+                [TextContentPart(type="text", text=message.content)]
+                if isinstance(message.content, str)
+                else message.content
+            )
+            for part in parts:
+                if isinstance(part, TextContentPart):
+                    chunks.append(self._text_hidden(f"{message.role}: {part.text}"))
+                elif isinstance(part, ImageContentPart):
+                    projection = compiled.media_projections.get("vision")
+                    if projection is None:
+                        raise CapabilityError("checkpoint has no client vision projection")
+                    image = _decode_image(part.image_url.url)
+                    pixels = torch.from_numpy(np.array(image)).permute(2, 0, 1) / 255
+                    chunks.append(GemmaVisionEmbedder(projection).embed(pixels))
+                elif isinstance(part, AudioContentPart):
+                    projection = compiled.media_projections.get("audio")
+                    if projection is None:
+                        raise CapabilityError("checkpoint has no client audio projection")
+                    waveform, _ = _decode_audio(part)
+                    chunks.append(GemmaAudioEmbedder(projection).embed(torch.from_numpy(waveform)))
+                else:
+                    raise ConfigurationError("unsupported multimodal content part")
+        if not chunks:
+            raise ConfigurationError("multimodal request contains no embeddings")
+        hidden = torch.cat(chunks, dim=0)
+        return hidden, hidden.shape[0]
+
     def generate(
         self,
         request: CompletionRequest,
@@ -155,25 +211,22 @@ class FortressEngine:
         cancelled: threading.Event,
         timeout: float,
     ) -> Iterator[GenerationEvent]:
+        from xurcroh.runtime.generation import (
+            GenerationEvent,
+            GenerationSummary,
+            check_request_health,
+            sample_next_token,
+            stopping_strings,
+        )
+
         self._load()
         assert self._combiner is not None
         compiled = self._compiled
         assert compiled is not None
         started = time.monotonic()
         with self._inference_lock:
-            prompt = "\n".join(
-                f"{message.role}: {message.plain_text()}" for message in request.messages
-            )
-            inputs = self._tokenizer(prompt, return_tensors="pt")
-            input_ids = inputs["input_ids"]
-            prompt_tokens = input_ids.shape[-1]
-            if prompt_tokens == 0:
-                raise ConfigurationError("Fortress tokenizer produced an empty prompt")
-            vocabulary = compiled.embedding.shape[0]
-            if int(input_ids.max()) >= vocabulary:
-                raise ModelLoadError("tokenizer emits IDs outside the model vocabulary")
+            hidden, prompt_tokens = self._prepare_hidden(request)
             state_key = f"{self.name}:{uuid.uuid4().hex}"
-            hidden = compiled.embedding[input_ids[0]]
             completion_ids: list[int] = []
             text = ""
             finish_reason: Literal["stop", "length"] = "length"

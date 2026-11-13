@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +27,7 @@ class FortressCheckpoint:
     kv_heads: int
     rope_theta: float
     activation_bits: int
+    media_projections: dict[str, torch.Tensor] = field(default_factory=dict)
 
     def combiner(self) -> FortressCombiner:
         return FortressCombiner(
@@ -84,6 +85,15 @@ def _boundary_tensor(
         if candidate in names:
             return reader.read_tensors([candidate])[candidate].to(torch.float64)
     raise ConfigurationError(f"cannot identify checkpoint boundary tensor: {candidates}")
+
+
+def _optional_media_projection(
+    reader: CheckpointReader, names: list[str], candidates: tuple[str, ...]
+) -> torch.Tensor | None:
+    for candidate in candidates:
+        if candidate in names:
+            return reader.read_tensors([candidate])[candidate].to(torch.float64)
+    return None
 
 
 def compile_fortress_checkpoint(
@@ -186,6 +196,25 @@ def compile_fortress_checkpoint(
         None,
     )
     lm_head = embedding if head_name is None else reader.read_tensors([head_name])[head_name]
+    media_projections: dict[str, torch.Tensor] = {}
+    vision = _optional_media_projection(
+        reader,
+        names,
+        (
+            "vision_projection.weight",
+            "model.vision_projection.weight",
+            "multi_modal_projector.weight",
+        ),
+    )
+    audio = _optional_media_projection(
+        reader,
+        names,
+        ("audio_projection.weight", "model.audio_projection.weight", "model.embed_audio.weight"),
+    )
+    if vision is not None:
+        media_projections["vision"] = vision
+    if audio is not None:
+        media_projections["audio"] = audio
     return FortressCheckpoint(
         layers=tuple(layers),
         operations=operations,
@@ -196,4 +225,5 @@ def compile_fortress_checkpoint(
         kv_heads=kv_heads,
         rope_theta=float(config.get("rope_theta", 10_000)),
         activation_bits=activation_bits,
+        media_projections=media_projections,
     )
