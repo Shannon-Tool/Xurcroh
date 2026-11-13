@@ -17,6 +17,7 @@ def compile_diffusers_component(
     slice_count: int = 3,
     inner_bases: bool = True,
     seed: int | None = None,
+    share_count: int = 2,
 ) -> dict[str, CompiledOperation]:
     if not component or component in {".", ".."} or "/" in component or "\\" in component:
         raise ConfigurationError("diffusers component must be a single directory name")
@@ -45,6 +46,7 @@ def compile_diffusers_component(
                     slice_count=slice_count,
                     inner_bases=inner_bases,
                     seed=seed,
+                    share_count=share_count,
                 )
                 tensor.zero_()
     if not operations:

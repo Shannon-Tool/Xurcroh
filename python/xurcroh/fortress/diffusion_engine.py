@@ -59,6 +59,7 @@ class FortressDiffusionEngine(FortressEngine):
                     self.definition.path,
                     component=component,
                     seed=self.definition.fortress_seed,
+                    share_count=self.definition.fortress_shares,
                 )
                 clients: dict[str, FortressRoleClient] = {}
                 if self.engine_name == "fortress-diffusion-grid":

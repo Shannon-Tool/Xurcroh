@@ -110,7 +110,9 @@ class FortressEngine:
                 }
                 self._tokenizer = AutoTokenizer.from_pretrained(self.definition.path, **options)
                 self._compiled = compile_fortress_checkpoint(
-                    self.definition.path, seed=self.definition.fortress_seed
+                    self.definition.path,
+                    seed=self.definition.fortress_seed,
+                    share_count=self.definition.fortress_shares,
                 )
                 compiled = self._compiled
                 clients: dict[str, FortressRoleClient] = {}

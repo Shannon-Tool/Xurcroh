@@ -126,6 +126,58 @@ def test_real_grid_transport_is_exact_and_isolates_duplicate_request_ids(
     assert all(worker.active_requests == 0 for worker in workers)
 
 
+def test_three_by_three_grid_executes_exactly(
+    mtls_identities: MutualTLSIdentities,
+) -> None:
+    operation = compile_operation(
+        torch.tensor([[1, 2], [3, 4]], dtype=torch.int64),
+        threshold=2,
+        slice_count=3,
+        share_count=3,
+    )
+    identity = MutualTLSIdentity(
+        certificates=(mtls_identities["client_certificate"], mtls_identities["ca"]),
+        private_key=mtls_identities["client_key"],
+        pinned_ca=mtls_identities["ca"],
+    )
+    workers: list[FortressRoleWorker] = []
+    roles: list[RoleEndpoint] = []
+    client = None
+    try:
+        for activation_index in range(3):
+            for weight_index in range(3):
+                private = X25519PrivateKey.generate()
+                public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+                worker = FortressRoleWorker(
+                    encode_role_artifact(operation, weight_index, public),
+                    private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                    certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
+                    private_key=mtls_identities["server_key"],
+                    client_ca=mtls_identities["ca"],
+                )
+                worker.start()
+                workers.append(worker)
+                roles.append(
+                    RoleEndpoint(
+                        activation_index,
+                        weight_index,
+                        worker.address,
+                        public,
+                        f"n3-role-{activation_index}-{weight_index}",
+                    )
+                )
+        client = FortressRoleClient(operation, roles, identity, cover_interval=60)
+        shares = split_secret(torch.tensor([5, 7], dtype=torch.int64), count=3).shares
+        expected = (operation.quantized.values @ torch.tensor([5, 7])).remainder(RING_MODULUS)
+        assert torch.equal(client.execute(shares), expected)
+        assert client.request_count == 9
+    finally:
+        if client is not None:
+            client.close()
+        for worker in workers:
+            worker.close()
+
+
 def test_client_verifies_exact_products_and_attributes_a_malicious_role() -> None:
     import pytest
 

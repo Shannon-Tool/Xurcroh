@@ -167,12 +167,13 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
     with os.fdopen(descriptor, "w") as handle:
         handle.write(f"{seed}\n")
     if rung.modality in {"text", "vlm"}:
-        compiled = compile_fortress_checkpoint(checkpoint, seed=seed)
+        compiled = compile_fortress_checkpoint(checkpoint, seed=seed, share_count=rung.share_count)
     else:
         compiled = compile_diffusers_component(
             checkpoint,
             component=str(raw.get("diffusion_component", "transformer")),
             seed=seed,
+            share_count=rung.share_count,
         )
     packages = write_role_packages(compiled, rung, output / "roles")
     services = []

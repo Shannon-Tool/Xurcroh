@@ -70,6 +70,7 @@ def sdk_configuration(
                 "modality": rung.modality,
                 "allow_download": False,
                 "fortress_seed": fortress_seed,
+                "fortress_shares": rung.share_count,
             }
         },
         "security": {"mode": "strict"},

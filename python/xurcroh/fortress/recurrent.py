@@ -75,7 +75,7 @@ class FortressDeltaNetCombiner:
         operation = self.operations[name]
         transformed = apply_input_basis(operation, hidden)
         activation = quantize_activations(transformed, bits=self.activation_bits)
-        shares = split_secret(activation.values, count=2).shares
+        shares = split_secret(activation.values, count=len(operation.shares)).shares
         product = (
             execute_grid(shares, operation.shares)
             if self.grid_clients is None

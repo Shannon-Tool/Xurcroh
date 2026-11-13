@@ -46,7 +46,11 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
     sdk = deployment["sdk"]
     definition = sdk["model_path"][rung.model]
     started = time.perf_counter()
-    compiled = compile_fortress_checkpoint(definition["path"], seed=definition["fortress_seed"])
+    compiled = compile_fortress_checkpoint(
+        definition["path"],
+        seed=definition["fortress_seed"],
+        share_count=rung.share_count,
+    )
     cluster = sdk["cluster"]
     identity = _identity(cluster)
     roles = _roles(cluster)
