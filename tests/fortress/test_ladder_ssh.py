@@ -29,6 +29,23 @@ def test_recipient_private_key_must_match_manifest(tmp_path: Path) -> None:
         module.recipient_private_key(path, public)
 
 
+def test_source_revision_accepts_verified_archive_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = load_module()
+    revision = "a" * 40
+    monkeypatch.setenv("XURCROH_SOURCE_REVISION", revision)
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("git is unavailable")),
+    )
+    assert module.source_revision() == revision
+    monkeypatch.setenv("XURCROH_SOURCE_REVISION", "invalid")
+    with pytest.raises(ValueError, match="revision"):
+        module.source_revision()
+
+
 def test_remote_command_executes_real_fortress_worker() -> None:
     module = load_module()
     command = module.start_command("/srv/fortress", "role-0-0")

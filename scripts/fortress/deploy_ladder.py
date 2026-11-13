@@ -110,6 +110,13 @@ def ssh_worker(manifest: dict[str, Any], worker: Any, index: int) -> dict[str, A
 
 
 def source_revision() -> str:
+    archived = os.environ.get("XURCROH_SOURCE_REVISION")
+    if archived is not None:
+        if len(archived) != 40 or any(
+            character not in "0123456789abcdef" for character in archived
+        ):
+            raise ValueError("archived source revision must be 40 lowercase hexadecimal characters")
+        return archived
     if subprocess.run(  # noqa: S603
         [GIT, "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True, check=True
     ).stdout:
