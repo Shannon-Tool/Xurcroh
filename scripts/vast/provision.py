@@ -106,6 +106,9 @@ def provision(args: argparse.Namespace) -> None:
                         "storage_hourly_usd": float(offer.get("storage_total_cost", 0.0)),
                         "disk_gb": args.disk_gb,
                         "bandwidth_usd": 0.0,
+                        "ssh_key_path": (
+                            str(args.ssh_key) if getattr(args, "ssh_key", None) else None
+                        ),
                         "planned_cost_usd": guard.forecast(offer, args.planned_hours, args.disk_gb),
                     }
                 )
@@ -182,6 +185,7 @@ def main() -> None:
     parser.add_argument("--target-usd", type=float, default=25)
     parser.add_argument("--hard-limit-usd", type=float, default=30)
     parser.add_argument("--uncapped", action="store_true")
+    parser.add_argument("--ssh-key", type=Path)
     parser.add_argument("--image", default="vllm/vllm-openai:v0.15.0")
     parser.add_argument("--model", default="qwen3-0.6b")
     parser.add_argument("--checkpoint", type=Path, default=Path("artifacts/models/Qwen3-0.6B"))

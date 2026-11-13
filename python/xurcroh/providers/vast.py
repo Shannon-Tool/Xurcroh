@@ -355,13 +355,22 @@ class VastClient:
                 "label": label,
                 "runtype": "ssh_direct",
                 "cancel_unavail": True,
-                "env": {"-p 9444:9444": "1", "-p 29615:29615": "1"},
+                "env": {
+                    "-p 9444:9444": "1",
+                    "-p 29615:29615": "1",
+                    "-p 9400:9400": "1",
+                },
             },
         )
         instance_id = document.get("new_contract")
         if not isinstance(instance_id, int):
             raise ProviderError("Vast create response omitted the instance ID")
         return instance_id
+
+    def register_ssh_key(self, public_key: str) -> dict[str, Any]:
+        if not public_key.startswith(("ssh-ed25519 ", "ssh-rsa ")) or "PRIVATE" in public_key:
+            raise ValueError("only an SSH public key may be registered")
+        return self._request("POST", "/api/v0/ssh", json={"ssh_key": public_key})
 
     def instance(self, instance_id: int) -> dict[str, Any]:
         document = self._request("GET", f"/api/v0/instances/{instance_id}/")
@@ -525,6 +534,7 @@ def write_deployment_config(
                 "rendezvous_host": instances[0].get("public_ipaddr") or instances[0]["ssh_host"],
                 "provider_instance_id": instance["id"],
                 "machine_id": record["machine_id"],
+                **({"ssh_key": record["ssh_key_path"]} if record.get("ssh_key_path") else {}),
             }
         )
     document = {
