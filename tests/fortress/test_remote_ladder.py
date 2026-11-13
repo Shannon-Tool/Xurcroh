@@ -18,3 +18,6 @@ def test_remote_ladder_command_preserves_revision_and_persistent_log() -> None:
     assert "XURCROH_SOURCE_REVISION=" + "a" * 40 in command
     assert "set -o pipefail" in command
     assert "tee /srv/gateway/run.log" in command
+    download = remote_command("/srv/gateway", "a" * 40, download_checkpoint=True)
+    assert "scripts/fortress/prepare_checkpoint.py" in download
+    assert "--allow-download" in download

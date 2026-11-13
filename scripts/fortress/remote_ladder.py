@@ -38,14 +38,21 @@ def worker_configuration(document: dict[str, Any], key_path: str) -> dict[str, A
     return result
 
 
-def remote_command(remote_root: str, revision: str) -> str:
+def remote_command(remote_root: str, revision: str, download_checkpoint: bool = False) -> str:
     root = shlex.quote(remote_root)
+    prepare = (
+        f".venv-cuda/bin/python scripts/fortress/prepare_checkpoint.py "
+        f"--template {root}/template-request.json --checkpoint {root}/checkpoint "
+        f"--output {root}/template.json --allow-download && "
+        if download_checkpoint
+        else ""
+    )
     return (
-        f"cd {root} && set -o pipefail && "
+        f"cd {root} && set -o pipefail && {{ {prepare}"
         f"env PYTHONUNBUFFERED=1 XURCROH_SOURCE_REVISION={revision} "
         f".venv-cuda/bin/python scripts/fortress/run_ladder.py {root}/template.json "
         f"--provisioned-config {root}/workers.json --state {root}/provider-state.json "
-        f"--output {root}/run --signing-key {root}/evidence.key --uncapped "
+        f"--output {root}/run --signing-key {root}/evidence.key --uncapped; }} "
         f"2>&1 | tee {root}/run.log"
     )
 
@@ -64,7 +71,7 @@ def run(args: argparse.Namespace) -> Path:
     revision = source_revision()
     template = json.loads(args.template.read_text())
     checkpoint = Path(template["checkpoint_path"])
-    if not checkpoint.is_dir():
+    if not args.download_checkpoint and not checkpoint.is_dir():
         raise ValueError("template checkpoint_path must be a trusted local directory")
     provisioned = json.loads(args.worker_config.read_text())
     gateway_workers = json.loads(args.gateway_config.read_text()).get("workers")
@@ -85,11 +92,13 @@ def run(args: argparse.Namespace) -> Path:
     ssh(gateway, f"rm -rf {root} && mkdir -p {root}")
     ssh(gateway, f"tar -xzf - -C {root}", input_data=archive)
     ssh(gateway, f"cd {root} && ./scripts/gpu/bootstrap.sh")
-    scp(gateway, [checkpoint], root, recursive=True)
-    remote_template = {**template, "checkpoint_path": f"{root}/{checkpoint.name}"}
+    if not args.download_checkpoint:
+        scp(gateway, [checkpoint], root, recursive=True)
+    checkpoint_name = "checkpoint" if args.download_checkpoint else checkpoint.name
+    remote_template = {**template, "checkpoint_path": f"{root}/{checkpoint_name}"}
     remote_workers = worker_configuration(provisioned, f"{root}/worker-ssh-key")
     staged = {
-        "template.json": remote_template,
+        "template-request.json" if args.download_checkpoint else "template.json": remote_template,
         "workers.json": remote_workers,
         "provider-state.json": json.loads(args.state.read_text()),
     }
@@ -113,7 +122,10 @@ def run(args: argparse.Namespace) -> Path:
         f"chmod 600 {root}/worker-ssh-key {root}/evidence.key",
     )
     try:
-        ssh(gateway, remote_command(root, revision))
+        ssh(
+            gateway,
+            remote_command(root, revision, download_checkpoint=args.download_checkpoint),
+        )
     finally:
         for remote, local in [
             (f"{root}/run.log", "run.log"),
@@ -140,6 +152,7 @@ def main() -> None:
     parser.add_argument("--worker-config", required=True, type=Path)
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--template", required=True, type=Path)
+    parser.add_argument("--download-checkpoint", action="store_true")
     parser.add_argument("--signing-key", required=True, type=Path)
     parser.add_argument("--worker-ssh-key", type=Path)
     parser.add_argument("--output", required=True, type=Path)
