@@ -63,6 +63,15 @@ extern "C" int xurcroh_mask_words(uint16_t* data, size_t count, const uint32_t* 
     return static_cast<int>(cudaGetLastError());
 }
 
+__device__ inline uint32_t reduce_field(uint64_t value) {
+    const uint64_t low_mask = 0xFFFFFFFFULL;
+    const uint64_t modulus = 4294967291ULL;
+    value = (value & low_mask) + 5ULL * (value >> 32);
+    value = (value & low_mask) + 5ULL * (value >> 32);
+    if (value >= modulus) value -= modulus;
+    return static_cast<uint32_t>(value);
+}
+
 __global__ void fortress_matvec_kernel(const uint32_t* weights, const uint32_t* activations, uint32_t* output, size_t rows, size_t cols) {
     size_t col = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (col >= cols) return;
@@ -70,7 +79,7 @@ __global__ void fortress_matvec_kernel(const uint32_t* weights, const uint32_t* 
     uint64_t sum = 0;
     for (size_t row = 0; row < rows; ++row) {
         uint64_t product = static_cast<uint64_t>(weights[row * cols + col]) * static_cast<uint64_t>(activations[row]);
-        sum += product % modulus;
+        sum += reduce_field(product);
         if (sum >= modulus) sum -= modulus;
     }
     output[col] = static_cast<uint32_t>(sum);
