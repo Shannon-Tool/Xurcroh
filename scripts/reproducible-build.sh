@@ -24,6 +24,7 @@ export CARGO_BIN
 "$first/scripts/bootstrap-python.sh"
 ln -s "$first/.venv" "$second/.venv"
 "$first/scripts/build-wheels.sh"
+rm -rf "$first/target"
 "$second/scripts/build-wheels.sh"
 diff -u <(cd "$first" && sha256sum dist/* | sort -k2) <(cd "$second" && sha256sum dist/* | sort -k2)
 echo "Reproducible wheel hashes match for $(git -C "$root" rev-parse HEAD)"
