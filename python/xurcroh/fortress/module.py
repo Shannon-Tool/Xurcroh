@@ -42,7 +42,7 @@ class FortressLinear(torch.nn.Module):
         flattened = hidden.reshape(-1, hidden.shape[-1])
         transformed = apply_input_basis(operation, flattened)
         activation = quantize_activations(transformed, bits=self.activation_bits)
-        shares = split_secret(activation.values, count=2).shares
+        shares = split_secret(activation.values, count=len(operation.shares)).shares
         product = (
             execute_native_grid(shares, operation.shares)
             if self.grid_client is None

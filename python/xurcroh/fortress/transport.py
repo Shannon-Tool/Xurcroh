@@ -408,7 +408,7 @@ class FortressRoleClient:
         self.roles = {(role.activation_index, role.weight_index): role for role in roles}
         expected = {
             (activation_index, weight_index)
-            for activation_index in range(2)
+            for activation_index in range(len(operation.shares))
             for weight_index in operation.shares
         }
         if len(roles) != len(self.roles) or set(self.roles) != expected:
@@ -487,7 +487,10 @@ class FortressRoleClient:
         features = self.operation.quantized.values.shape[1]
         while not self._cover_stop.wait(self._cover_interval):
             try:
-                shares = [torch.randint(0, 2**32, (features,), dtype=torch.int64) for _ in range(2)]
+                shares = [
+                    torch.randint(0, 2**32, (features,), dtype=torch.int64)
+                    for _ in range(len(self.operation.shares))
+                ]
                 self._execute_token(shares, f"cover:{uuid.uuid4().hex}", 0, cover=True)
             except Exception as error:
                 self._cover_error = error
@@ -501,8 +504,8 @@ class FortressRoleClient:
                 raise ProtocolError("Fortress role client is closed")
             if self._cover_error is not None:
                 raise ProtocolError("Fortress cover traffic failed") from self._cover_error
-        if len(activation_shares) != 2:
-            raise ValueError("the Fortress grid requires two activation shares")
+        if len(activation_shares) != len(self.operation.shares):
+            raise ValueError("activation share count must match the compiled weight grid")
         correlation_id = request_id or uuid.uuid4().hex
         vector_input = activation_shares[0].ndim == 1
         rows_by_share = [

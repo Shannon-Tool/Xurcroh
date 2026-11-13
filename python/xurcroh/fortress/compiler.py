@@ -44,6 +44,7 @@ def compile_operation(
     threshold: int,
     slice_count: int,
     inner_transform: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    share_count: int = 2,
     seed: bytes | None = None,
     challenge_seed: int | None = None,
     input_basis: BasisTransform | None = None,
@@ -82,9 +83,9 @@ def compile_operation(
         weight = inner_transform(weight)
     quantized = symmetric_quantize(weight, bits=4)
     if seed is None:
-        grid = split_secret(quantized.values, count=2, modulus=RING_MODULUS)
+        grid = split_secret(quantized.values, count=share_count, modulus=RING_MODULUS)
     else:
-        grid = seeded_split_secret(quantized.values, seed=seed, count=2)
+        grid = seeded_split_secret(quantized.values, seed=seed, count=share_count)
     shares: dict[int, WeightShare] = {}
     storage: dict[int, StoredWeightShare] = {}
     for index, matrix in enumerate(grid.shares):

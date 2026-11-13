@@ -37,6 +37,16 @@ def test_real_checkpoint_compiles_without_retaining_full_client_weights(
     combiner.drop_request("compiled-request")
 
 
+def test_checkpoint_compiles_and_executes_three_way_shares(tiny_llama_path: Path) -> None:
+    compiled = compile_fortress_checkpoint(tiny_llama_path, seed=731, share_count=3)
+    assert all(len(operation.shares) == 3 for operation in compiled.operations.values())
+    hidden = torch.tensor([[0.1, -0.2, 0.3, 0.4] * 4], dtype=torch.float64)
+    combiner = compiled.combiner()
+    expected = combiner.reference_forward(hidden)
+    actual = combiner.run(hidden)
+    torch.testing.assert_close(actual, expected, atol=1e-7, rtol=1e-7)
+
+
 def test_moe_checkpoint_keeps_router_local_and_compiles_each_expert(tmp_path: Path) -> None:
     import json
 

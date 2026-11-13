@@ -42,6 +42,7 @@ def test_ladder_sdk_configuration_uses_real_roles_and_client_identity(tmp_path: 
     assert len(configuration["cluster"]) == 4
     assert configuration["model_path"]["gemma-e2b"]["engine"] == "fortress"
     assert configuration["model_path"]["gemma-e2b"]["fortress_seed"] == 731
+    assert configuration["model_path"]["gemma-e2b"]["fortress_shares"] == 2
     first = configuration["cluster"][0]
     assert first["endpoint"] == f"quic://{rung.workers[0].endpoint}"
     assert first["labels"]["activation_index"] == "0"

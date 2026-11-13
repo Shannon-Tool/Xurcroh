@@ -55,6 +55,7 @@ def _compile_matrix(
     slice_count: int,
     inner_bases: bool,
     seed: int | None,
+    share_count: int = 2,
 ) -> None:
     if name in operations:
         raise ConfigurationError(f"duplicate Fortress operation: {name}")
@@ -71,6 +72,7 @@ def _compile_matrix(
         weight.to(torch.float64),
         threshold=threshold,
         slice_count=slice_count,
+        share_count=share_count,
         seed=share_seed,
         challenge_seed=seed + len(operations) if seed is not None else None,
         input_basis=input_basis,
@@ -104,6 +106,7 @@ def compile_fortress_checkpoint(
     inner_bases: bool = True,
     activation_bits: int = 12,
     seed: int | None = None,
+    share_count: int = 2,
 ) -> FortressCheckpoint:
     reader = CheckpointReader(Path(checkpoint))
     config = _text_config(reader)
@@ -141,6 +144,7 @@ def compile_fortress_checkpoint(
                 slice_count=slice_count,
                 inner_bases=inner_bases,
                 seed=seed,
+                share_count=share_count,
             )
         mlp_prefix = f"{prefix}.mlp"
         if expert_indices:
@@ -154,6 +158,7 @@ def compile_fortress_checkpoint(
                         slice_count=slice_count,
                         inner_bases=inner_bases,
                         seed=seed,
+                        share_count=share_count,
                     )
         else:
             for projection in ("gate_proj", "up_proj", "down_proj"):
@@ -165,6 +170,7 @@ def compile_fortress_checkpoint(
                     slice_count=slice_count,
                     inner_bases=inner_bases,
                     seed=seed,
+                    share_count=share_count,
                 )
         router = tensors[f"{mlp_prefix}.gate.weight"].to(torch.float64) if expert_indices else None
         top_k = int(
