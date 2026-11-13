@@ -25,6 +25,8 @@ class Library:
         self.status = 0
         self.xurcroh_get_scrubbed_bytes = lambda: 4096
         self.xurcroh_get_scrub_calls = lambda: 3
+        self.xurcroh_get_quarantined_bytes = lambda: 8192
+        self.xurcroh_get_quarantined_allocations = lambda: 1
         self.xurcroh_launch_shared_scrub = NativeFunction(self)
         self.xurcroh_run_leftover_probe = NativeFunction(self)
         self.xurcroh_mask_words = NativeFunction(self)
@@ -97,7 +99,12 @@ def test_native_controller_telemetry_and_cuda_calls(
         lambda *args, **kwargs: original_empty(*args, **{**kwargs, "device": "cpu"}),
     )
     controller = NativeMemoryController(path)
-    assert controller.telemetry() == {"scrubbed_bytes": 4096, "scrub_calls": 3}
+    assert controller.telemetry() == {
+        "scrubbed_bytes": 4096,
+        "scrub_calls": 3,
+        "quarantined_bytes": 8192,
+        "quarantined_allocations": 1,
+    }
     controller.scrub_shared_memory()
     probe = controller.probe_shared_memory()
     assert probe.shape == (8, (48 * 1024) // 4)

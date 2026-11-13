@@ -8,7 +8,7 @@ from xurcroh.algebra.attention import AttentionWeights
 from xurcroh.algebra.feedforward import FeedForwardWeights
 from xurcroh.algebra.modulation import adaln
 from xurcroh.algebra.rmsnorm import unit_rms_norm
-from xurcroh.fortress.arithmetic import quantize_activations, signed_ring, split_secret
+from xurcroh.fortress.arithmetic import quantize_activations, signed_field, split_secret
 from xurcroh.fortress.compiler import (
     CompiledOperation,
     apply_input_basis,
@@ -144,7 +144,7 @@ class FortressDiTCombiner:
             else self.grid_clients[name].execute(shares, request_id=name)
         )
         scales = activation.scales.unsqueeze(-1) if hidden.ndim == 2 else activation.scales
-        result = signed_ring(product).to(torch.float64) * scales * operation.quantized.scale
+        result = signed_field(product).to(torch.float64) * scales * operation.quantized.scale
         return apply_output_basis(operation, result)
 
     def _attention(

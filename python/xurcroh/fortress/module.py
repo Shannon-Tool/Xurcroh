@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from xurcroh.fortress.arithmetic import quantize_activations, signed_ring, split_secret
+from xurcroh.fortress.arithmetic import quantize_activations, signed_field, split_secret
 from xurcroh.fortress.compiler import (
     CompiledOperation,
     apply_input_basis,
@@ -53,7 +53,7 @@ class FortressLinear(torch.nn.Module):
             else self.grid_client.execute(shares, request_id=self.name)
         )
         scales = activation.scales.unsqueeze(-1)
-        result = signed_ring(product).to(torch.float64) * scales * operation.quantized.scale
+        result = signed_field(product).to(torch.float64) * scales * operation.quantized.scale
         result = apply_output_basis(operation, result).to(hidden.dtype)
         if self.bias is not None:
             result = result + self.bias.to(result.dtype)
@@ -66,7 +66,7 @@ class FortressLinear(torch.nn.Module):
         transformed = apply_input_basis(operation, flattened)
         activation = quantize_activations(transformed, bits=self.activation_bits)
         product = activation.values @ operation.quantized.values.to(torch.int64).T
-        result = signed_ring(product).to(torch.float64) * activation.scales.unsqueeze(-1)
+        result = signed_field(product).to(torch.float64) * activation.scales.unsqueeze(-1)
         result = result * operation.quantized.scale
         result = apply_output_basis(operation, result).to(hidden.dtype)
         if self.bias is not None:

@@ -63,14 +63,17 @@ extern "C" int xurcroh_mask_words(uint16_t* data, size_t count, const uint32_t* 
     return static_cast<int>(cudaGetLastError());
 }
 
-__global__ void fortress_matvec_kernel(const uint32_t* weights, const uint32_t* activations, uint32_t* output, int rows, int cols) {
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
+__global__ void fortress_matvec_kernel(const uint32_t* weights, const uint32_t* activations, uint32_t* output, size_t rows, size_t cols) {
+    size_t col = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (col >= cols) return;
+    const uint64_t modulus = 4294967291ULL;
     uint64_t sum = 0;
-    for (int row = 0; row < rows; ++row) {
-        sum += static_cast<uint64_t>(weights[row * cols + col]) * static_cast<uint64_t>(activations[row]);
+    for (size_t row = 0; row < rows; ++row) {
+        uint64_t product = static_cast<uint64_t>(weights[row * cols + col]) * static_cast<uint64_t>(activations[row]);
+        sum += product % modulus;
+        if (sum >= modulus) sum -= modulus;
     }
-    output[col] = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
+    output[col] = static_cast<uint32_t>(sum);
 }
 
 __global__ void fortress_chacha_kernel(uint32_t* output, size_t count, const uint32_t* key, const uint8_t* nonce) {
@@ -82,12 +85,12 @@ __global__ void fortress_chacha_kernel(uint32_t* output, size_t count, const uin
     output[index] = stream[index % 16];
 }
 
-extern "C" int xurcroh_fortress_matvec_u32(const uint32_t* weights, const uint32_t* activations, uint32_t* output, int rows, int cols, cudaStream_t stream) {
-    if (weights == nullptr || activations == nullptr || output == nullptr || rows <= 0 || cols <= 0) {
+extern "C" int xurcroh_fortress_matvec_u32(const uint32_t* weights, const uint32_t* activations, uint32_t* output, size_t rows, size_t cols, cudaStream_t stream) {
+    if (weights == nullptr || activations == nullptr || output == nullptr || rows == 0 || cols == 0) {
         return static_cast<int>(cudaErrorInvalidValue);
     }
-    int threads = 32;
-    int blocks = (cols + threads - 1) / threads;
+    size_t threads = 32;
+    size_t blocks = (cols + threads - 1) / threads;
     fortress_matvec_kernel<<<blocks, threads, 0, stream>>>(weights, activations, output, rows, cols);
     return static_cast<int>(cudaGetLastError());
 }

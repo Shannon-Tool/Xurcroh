@@ -5,6 +5,8 @@
 
 static std::atomic<uint64_t> g_scrubbed_bytes{0};
 static std::atomic<uint64_t> g_scrub_calls{0};
+static std::atomic<uint64_t> g_quarantined_bytes{0};
+static std::atomic<uint64_t> g_quarantined_allocations{0};
 
 __global__ void xurcroh_shared_scrub_kernel(uint32_t* sink) {
     extern __shared__ volatile uint32_t shared[];
@@ -54,13 +56,26 @@ void* xurcroh_burn_malloc(ssize_t size, int device, cudaStream_t stream) {
 
 void xurcroh_burn_free(void* pointer, ssize_t size, int device, cudaStream_t stream) {
     if (pointer == nullptr) return;
-    cudaSetDevice(device);
-    if (size > 0 && cudaMemsetAsync(pointer, 0, static_cast<size_t>(size), stream) == cudaSuccess &&
-        cudaStreamSynchronize(stream) == cudaSuccess) {
+    bool scrubbed = size > 0 && cudaSetDevice(device) == cudaSuccess &&
+        cudaMemsetAsync(pointer, 0, static_cast<size_t>(size), stream) == cudaSuccess &&
+        cudaStreamSynchronize(stream) == cudaSuccess;
+    if (scrubbed) {
         g_scrubbed_bytes.fetch_add(static_cast<uint64_t>(size), std::memory_order_relaxed);
         g_scrub_calls.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        g_quarantined_bytes.fetch_add(size > 0 ? static_cast<uint64_t>(size) : 0, std::memory_order_relaxed);
+        g_quarantined_allocations.fetch_add(1, std::memory_order_relaxed);
+        return;
     }
     cudaFree(pointer);
+}
+
+uint64_t xurcroh_get_quarantined_bytes() {
+    return g_quarantined_bytes.load(std::memory_order_relaxed);
+}
+
+uint64_t xurcroh_get_quarantined_allocations() {
+    return g_quarantined_allocations.load(std::memory_order_relaxed);
 }
 
 uint64_t xurcroh_get_scrubbed_bytes() {

@@ -52,8 +52,19 @@ def test_remote_client_compilation_discards_worker_weight_matrices(
         assert operation.storage == {}
         assert all(share.matrix is None for share in operation.shares.values())
         for index, share in operation.shares.items():
-            assert torch.equal(share.challenge.r, reference.shares[index].challenge.r)
-            assert torch.equal(share.challenge.v, reference.shares[index].challenge.v)
+            assert share.seed == reference.shares[index].seed
+
+
+def test_integrity_challenges_are_not_derived_from_deployment_seed(
+    tiny_llama_path: Path,
+) -> None:
+    first = compile_fortress_checkpoint(tiny_llama_path, seed=731, load_model=False)
+    second = compile_fortress_checkpoint(tiny_llama_path, seed=731, load_model=False)
+    for name, operation in first.operations.items():
+        other = second.operations[name]
+        assert not torch.equal(operation.shares[0].challenge.r, other.shares[0].challenge.r)
+        assert torch.equal(operation.input_basis.permutation, other.input_basis.permutation)
+        assert operation.shares[0].seed == other.shares[0].seed
 
 
 def test_remote_model_uses_fp32_and_shares_boundary_storage(tiny_llama_path: Path) -> None:

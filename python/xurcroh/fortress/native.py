@@ -5,6 +5,8 @@ from pathlib import Path
 
 import torch
 
+from xurcroh.fortress.arithmetic import FIELD_MODULUS
+
 
 class FortressNativeController:
     def __init__(self, library: str | Path) -> None:
@@ -12,6 +14,14 @@ class FortressNativeController:
         self._u32 = ctypes.POINTER(ctypes.c_uint32)
         self._u8 = ctypes.POINTER(ctypes.c_uint8)
         self._stream = ctypes.c_void_p(0)
+        self._library.xurcroh_fortress_matvec_u32.argtypes = [
+            self._u32,
+            self._u32,
+            self._u32,
+            ctypes.c_size_t,
+            ctypes.c_size_t,
+            ctypes.c_void_p,
+        ]
 
     def _device_pointer(self, tensor: torch.Tensor, dtype: torch.dtype) -> ctypes.c_void_p:
         if tensor.dtype != dtype or tensor.device.type != "cuda" or not tensor.is_contiguous():
@@ -75,7 +85,7 @@ class FortressNativeController:
         output = torch.empty(cols, dtype=torch.int32, device="cuda")
         try:
             self.matvec_device(weight_device, activation_device, output)
-            return output.cpu().to(torch.int64).remainder(2**32).tolist()
+            return output.cpu().to(torch.int64).remainder(FIELD_MODULUS).tolist()
         finally:
             weight_device.zero_()
             activation_device.zero_()

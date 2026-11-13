@@ -5,7 +5,7 @@ from typing import Any
 
 import torch
 
-from xurcroh.fortress.arithmetic import combine_shares
+from xurcroh.fortress.arithmetic import FIELD_MODULUS, combine_shares
 from xurcroh.fortress.compiler import materialize_weight_shares as _materialize_weight_shares
 
 
@@ -34,17 +34,17 @@ def evaluate_share_reconstruction(
         raise ValueError("reconstruction evaluation requires at least two shares")
     recovered_weight = combine_shares(weight_shares)
     recovered_activation = combine_shares(activation_shares)
-    canonical_weight = weight.to(torch.int64).remainder(2**32)
+    canonical_weight = weight.to(torch.int64).remainder(FIELD_MODULUS)
     return ShareReconstructionReport(
         full_weight_collusion_exact=torch.equal(recovered_weight, canonical_weight),
         full_activation_collusion_exact=torch.equal(
-            recovered_activation, activation.remainder(2**32)
+            recovered_activation, activation.remainder(FIELD_MODULUS)
         ),
         single_weight_share_reconstructs=any(
             torch.equal(share, canonical_weight) for share in weight_shares
         ),
         single_activation_share_reconstructs=any(
-            torch.equal(share, activation.remainder(2**32)) for share in activation_shares
+            torch.equal(share, activation.remainder(FIELD_MODULUS)) for share in activation_shares
         ),
         missing_weight_share_search_bits=weight.numel() * 32,
         missing_activation_share_search_bits=activation.numel() * 32,

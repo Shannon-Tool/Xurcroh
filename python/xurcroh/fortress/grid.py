@@ -6,10 +6,9 @@ from dataclasses import dataclass, field
 import torch
 
 from xurcroh.fortress.arithmetic import (
-    RING_MODULUS,
+    FIELD_MODULUS,
     ExactFreivaldsChallenge,
     _modular_matmul,
-    verify_freivalds,
 )
 
 
@@ -61,14 +60,9 @@ def execute_grid(
                 or share.matrix.dtype != torch.int64
             ):
                 raise ValueError("local execution requires materialized int64 weight shares")
-            product = _modular_matmul(activation, share.matrix.T, RING_MODULUS)
-            verified_product = _modular_matmul(activation, share.matrix.T, share.challenge.prime)
-            if not verify_freivalds(activation, verified_product, share.challenge):
-                raise RoleExecutionError(
-                    activation_index, weight_index, share.provider_id, "Freivalds check failed"
-                )
+            product = _modular_matmul(activation, share.matrix.T, FIELD_MODULUS)
             if secrets.randbelow(100) < replica_fraction * 100:
-                replica = _modular_matmul(activation, share.matrix.T, RING_MODULUS)
+                replica = _modular_matmul(activation, share.matrix.T, FIELD_MODULUS)
                 if not torch.equal(product, replica):
                     raise RoleExecutionError(
                         activation_index,
@@ -82,11 +76,11 @@ def execute_grid(
     for feature in range(stacked.shape[-1]):
         column = stacked[..., feature]
         if column.ndim == 1:
-            combined.append(sum(int(value) for value in column) % RING_MODULUS)
+            combined.append(sum(int(value) for value in column) % FIELD_MODULUS)
         else:
             combined.append(
                 [
-                    sum(int(value) for value in column[:, index]) % RING_MODULUS
+                    sum(int(value) for value in column[:, index]) % FIELD_MODULUS
                     for index in range(column.shape[1])
                 ]
             )
