@@ -15,9 +15,9 @@ class FortressNativeController:
         self._u8 = ctypes.POINTER(ctypes.c_uint8)
         self._stream = ctypes.c_void_p(0)
         self._library.xurcroh_fortress_matvec_u32.argtypes = [
-            self._u32,
-            self._u32,
-            self._u32,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
             ctypes.c_size_t,
             ctypes.c_size_t,
             ctypes.c_void_p,
