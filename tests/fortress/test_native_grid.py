@@ -4,6 +4,16 @@ import pytest
 import xurcroh_quic
 
 
+def test_native_challenge_consumes_packed_integer_matrices() -> None:
+    import torch
+
+    weight = torch.tensor([[1, 2], [3, 4]], dtype=torch.int64)
+    result = xurcroh_quic.fortress_challenge_values(
+        2, 2, weight.contiguous().numpy().tobytes(), [11, 13], 2**32 - 5
+    )
+    assert result == [50, 74]
+
+
 def test_native_grid_executes_rust_engine_and_attributes_tampering() -> None:
     share = xurcroh_quic.FortressWeightShare(
         0,

@@ -236,7 +236,16 @@ def freivalds_challenge(
         raise ValueError("Freivalds inputs must be integer matrices")
     if r.shape != (weight.shape[0],):
         raise ValueError("challenge vector must match matrix output dimension")
-    return ExactFreivaldsChallenge(r=r, v=_modular_matvec(weight.T, r, prime), prime=prime)
+    import xurcroh_quic
+
+    values = xurcroh_quic.fortress_challenge_values(
+        weight.shape[0],
+        weight.shape[1],
+        weight.detach().cpu().contiguous().numpy().tobytes(),
+        r.detach().cpu().tolist(),
+        prime,
+    )
+    return ExactFreivaldsChallenge(r=r, v=torch.tensor(values, dtype=torch.int64), prime=prime)
 
 
 def verify_freivalds(
