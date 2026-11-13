@@ -6,7 +6,8 @@ import pytest
 import torch
 
 from shards.identities import StageIdentities
-from xurcroh.adapters.sglang_stage import create_sglang_stage, tensors_from_proxy
+from xurcroh.adapters.sglang_stage import create_sglang_stage, require_sglang, tensors_from_proxy
+from xurcroh.errors import CompatibilityError
 
 pytestmark = pytest.mark.hardware
 
@@ -14,6 +15,10 @@ pytestmark = pytest.mark.hardware
 def test_sglang_executes_private_stage_on_cuda(tiny_llama_path: Path, tmp_path: Path) -> None:
     if not torch.cuda.is_available():
         pytest.skip("CUDA device and sglang==0.5.23 are required")
+    try:
+        require_sglang()
+    except CompatibilityError as error:
+        pytest.skip(str(error))
     identities = StageIdentities.create(1)
     compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=461)
     stage = create_sglang_stage(
