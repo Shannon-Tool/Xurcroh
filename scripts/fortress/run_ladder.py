@@ -42,6 +42,7 @@ def run(args: argparse.Namespace) -> Path:
         finally:
             exit_codes = stop_workers(deployment["workers"], deployment["source_revision"])
         report["worker_exit_codes"] = exit_codes
+        report["source_revision"] = deployment["source_revision"]
         report["cost_usd"] = 0.0
         return report
 
