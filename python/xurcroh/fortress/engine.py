@@ -135,6 +135,10 @@ class FortressEngine:
                         for name, operation in compiled.operations.items()
                     }
                 self._clients = clients
+                if compiled.model is not None and clients:
+                    from xurcroh.fortress.module import connect_grid_clients
+
+                    connect_grid_clients(compiled.model, clients)
                 self._combiner = FortressCombiner(
                     layers=list(compiled.layers),
                     operations=compiled.operations,
@@ -206,6 +210,82 @@ class FortressEngine:
         hidden = torch.cat(chunks, dim=0)
         return hidden, hidden.shape[0]
 
+    def _generate_official_model(
+        self,
+        request: CompletionRequest,
+        *,
+        cancelled: threading.Event,
+        timeout: float,
+    ) -> Iterator[GenerationEvent]:
+        from xurcroh.runtime.generation import (
+            GenerationEvent,
+            GenerationSummary,
+            check_request_health,
+            sample_next_token,
+            stopping_strings,
+        )
+
+        compiled = self._compiled
+        assert compiled is not None and compiled.model is not None
+        started = time.monotonic()
+        with self._inference_lock:
+            prompt = "\n".join(
+                f"{message.role}: {message.plain_text()}" for message in request.messages
+            )
+            input_ids = self._tokenizer(prompt, return_tensors="pt", add_special_tokens=False)[
+                "input_ids"
+            ]
+            if input_ids.numel() == 0:
+                raise ConfigurationError("Fortress tokenizer produced an empty prompt")
+            if int(input_ids.max()) >= compiled.embedding.shape[0]:
+                raise ModelLoadError("tokenizer emits IDs outside the model vocabulary")
+            current = input_ids
+            past = None
+            shared = None
+            completion_ids: list[int] = []
+            text = ""
+            finish_reason: Literal["stop", "length"] = "length"
+            stops = stopping_strings(request)
+            for _ in range(request.max_tokens):
+                check_request_health(cancelled, started, timeout)
+                parameters = {
+                    "input_ids": current,
+                    "past_key_values": past,
+                    "return_shared_kv_states": True,
+                    "use_cache": True,
+                }
+                if shared is not None:
+                    parameters["shared_kv_states"] = shared
+                with torch.inference_mode():
+                    outputs = compiled.model(**parameters)
+                next_token = sample_next_token(outputs.logits[:, -1, :], request)
+                token_id = int(next_token.item())
+                completion_ids.append(token_id)
+                updated_text = self._tokenizer.decode(completion_ids, skip_special_tokens=True)
+                delta = updated_text[len(text) :]
+                text = updated_text
+                past = outputs.past_key_values
+                shared = getattr(outputs, "shared_kv_states", None)
+                current = next_token
+                yield GenerationEvent(delta=delta)
+                if token_id == self._tokenizer.eos_token_id:
+                    finish_reason = "stop"
+                    break
+                if stops and any(text.endswith(stop) for stop in stops):
+                    finish_reason = "stop"
+                    break
+            check_request_health(cancelled, started, timeout)
+            yield GenerationEvent(
+                delta="",
+                summary=GenerationSummary(
+                    text=text,
+                    prompt_tokens=input_ids.shape[-1],
+                    completion_tokens=len(completion_ids),
+                    finish_reason=finish_reason,
+                    duration_ms=(time.monotonic() - started) * 1000,
+                ),
+            )
+
     def generate(
         self,
         request: CompletionRequest,
@@ -225,6 +305,11 @@ class FortressEngine:
         assert self._combiner is not None
         compiled = self._compiled
         assert compiled is not None
+        if compiled.model is not None and all(
+            isinstance(message.content, str) for message in request.messages
+        ):
+            yield from self._generate_official_model(request, cancelled=cancelled, timeout=timeout)
+            return
         started = time.monotonic()
         with self._inference_lock:
             hidden, prompt_tokens = self._prepare_hidden(request)
