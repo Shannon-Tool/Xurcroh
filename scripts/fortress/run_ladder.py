@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
+
+if str(Path(__file__).resolve().parents[2]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import yaml
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -40,7 +44,8 @@ def run(args: argparse.Namespace) -> Path:
             manifest, args.output, skip_bootstrap=args.skip_bootstrap
         )
         deployment = json.loads(Path(deployment_path).read_text())
-        rung = LadderRung.from_mapping(deployment["rung"])
+        if "rung" in deployment:
+            rung = LadderRung.from_mapping(deployment["rung"])
         try:
             report = verify_ladder(deployment)
         finally:

@@ -2,12 +2,27 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from tests.fortress.test_ladder import evidence_mapping, manifest_mapping
 
 from xurcroh.fortress.ladder import verify_rung_evidence
+
+
+def test_ladder_cli_entry_points_execute_directly() -> None:
+    root = Path(__file__).resolve().parents[2]
+    for name in ("run_ladder.py", "deploy_ladder.py"):
+        result = subprocess.run(  # noqa: S603
+            [sys.executable, str(root / "scripts/fortress" / name), "--help"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
 
 
 def test_ladder_runner_writes_verified_signed_evidence(tmp_path: Path) -> None:
