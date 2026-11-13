@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from xurcroh.errors import ProtocolError
 from xurcroh.fortress.arithmetic import FIELD_MODULUS
+from xurcroh.fortress.native import canonical_field_words
 from xurcroh.fortress.transport import (
     DEFAULT_FRAME_BYTES,
     decode_role_artifact,
@@ -179,7 +180,7 @@ class FortressRoleWorker:
         output = torch.empty(self.artifacts[name].matrix.shape[0], dtype=torch.int32, device="cuda")
         try:
             self._cuda_controller.matvec_device(self._cuda_weights[name], activation_device, output)
-            return output.cpu().to(torch.int64).remainder(FIELD_MODULUS).tolist()
+            return canonical_field_words(output.cpu()).tolist()
         finally:
             activation_device.zero_()
             output.zero_()

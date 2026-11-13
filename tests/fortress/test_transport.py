@@ -331,3 +331,30 @@ def test_field_activation_wire_format_uses_four_bytes() -> None:
     name, activation = worker._decode_activation(payload)
     assert name == "op"
     assert activation.tolist() == [5, 7]
+
+
+def test_cuda_worker_canonicalizes_signed_field_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from xurcroh.fortress.arithmetic import FIELD_MODULUS
+
+    class Controller:
+        def matvec_device(
+            self, weights: torch.Tensor, activation: torch.Tensor, output: torch.Tensor
+        ) -> None:
+            output.fill_(-6)
+
+    worker = FortressRoleWorker.__new__(FortressRoleWorker)
+    worker.artifacts = {"op": SimpleNamespace(matrix=torch.zeros(1, 1, dtype=torch.int64))}
+    worker._cuda_controller = Controller()
+    worker._cuda_weights = {"op": torch.ones(1, 1, dtype=torch.int32)}
+    monkeypatch.setattr(torch.Tensor, "cuda", lambda tensor: tensor)
+    original_empty = torch.empty
+
+    def empty_without_device(*args: int, **kwargs: object) -> torch.Tensor:
+        options = dict(kwargs)
+        options.pop("device", None)
+        return original_empty(*args, **options)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(torch, "empty", empty_without_device)
+    assert worker._execute_activation("op", torch.tensor([1])) == [FIELD_MODULUS - 1]

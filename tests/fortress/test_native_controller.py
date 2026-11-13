@@ -5,12 +5,12 @@ from types import SimpleNamespace
 import torch
 
 from xurcroh.fortress.arithmetic import FIELD_MODULUS
-from xurcroh.fortress.native import FortressNativeController
+from xurcroh.fortress.native import FortressNativeController, canonical_field_words
 
 
 def test_native_controller_canonicalizes_signed_field_words() -> None:
     words = torch.tensor([0, 2**31 - 1, -(2**31), -6, -1], dtype=torch.int32)
-    actual = FortressNativeController._canonical_field_words(words)
+    actual = canonical_field_words(words)
     assert actual.tolist() == [0, 2**31 - 1, 2**31, FIELD_MODULUS - 1, 4]
 
 
