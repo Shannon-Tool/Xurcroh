@@ -14,7 +14,7 @@ from typing import Any
 import torch
 
 from xurcroh.errors import ProtocolError
-from xurcroh.fortress.arithmetic import PRIME_MODULUS, RING_MODULUS, verify_freivalds
+from xurcroh.fortress.arithmetic import PRIME_MODULUS, RING_MODULUS
 from xurcroh.fortress.compiler import CompiledOperation
 from xurcroh.fortress.grid import RoleExecutionError, WeightShare
 from xurcroh.fortress.storage import DispersedShard, reconstruct_shard
@@ -177,6 +177,22 @@ def native_role_matrix(artifact: RoleArtifact) -> Any:
     )
 
 
+def native_compiled_weight_share(weight: WeightShare) -> Any:
+    import xurcroh_quic
+
+    return xurcroh_quic.FortressWeightShare(
+        weight.weight_index,
+        weight.matrix.shape[0],
+        weight.matrix.shape[1],
+        weight.matrix.reshape(-1).tolist(),
+        weight.challenge.r.tolist(),
+        weight.challenge.v.tolist(),
+        weight.challenge.prime,
+        weight.provider_id,
+        weight.replica_provider_id,
+    )
+
+
 class _RoleTransport:
     def __init__(
         self,
@@ -305,6 +321,8 @@ def combine_role_results(
     results: dict[tuple[int, int], list[int]],
     providers: dict[tuple[int, int], str],
 ) -> torch.Tensor:
+    import xurcroh_quic
+
     expected = {
         (activation_index, weight_index)
         for activation_index in range(len(activation_shares))
@@ -315,28 +333,59 @@ def combine_role_results(
     output_size = len(next(iter(results.values())))
     if any(len(product) != output_size for product in results.values()):
         raise ProtocolError("grid response dimensions are inconsistent")
+    for activation_index, activation in enumerate(activation_shares):
+        canonical = activation.remainder(RING_MODULUS)
+        for weight_index, share in weight_shares.items():
+            key = (activation_index, weight_index)
+            exact_product = results[key]
+            prime = share.challenge.prime
+            product = torch.tensor([value % prime for value in exact_product], dtype=torch.int64)
+            if not xurcroh_quic.verify_fortress_product(
+                canonical.tolist(),
+                product.tolist(),
+                share.challenge.r.tolist(),
+                share.challenge.v.tolist(),
+                prime,
+            ):
+                raise RoleExecutionError(
+                    activation_index,
+                    weight_index,
+                    providers[key],
+                    "Freivalds check failed",
+                )
     columns: list[int] = []
     for column in range(output_size):
-        total = 0
-        for activation_index, activation in enumerate(activation_shares):
-            canonical = activation.remainder(RING_MODULUS)
-            for weight_index, share in weight_shares.items():
-                key = (activation_index, weight_index)
-                exact_product = results[key]
-                prime = share.challenge.prime
-                product = torch.tensor(
-                    [value % prime for value in exact_product], dtype=torch.int64
-                )
-                if not verify_freivalds(canonical, product, share.challenge):
-                    raise RoleExecutionError(
-                        activation_index,
-                        weight_index,
-                        providers[key],
-                        "Freivalds check failed",
-                    )
-                total += exact_product[column]
+        total = sum(
+            results[(activation_index, weight_index)][column]
+            for activation_index in range(len(activation_shares))
+            for weight_index in weight_shares
+        )
         columns.append(total % RING_MODULUS)
     return torch.tensor(columns, dtype=torch.int64)
+
+
+def execute_native_grid(
+    activation_shares: list[torch.Tensor], weight_shares: dict[int, WeightShare]
+) -> torch.Tensor:
+    import xurcroh_quic
+
+    if activation_shares and activation_shares[0].ndim == 2:
+        outputs = [
+            execute_native_grid([share[row] for share in activation_shares], weight_shares)
+            for row in range(activation_shares[0].shape[0])
+        ]
+        return torch.stack(outputs)
+    results: dict[tuple[int, int], list[int]] = {}
+    providers: dict[tuple[int, int], str] = {}
+    for activation_index, activation in enumerate(activation_shares):
+        canonical = activation.remainder(RING_MODULUS).tolist()
+        for weight_index, share in weight_shares.items():
+            key = (activation_index, weight_index)
+            results[key] = xurcroh_quic.execute_fortress_role(
+                canonical, native_compiled_weight_share(share)
+            )
+            providers[key] = share.provider_id
+    return combine_role_results(activation_shares, weight_shares, results, providers)
 
 
 class FortressRoleClient:

@@ -1,5 +1,5 @@
 use pyo3::{exceptions::PyValueError, prelude::*};
-use xurcroh_fortress::{execute_grid, FreivaldsChallenge, Matrix, WeightShare};
+use xurcroh_fortress::{execute_grid, verify_freivalds, FreivaldsChallenge, Matrix, WeightShare};
 
 fn value_error<E: std::fmt::Display>(error: E) -> PyErr {
     PyValueError::new_err(error.to_string())
@@ -63,9 +63,22 @@ fn execute_fortress_role(
         .map_err(value_error)
 }
 
+#[pyfunction]
+fn verify_fortress_product(
+    activation: Vec<i64>,
+    product: Vec<i64>,
+    r: Vec<i64>,
+    v: Vec<i64>,
+    prime: i128,
+) -> PyResult<bool> {
+    verify_freivalds(&activation, &product, &FreivaldsChallenge { r, v, prime })
+        .map_err(value_error)
+}
+
 pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<FortressWeightShare>()?;
     module.add_function(wrap_pyfunction!(execute_fortress_grid, module)?)?;
     module.add_function(wrap_pyfunction!(execute_fortress_role, module)?)?;
+    module.add_function(wrap_pyfunction!(verify_fortress_product, module)?)?;
     Ok(())
 }

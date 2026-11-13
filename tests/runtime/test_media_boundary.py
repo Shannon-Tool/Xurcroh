@@ -164,3 +164,15 @@ def test_media_decoder_failure_paths() -> None:
             torch.zeros(1, 4, 8, 8),
             ImageGenerationRequest(model="tiny", prompt="city", size="8x8", steps=1),
         )
+
+
+def test_video_decoder_accepts_singleton_batch_channel_first_frames() -> None:
+    class ChannelFirstPipeline:
+        def decode_latents(self, latent):
+            return np.zeros((1, 3, 2, 4, 4), dtype=np.float32)
+
+    video = DiffusionMediaBoundary(ChannelFirstPipeline()).decode_video(
+        torch.zeros(1, 4, 2, 4, 4),
+        VideoGenerationRequest(model="tiny", prompt="waves", size="4x4", frames=2, fps=2),
+    )
+    assert b"ftyp" in video[:32]

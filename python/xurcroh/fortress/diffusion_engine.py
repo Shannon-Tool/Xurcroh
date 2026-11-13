@@ -177,17 +177,20 @@ class FortressDiffusionEngine(FortressEngine):
             return kwargs
 
         width, height = (int(value) for value in request.size.split("x"))
-        result = self._boundary.pipeline(
-            prompt=request.prompt,
-            width=width,
-            height=height,
-            num_frames=request.frames,
-            fps=request.fps,
-            num_inference_steps=request.steps,
-            generator=torch.Generator().manual_seed(seed),
-            output_type="latent",
-            callback_on_step_end=health,
-        )
+        parameters = {
+            "prompt": request.prompt,
+            "width": width,
+            "height": height,
+            "num_frames": request.frames,
+            "fps": request.fps,
+            "num_inference_steps": request.steps,
+            "generator": torch.Generator().manual_seed(seed),
+            "output_type": "latent",
+            "callback_on_step_end": health,
+        }
+        signature = inspect.signature(self._boundary.pipeline.__call__).parameters
+        parameters = {key: value for key, value in parameters.items() if key in signature}
+        result = self._boundary.pipeline(**parameters)
         frames = getattr(result, "frames", None)
         if frames is None:
             raise CapabilityError("video pipeline did not return latent frames")
