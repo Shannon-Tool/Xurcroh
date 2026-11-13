@@ -38,6 +38,7 @@ class FortressRoleWorker:
         session_capacity: int = 64,
         rotation_interval: int = 64,
         frame_bytes: int = DEFAULT_FRAME_BYTES,
+        onion_private_key: bytes | None = None,
     ) -> None:
         import xurcroh_quic
 
@@ -48,6 +49,7 @@ class FortressRoleWorker:
             raise ValueError("rotation interval must be positive")
         self._rotation_interval = rotation_interval
         self._quic = xurcroh_quic
+        self._onion_private_key = onion_private_key
         serialized = {"operation": artifacts} if isinstance(artifacts, bytes) else artifacts
         if not serialized:
             raise ValueError("Fortress role worker requires at least one operation")
@@ -140,6 +142,13 @@ class FortressRoleWorker:
                     connection.send(request_id, self.weight_index, 0, "complete", "", [], b"")
                     connection.close()
                     return
+                if kind == "tensor" and self._onion_private_key is not None:
+                    next_hop, _, _, packet = self._quic.unwrap_onion(
+                        self._onion_private_key, packet
+                    )
+                    if next_hop:
+                        raise ProtocolError("worker received an onion layer for another hop")
+                    shape = [len(packet)]
                 if (
                     kind != "tensor"
                     or dtype != "u8"

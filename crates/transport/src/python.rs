@@ -301,6 +301,53 @@ fn hpke_open_session_master(
     Python::attach(|py| Ok(PyBytes::new(py, &master).into()))
 }
 
+#[pyfunction]
+fn seal_onion(
+    hops: Vec<(Vec<u8>, String)>,
+    return_key: [u8; 32],
+    reply_id: u64,
+    payload: Vec<u8>,
+) -> PyResult<Vec<Py<PyBytes>>> {
+    let hops = hops
+        .into_iter()
+        .map(|(public, next_hop)| {
+            let public: [u8; 32] = public
+                .try_into()
+                .map_err(|_| value_error("onion public key must be 32 bytes"))?;
+            Ok(xurcroh_crypto::OnionHop {
+                public: x25519_dalek::PublicKey::from(public),
+                next_hop,
+            })
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    let packet = xurcroh_crypto::seal_onion(&hops, return_key, reply_id, payload)
+        .map_err(crypto_error)?;
+    Python::attach(|py| {
+        packet
+            .layers
+            .into_iter()
+            .map(|layer| Ok(PyBytes::new(py, &layer).into()))
+            .collect()
+    })
+}
+
+#[pyfunction]
+fn unwrap_onion(
+    secret: [u8; 32],
+    layer: &[u8],
+) -> PyResult<(String, Option<Py<PyBytes>>, u64, Py<PyBytes>)> {
+    let secret = x25519_dalek::StaticSecret::from(secret);
+    let (hop, remaining) = xurcroh_crypto::unwrap_onion(&secret, layer).map_err(crypto_error)?;
+    Python::attach(|py| {
+        Ok((
+            hop.next_hop,
+            hop.return_key.map(|key| PyBytes::new(py, &key).into()),
+            hop.reply_id,
+            PyBytes::new(py, &remaining).into(),
+        ))
+    })
+}
+
 #[pyclass]
 struct ServerConnection {
     connection: Connection,
@@ -556,6 +603,8 @@ fn xurcroh_quic(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(generate_self_signed, module)?)?;
     module.add_function(wrap_pyfunction!(hpke_seal_session_master, module)?)?;
     module.add_function(wrap_pyfunction!(hpke_open_session_master, module)?)?;
+    module.add_function(wrap_pyfunction!(seal_onion, module)?)?;
+    module.add_function(wrap_pyfunction!(unwrap_onion, module)?)?;
     fortress::register(module)?;
     Ok(())
 }

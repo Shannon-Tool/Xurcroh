@@ -30,12 +30,21 @@ class MutualTLSIdentity:
 
 
 @dataclass(frozen=True)
+class RelayRoute:
+    relay_address: str
+    worker_address: str
+    relay_public_key: bytes
+    worker_public_key: bytes
+
+
+@dataclass(frozen=True)
 class RoleEndpoint:
     activation_index: int
     weight_index: int
     address: str
     recipient_public: bytes
     provider_id: str
+    relay: RelayRoute | None = None
 
 
 @dataclass(frozen=True)
@@ -186,7 +195,7 @@ class _RoleTransport:
             raise ValueError("operation name must contain 1-1024 ASCII bytes")
         self.session = ClientStageSession(role.weight_index, role.recipient_public)
         self.client = xurcroh_quic.TensorClient.connect_mutual(
-            role.address,
+            role.relay.relay_address if role.relay is not None else role.address,
             identity.server_name,
             identity.pinned_ca,
             list(identity.certificates),
@@ -228,6 +237,19 @@ class _RoleTransport:
             request_id, "u8", [len(operation_payload)], operation_payload
         )
         packet = pad_packet(self.session.wire_packet(sealed), self._frame_bytes)
+        if self.role.relay is not None:
+            packet = self._quic.seal_onion(
+                [
+                    (
+                        self.role.relay.relay_public_key,
+                        f"quic://{self.role.relay.worker_address}",
+                    ),
+                    (self.role.relay.worker_public_key, ""),
+                ],
+                secrets.token_bytes(32),
+                0,
+                packet,
+            )[0]
         sent = len(
             self._quic.encode_frame(
                 request_hash, 0, sequence, "tensor", "u8", [len(packet)], packet

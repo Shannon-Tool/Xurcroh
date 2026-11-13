@@ -37,3 +37,8 @@ CPU tests cover cache/request cleanup, sealed memfds, nonce/binding failures, fi
 ## HPKE session establishment
 
 Interactive stage and protected-media sessions use RFC 9180 HPKE (`X25519HkdfSha256` with ChaCha20-Poly1305) to seal a fresh random session master. Stage HPKE associated data binds the session identifier and authentication token; media HPKE associated data binds the media session identifier. Directional AEAD keys, replay windows, and monotonic epoch rotation are derived only after that authenticated establishment. The legacy raw-X25519 session-exchange path has been removed. Offline shard recipient sealing is a separate artifact-custody mechanism, not this interactive handshake.
+
+
+## Oblivious relay and traffic analysis
+
+`xurcroh.fortress.relay` forwards mutually authenticated QUIC calls through an allowlisted oblivious relay. Onion layers reveal only the current hop's authorized next address; HPKE and directional AEAD remain end-to-end between client and worker. The relay observes the client's network address, and each worker observes the relay's network address. A global observer can still correlate timing and volume, so this is not Tor/I2P-level anonymity or proof against intersection attacks. Fixed-size frames and constant-rate verified cover calls reduce direct size/workload signals but do not remove scheduling or microarchitectural leakage. The current local leave-one-out nearest-mean timing result is recorded in `docs/evidence/fortress/transport.json` (balanced accuracy 0.572 versus a 0.5 baseline for that run), not presented as general classifier resistance.

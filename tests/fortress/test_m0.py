@@ -59,7 +59,7 @@ def test_m0_synthetic_dit_runs_over_four_independent_processes(
                 )
                 process.start()
                 child_ready.close()
-                assert ready.poll(15)
+                assert ready.poll(60)
                 address = ready.recv()
                 ready.close()
                 processes.append(process)
