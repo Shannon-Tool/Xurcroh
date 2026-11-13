@@ -83,6 +83,7 @@ def _compile_matrix(
     seed: int | None,
     share_count: int = 2,
     materialize_shares: bool = True,
+    retain_quantized: bool = True,
     operation_sink: Callable[[str, CompiledOperation], None] | None = None,
 ) -> None:
     if name in operations:
@@ -122,10 +123,13 @@ def _compile_matrix(
             },
             storage={},
         )
-    operations[name] = replace(
-        operation,
-        quantized=replace(operation.quantized, values=operation.quantized.values.to(torch.int8)),
+    quantized = replace(
+        operation.quantized,
+        values=operation.quantized.require_values().to(torch.int8),
     )
+    if not retain_quantized:
+        quantized = replace(quantized, values=None, shape=quantized.dimensions)
+    operations[name] = replace(operation, quantized=quantized)
 
 
 def _boundary_tensor(
@@ -156,6 +160,7 @@ def compile_fortress_checkpoint(
     seed: int | None = None,
     share_count: int = 2,
     materialize_shares: bool = True,
+    retain_quantized: bool = True,
     model_dtype: torch.dtype | None = None,
     load_model: bool = True,
     operation_sink: Callable[[str, CompiledOperation], None] | None = None,
@@ -200,6 +205,7 @@ def compile_fortress_checkpoint(
                 seed=seed,
                 share_count=share_count,
                 materialize_shares=materialize_shares,
+                retain_quantized=retain_quantized,
                 operation_sink=operation_sink,
             )
         mlp_prefix = f"{prefix}.mlp"
@@ -216,6 +222,7 @@ def compile_fortress_checkpoint(
                         seed=seed,
                         share_count=share_count,
                         materialize_shares=materialize_shares,
+                        retain_quantized=retain_quantized,
                         operation_sink=operation_sink,
                     )
         else:
@@ -230,6 +237,7 @@ def compile_fortress_checkpoint(
                     seed=seed,
                     share_count=share_count,
                     materialize_shares=materialize_shares,
+                    retain_quantized=retain_quantized,
                     operation_sink=operation_sink,
                 )
         for name, tensor in tensors.items():
@@ -252,6 +260,7 @@ def compile_fortress_checkpoint(
                     seed=seed,
                     share_count=share_count,
                     materialize_shares=materialize_shares,
+                    retain_quantized=retain_quantized,
                     operation_sink=operation_sink,
                 )
         router = tensors[f"{mlp_prefix}.gate.weight"].to(torch.float64) if expert_indices else None

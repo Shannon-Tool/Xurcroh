@@ -65,7 +65,7 @@ class FortressLinear(torch.nn.Module):
         flattened = hidden.reshape(-1, hidden.shape[-1])
         transformed = apply_input_basis(operation, flattened)
         activation = quantize_activations(transformed, bits=self.activation_bits)
-        product = activation.values @ operation.quantized.values.to(torch.int64).T
+        product = activation.values @ operation.quantized.require_values().to(torch.int64).T
         result = signed_field(product).to(torch.float64) * activation.scales.unsqueeze(-1)
         result = result * operation.quantized.scale
         result = apply_output_basis(operation, result).to(hidden.dtype)

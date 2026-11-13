@@ -106,7 +106,7 @@ def exercise_adversarial_grid(
 
     name = next(iter(clients))
     operation = operations[name]
-    features = operation.quantized.values.shape[1]
+    features = operation.quantized.require_values().shape[1]
     count = len(operation.shares)
     real_shares = split_secret(torch.arange(features, dtype=torch.int64), count=count).shares
     decoy_shares = split_secret(
@@ -125,7 +125,7 @@ def exercise_adversarial_grid(
     if not tripped or revoked != list(observers):
         raise ValueError("canary attribution or revocation failed")
     attack = evaluate_share_reconstruction(
-        operation.quantized.values,
+        operation.quantized.require_values(),
         torch.arange(features, dtype=torch.int64),
         _materialize_weight_shares(operation),
         real_shares,
