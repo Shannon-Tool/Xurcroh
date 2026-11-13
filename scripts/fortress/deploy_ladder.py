@@ -204,12 +204,12 @@ def prepare_worker(
     scp(worker, [recipient_key], f"{remote_root}/recipient.key")
     scp(
         worker,
-        [tls / "ca.crt", tls / f"{worker.name}.crt", tls / f"{worker.name}.key"],
+        [tls / "ca.crt", tls / f"{worker['name']}.crt", tls / f"{worker['name']}.key"],
         f"{remote_root}/tls/",
     )
     ssh(
         worker,
-        f"chmod 600 {root}/recipient.key {root}/tls/{shlex.quote(worker.name)}.key",
+        f"chmod 600 {root}/recipient.key {root}/tls/{shlex.quote(worker['name'])}.key",
     )
 
 

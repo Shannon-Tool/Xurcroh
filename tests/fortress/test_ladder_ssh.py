@@ -80,6 +80,30 @@ def test_per_worker_ssh_configuration_is_normalized() -> None:
     assert normalized["known_hosts"] == "/keys/known_hosts"
 
 
+def test_prepare_worker_uses_normalized_name_for_tls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = load_module()
+    monkeypatch.setattr(module, "pin_host_key", lambda *_args: None)
+    monkeypatch.setattr(module, "wait_for_ssh", lambda *_args: None)
+    monkeypatch.setattr(module, "ssh", lambda *_args, **_kwargs: None)
+    copies = []
+    monkeypatch.setattr(module, "scp", lambda *args, **_kwargs: copies.append(args))
+    worker = {"name": "role-0-0", "host": "ssh.example", "ssh_user": "root"}
+    module.prepare_worker(
+        worker,
+        remote_root="/srv/fortress",
+        package=tmp_path / "output" / "roles" / "role-0-0",
+        recipient_key=tmp_path / "recipient.key",
+        tls=tmp_path / "tls",
+        host="192.0.2.1",
+        archive=b"archive",
+        skip_bootstrap=True,
+    )
+    tls_copy = copies[2]
+    assert [path.name for path in tls_copy[1]] == ["ca.crt", "role-0-0.crt", "role-0-0.key"]
+
+
 def test_worker_shutdown_collects_actual_exit_status(monkeypatch: pytest.MonkeyPatch) -> None:
     module = load_module()
     commands = []
