@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import dataclass
 from enum import Enum
@@ -171,13 +172,21 @@ def _seeded_uniform(seed: bytes, shape: tuple[int, ...]) -> torch.Tensor:
     )
 
 
+def seeded_share_seed(seed: bytes, index: int) -> bytes:
+    if len(seed) != 32 or index < 0:
+        raise ValueError("a 32-byte seed and nonnegative share index are required")
+    return hashlib.sha256(seed + b"xurcroh-weight-share" + index.to_bytes(4, "big")).digest()
+
+
 def seeded_split_secret(secret: torch.Tensor, *, seed: bytes, count: int) -> ShareGrid:
     if count < 2:
         raise ValueError("additive sharing requires at least two roles")
     if secret.dtype != torch.int64:
         raise ValueError("shared secrets must use int64")
     canonical = secret.remainder(RING_MODULUS)
-    shares = [_seeded_uniform(seed, secret.shape) for _ in range(count - 1)]
+    shares = [
+        _seeded_uniform(seeded_share_seed(seed, index), secret.shape) for index in range(count - 1)
+    ]
     shares.append((canonical - torch.sum(torch.stack(shares), dim=0)).remainder(RING_MODULUS))
     return ShareGrid(shares, ShareSecurity.COMPUTATIONAL)
 

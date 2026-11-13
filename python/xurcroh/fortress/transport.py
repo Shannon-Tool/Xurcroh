@@ -91,30 +91,48 @@ def _decode_bytes(value: Any) -> bytes:
 def encode_role_artifact(
     operation: CompiledOperation, weight_index: int, recipient_public: bytes
 ) -> bytes:
-    if weight_index not in operation.shares or weight_index not in operation.storage:
+    if weight_index not in operation.shares:
         raise ValueError("weight share is not present in the compiled operation")
     if len(recipient_public) != 32:
         raise ValueError("recipient public key must contain 32 bytes")
     share = operation.shares[weight_index]
-    stored = operation.storage[weight_index]
-    bundle = stored.bundle
     document = {
         "format": "xurcroh-fortress-role-v1",
         "weight_index": weight_index,
         "recipient_public": _encode_bytes(recipient_public),
         "provider_id": share.provider_id,
         "replica_provider_id": share.replica_provider_id,
-        "shape": list(stored.shape),
-        "storage": {
-            "threshold": bundle.threshold,
-            "nonce": _encode_bytes(bundle.nonce),
-            "aad": _encode_bytes(bundle.aad),
-            "slices": {str(index): _encode_bytes(value) for index, value in bundle.slices.items()},
-            "key_shares": {
-                str(index): _encode_bytes(value) for index, value in bundle.key_shares.items()
-            },
-        },
     }
+    if share.seed is not None:
+        document.update(
+            {
+                "format": "xurcroh-fortress-role-v2",
+                "shape": list(operation.quantized.values.shape),
+                "seed": _encode_bytes(share.seed),
+            }
+        )
+    else:
+        if weight_index not in operation.storage:
+            raise ValueError("stored weight share is not present in the compiled operation")
+        stored = operation.storage[weight_index]
+        bundle = stored.bundle
+        document.update(
+            {
+                "shape": list(stored.shape),
+                "storage": {
+                    "threshold": bundle.threshold,
+                    "nonce": _encode_bytes(bundle.nonce),
+                    "aad": _encode_bytes(bundle.aad),
+                    "slices": {
+                        str(index): _encode_bytes(value) for index, value in bundle.slices.items()
+                    },
+                    "key_shares": {
+                        str(index): _encode_bytes(value)
+                        for index, value in bundle.key_shares.items()
+                    },
+                },
+            }
+        )
     return json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
 
 
@@ -123,35 +141,49 @@ def decode_role_artifact(encoded: bytes) -> RoleArtifact:
         document = json.loads(encoded)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ProtocolError("role artifact is not valid JSON") from error
-    if not isinstance(document, dict) or document.get("format") != "xurcroh-fortress-role-v1":
+    if not isinstance(document, dict) or document.get("format") not in {
+        "xurcroh-fortress-role-v1",
+        "xurcroh-fortress-role-v2",
+    }:
         raise ProtocolError("unsupported Fortress role artifact")
     try:
         weight_index = int(document["weight_index"])
         shape = tuple(int(value) for value in document["shape"])
         recipient_public = _decode_bytes(document["recipient_public"])
-        storage_document = document["storage"]
-        bundle = DispersedShard(
-            threshold=int(storage_document["threshold"]),
-            nonce=_decode_bytes(storage_document["nonce"]),
-            aad=_decode_bytes(storage_document["aad"]),
-            slices={
-                int(index): _decode_bytes(value)
-                for index, value in storage_document["slices"].items()
-            },
-            key_shares={
-                int(index): _decode_bytes(value)
-                for index, value in storage_document["key_shares"].items()
-            },
-        )
     except (KeyError, TypeError, ValueError, AttributeError) as error:
         raise ProtocolError("role artifact fields are invalid") from error
     if len(shape) != 2 or any(value <= 0 for value in shape) or len(recipient_public) != 32:
         raise ProtocolError("role artifact dimensions or recipient are invalid")
-    plaintext = reconstruct_shard(bundle, bundle.slices, bundle.key_shares, lambda _: True)
-    expected_length = shape[0] * shape[1] * 8
-    if len(plaintext) != expected_length:
-        raise ProtocolError("role artifact weight length does not match its shape")
-    matrix = torch.frombuffer(bytearray(plaintext), dtype=torch.int64).reshape(shape).clone()
+    if document["format"] == "xurcroh-fortress-role-v2":
+        from xurcroh.fortress.arithmetic import _seeded_uniform
+
+        seed = _decode_bytes(document.get("seed"))
+        if len(seed) != 32:
+            raise ProtocolError("seed-expanded role artifact requires a 32-byte seed")
+        matrix = _seeded_uniform(seed, shape)
+    else:
+        try:
+            storage_document = document["storage"]
+            bundle = DispersedShard(
+                threshold=int(storage_document["threshold"]),
+                nonce=_decode_bytes(storage_document["nonce"]),
+                aad=_decode_bytes(storage_document["aad"]),
+                slices={
+                    int(index): _decode_bytes(value)
+                    for index, value in storage_document["slices"].items()
+                },
+                key_shares={
+                    int(index): _decode_bytes(value)
+                    for index, value in storage_document["key_shares"].items()
+                },
+            )
+        except (KeyError, TypeError, ValueError, AttributeError) as error:
+            raise ProtocolError("role artifact fields are invalid") from error
+        plaintext = reconstruct_shard(bundle, bundle.slices, bundle.key_shares, lambda _: True)
+        expected_length = shape[0] * shape[1] * 8
+        if len(plaintext) != expected_length:
+            raise ProtocolError("role artifact weight length does not match its shape")
+        matrix = torch.frombuffer(bytearray(plaintext), dtype=torch.int64).reshape(shape).clone()
     return RoleArtifact(
         weight_index=weight_index,
         recipient_public=recipient_public,

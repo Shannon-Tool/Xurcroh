@@ -184,8 +184,13 @@ pub fn split_matrix(secret: &Matrix, count: usize) -> Vec<Matrix> {
 
 pub fn seeded_split_matrix(secret: &Matrix, count: usize, seed: [u8; 32]) -> Vec<Matrix> {
     assert!(count >= 2, "{}", ArithmeticError::ShareCount);
+    let mut seed_rng = ChaCha20Rng::from_seed(seed);
     let mut shares = (0..count - 1)
-        .map(|_| Matrix::random(secret.rows, secret.cols, Some(seed)))
+        .map(|_| {
+            let mut share_seed = [0u8; 32];
+            seed_rng.fill_bytes(&mut share_seed);
+            Matrix::random(secret.rows, secret.cols, Some(share_seed))
+        })
         .collect::<Vec<_>>();
     let total = shares.iter().fold(
         Matrix::new(secret.rows, secret.cols, vec![0; secret.data.len()]).unwrap(),
