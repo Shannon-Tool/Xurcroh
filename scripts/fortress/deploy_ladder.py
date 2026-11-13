@@ -30,6 +30,9 @@ GIT = shutil.which("git")
 SSH = shutil.which("ssh")
 if GIT is None or SSH is None:
     raise RuntimeError("git and ssh are required for Fortress deployment")
+SSH_KEYSCAN = shutil.which("ssh-keyscan")
+if SSH_KEYSCAN is None:
+    raise RuntimeError("ssh-keyscan is required to pin worker host keys")
 
 
 def recipient_private_key(path: Path, expected_public_hex: str) -> bytes:
@@ -104,6 +107,33 @@ def source_revision() -> str:
     ).stdout.strip()
 
 
+def pin_host_key(worker: dict[str, Any], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.is_file():
+        result = subprocess.run(  # noqa: S603
+            [
+                SSH_KEYSCAN,
+                "-T",
+                "10",
+                "-p",
+                str(worker.get("ssh_port", 22)),
+                worker["host"],
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        keys = "\n".join(
+            line for line in result.stdout.splitlines() if line and not line.startswith("#")
+        )
+        if result.returncode != 0 or not keys:
+            raise RuntimeError("could not obtain the worker SSH host key")
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w") as handle:
+            handle.write(keys + "\n")
+    worker["known_hosts"] = str(path)
+
+
 def wait_for_ssh(worker: dict[str, Any], timeout: float = 900) -> None:
     deadline = time.monotonic() + timeout
     while True:
@@ -138,6 +168,7 @@ def prepare_worker(
     archive: bytes,
     skip_bootstrap: bool,
 ) -> None:
+    pin_host_key(worker, package.parent.parent / f"{worker['name']}.known_hosts")
     wait_for_ssh(worker)
     root = shlex.quote(remote_root)
     ssh(worker, f"rm -rf {root} && mkdir -p {root}/tls", input_data=None)
