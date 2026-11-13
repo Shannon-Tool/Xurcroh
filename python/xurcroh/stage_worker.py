@@ -32,6 +32,7 @@ class StageExecutionRequest(BaseModel):
     session_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     session_token: str = Field(min_length=44, max_length=44)
     client_public: str = Field(min_length=44, max_length=44)
+    handshake: str = Field(min_length=64, max_length=64)
     stage_index: int = Field(ge=0)
     dtype: Literal["f64", "f32", "f16", "bf16", "u8"] = "f64"
     shape: list[int] = Field(min_length=1, max_length=2)
@@ -261,7 +262,10 @@ def create_stage_app(
             cancelled[state_key] = event
         try:
             receiver, sender = stage.sessions.get_or_create(
-                request.session_id, request.client_public, request.session_token
+                request.session_id,
+                request.client_public,
+                request.session_token,
+                base64.b64decode(request.handshake, validate=True),
             )
             packet = base64.b64decode(request.packet, validate=True)
             if engine != "reference":

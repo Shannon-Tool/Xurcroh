@@ -1,8 +1,10 @@
 //! Cryptographic session primitives for Xurcroh.
 
+mod hpke_session;
 mod onion;
 mod session;
 
+pub use hpke_session::{open_session_master, seal_session_master, HpkeEnvelope};
 pub use onion::{seal_onion, unwrap_onion, HopPayload, OnionHop, OnionPacket};
 pub use session::{AeadSession, ReplayWindow, Sealed};
 

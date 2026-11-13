@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import secrets
 import threading
 import time
 import uuid
@@ -8,10 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import (
-    X25519PrivateKey,
-    X25519PublicKey,
-)
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from safetensors.torch import load, save
 
@@ -82,11 +80,16 @@ class ProtectedMediaSessionStore:
         for session_id in [key for key, value in self._sessions.items() if value.expires_at <= now]:
             self._sessions.pop(session_id, None)
 
-    def create(self, client_public: str) -> tuple[str, str]:
-        private = X25519PrivateKey.generate()
-        shared = private.exchange(decode_public(client_public))
+    def create(self, client_public: str) -> tuple[str, str, str]:
+        import xurcroh_quic
+
+        public = decode_public(client_public).public_bytes(Encoding.Raw, PublicFormat.Raw)
         session_id = f"media_{uuid.uuid4().hex}"
         context = session_id.encode()
+        master = secrets.token_bytes(32)
+        encapsulated, handshake = xurcroh_quic.hpke_seal_session_master(
+            public, b"xurcroh-media-hpke-v1", context, master
+        )
         with self._lock:
             self._prune()
             if len(self._sessions) >= self.capacity:
@@ -94,10 +97,14 @@ class ProtectedMediaSessionStore:
             self._sessions[session_id] = MediaSession(
                 session_id=session_id,
                 expires_at=time.monotonic() + self.ttl_seconds,
-                receiver=PipelineTensorInterceptor(shared, b"worker", b"client", context),
-                sender=PipelineTensorInterceptor(shared, b"worker", b"client", context),
+                receiver=PipelineTensorInterceptor(master, b"worker", b"client", context),
+                sender=PipelineTensorInterceptor(master, b"worker", b"client", context),
             )
-        return session_id, encode_public(private.public_key())
+        return (
+            session_id,
+            base64.b64encode(encapsulated).decode(),
+            base64.b64encode(handshake).decode(),
+        )
 
     def get(self, session_id: str) -> MediaSession:
         with self._lock:
@@ -125,8 +132,12 @@ def install_protected_media_routes(app: FastAPI, runtime: RuntimeService) -> Non
         public = values.get("client_public")
         if not isinstance(public, str):
             raise ProtocolError("client_public is required")
-        session_id, worker_public = store.create(public)
-        return {"session_id": session_id, "worker_public": worker_public}
+        session_id, encapsulated, handshake = store.create(public)
+        return {
+            "session_id": session_id,
+            "encapsulated_key": encapsulated,
+            "handshake": handshake,
+        }
 
     def execute_latent(values: dict[str, Any]) -> dict[str, str]:
         session = store.get(str(values.get("session_id", "")))

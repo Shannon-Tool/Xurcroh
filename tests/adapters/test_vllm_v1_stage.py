@@ -469,16 +469,19 @@ def test_vllm_request_drop_refreshes_persistent_batch_metadata() -> None:
 
 def test_stage_worker_scopes_state_and_authenticates_cancellation(tmp_path, monkeypatch) -> None:
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
     from fastapi.testclient import TestClient
 
-    from xurcroh.runtime.stage_sessions import StageSessionStore, encode_session_public
+    from xurcroh.runtime.stage_sessions import ClientStageSession, StageSessionStore
     from xurcroh.stage_worker import create_stage_app
 
     install_vllm_stubs(monkeypatch)
     stage_private = X25519PrivateKey.generate()
-    client_private = X25519PrivateKey.generate()
-    session_id = "a" * 32
-    session_token = base64.b64encode(bytes(range(32))).decode()
+    recipient_public = stage_private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    first_session = ClientStageSession(0, recipient_public)
+    second_session = ClientStageSession(0, recipient_public)
+    session_id = first_session.session_id
+    session_token = first_session.session_token
     dropped = []
 
     class Stage:
@@ -524,7 +527,8 @@ def test_stage_worker_scopes_state_and_authenticates_cancellation(tmp_path, monk
                 "request_id": "request",
                 "session_id": session_id,
                 "session_token": session_token,
-                "client_public": encode_session_public(client_private),
+                "client_public": first_session.client_public,
+                "handshake": base64.b64encode(first_session.handshake).decode(),
                 "stage_index": 0,
                 "dtype": "u8",
                 "shape": [1],
@@ -532,15 +536,16 @@ def test_stage_worker_scopes_state_and_authenticates_cancellation(tmp_path, monk
             },
         )
         assert response.status_code == 200
-        second_session_id = "b" * 32
-        second_token = base64.b64encode(bytes([1]) * 32).decode()
+        second_session_id = second_session.session_id
+        second_token = second_session.session_token
         second_response = client.post(
             "/v1/stages/execute",
             json={
                 "request_id": "request",
                 "session_id": second_session_id,
                 "session_token": second_token,
-                "client_public": encode_session_public(client_private),
+                "client_public": second_session.client_public,
+                "handshake": base64.b64encode(second_session.handshake).decode(),
                 "stage_index": 0,
                 "dtype": "u8",
                 "shape": [1],
@@ -673,6 +678,7 @@ def test_vllm_handoff_preserves_unfused_hidden(monkeypatch: pytest.MonkeyPatch) 
         session_id="session",
         session_token="token",
         client_public="client",
+        handshake=bytes(48),
         sender=object(),
         receiver=object(),
     )

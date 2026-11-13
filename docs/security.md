@@ -32,3 +32,8 @@ CPU tests cover cache/request cleanup, sealed memfds, nonce/binding failures, fi
 `xurcroh.fortress.prompt_armour` detects explicit credentials and email addresses locally and can run a token-classification model strictly from a local checkpoint with network loading disabled. Recognized spans are replaced with random-session placeholders and restored in generated text. Recognition coverage is model-dependent and is not a guarantee that every name or secret is found. Placeholder originals are held in wipeable bytearrays, but Python strings, caller-owned inputs, generated strings, and framework copies cannot be comprehensively zeroized by this API.
 
 `xurcroh.fortress.canary` mixes real and decoy call schedules and associates unique share canaries with their observer set. A trip means that a registered secret was observed by the trusted monitoring integration; it attributes the observer set and triggers revocation, but does not prove which observer disclosed it. The F0/M0 reports use a simulated external observation of an actually transmitted share, not an independent monitoring service or a public red-team result.
+
+
+## HPKE session establishment
+
+Interactive stage and protected-media sessions use RFC 9180 HPKE (`X25519HkdfSha256` with ChaCha20-Poly1305) to seal a fresh random session master. Stage HPKE associated data binds the session identifier and authentication token; media HPKE associated data binds the media session identifier. Directional AEAD keys, replay windows, and monotonic epoch rotation are derived only after that authenticated establishment. The legacy raw-X25519 session-exchange path has been removed. Offline shard recipient sealing is a separate artifact-custody mechanism, not this interactive handshake.

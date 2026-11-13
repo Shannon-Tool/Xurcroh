@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from xurcroh.errors import ProtocolError
 from xurcroh.fortress.arithmetic import RING_MODULUS
 from xurcroh.fortress.transport import decode_role_artifact, native_role_matrix
-from xurcroh.runtime.stage_sessions import StageSessionStore
+from xurcroh.runtime.stage_sessions import SESSION_ENVELOPE_BYTES, StageSessionStore
 
 MAX_ROLE_PACKET_BYTES = 16 * 1024 * 1024
 MAX_ACTIVATION_ELEMENTS = 1_048_576
@@ -135,14 +135,15 @@ class FortressRoleWorker:
                     or dtype != "u8"
                     or shape != [len(packet)]
                     or len(packet) > MAX_ROLE_PACKET_BYTES
-                    or len(packet) < 97
+                    or len(packet) <= SESSION_ENVELOPE_BYTES
                 ):
                     raise ProtocolError("Fortress role expects a bounded encrypted byte tensor")
                 client_public = base64.b64encode(packet[:32]).decode()
                 session_id = packet[32:64].decode()
                 session_token = packet[64:96]
+                handshake = packet[96:SESSION_ENVELOPE_BYTES]
                 receiver, sender = self.sessions.get_or_create(
-                    session_id, client_public, session_token
+                    session_id, client_public, session_token, handshake
                 )
                 state_key = f"{session_id}:{request_id.hex()}"
                 with self._lock:
@@ -150,7 +151,9 @@ class FortressRoleWorker:
                 activation = torch.empty(0, dtype=torch.int64)
                 exact_payload = bytearray()
                 try:
-                    result_dtype, result_shape, payload = receiver.open_tensor(packet[96:])
+                    result_dtype, result_shape, payload = receiver.open_tensor(
+                        packet[SESSION_ENVELOPE_BYTES:]
+                    )
                     if result_dtype != "u8" or result_shape != [len(payload)]:
                         raise ProtocolError("Fortress operation payload must be a byte vector")
                     name, activation = self._decode_activation(payload)

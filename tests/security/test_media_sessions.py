@@ -4,7 +4,9 @@ import base64
 
 import pytest
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+import xurcroh_quic
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
 
 from xurcroh.adapters.pipeline import PipelineTensorInterceptor
 from xurcroh.errors import ProtocolError
@@ -16,14 +18,24 @@ from xurcroh.runtime.media_sessions import (
 )
 
 
+def _client_master(
+    private: X25519PrivateKey, session_id: str, encapsulated: str, handshake: str
+) -> bytes:
+    return xurcroh_quic.hpke_open_session_master(
+        private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+        base64.b64decode(encapsulated),
+        base64.b64decode(handshake),
+        b"xurcroh-media-hpke-v1",
+        session_id.encode(),
+    )
+
+
 def test_media_session_authenticates_tensors_and_rejects_replay() -> None:
     client_private = X25519PrivateKey.generate()
     store = ProtectedMediaSessionStore()
-    session_id, worker_public = store.create(encode_public(client_private.public_key()))
-    shared = client_private.exchange(
-        X25519PublicKey.from_public_bytes(base64.b64decode(worker_public))
-    )
-    sender = PipelineTensorInterceptor(shared, b"client", b"worker", session_id.encode())
+    session_id, encapsulated, handshake = store.create(encode_public(client_private.public_key()))
+    master = _client_master(client_private, session_id, encapsulated, handshake)
+    sender = PipelineTensorInterceptor(master, b"client", b"worker", session_id.encode())
     session = store.get(session_id)
     packet = seal_tensors({"value": torch.tensor([1, 2, 3])}, "request-1", sender)
     assert open_tensors(packet, "request-1", session.receiver)["value"].tolist() == [1, 2, 3]
@@ -49,13 +61,11 @@ def test_media_session_capacity_fails_closed() -> None:
 def test_media_session_directions_use_distinct_keys_for_the_same_sequence() -> None:
     client_private = X25519PrivateKey.generate()
     store = ProtectedMediaSessionStore()
-    session_id, worker_public = store.create(encode_public(client_private.public_key()))
-    shared = client_private.exchange(
-        X25519PublicKey.from_public_bytes(base64.b64decode(worker_public))
-    )
+    session_id, encapsulated, handshake = store.create(encode_public(client_private.public_key()))
+    master = _client_master(client_private, session_id, encapsulated, handshake)
     context = session_id.encode()
-    client_sender = PipelineTensorInterceptor(shared, b"client", b"worker", context)
-    client_receiver = PipelineTensorInterceptor(shared, b"client", b"worker", context)
+    client_sender = PipelineTensorInterceptor(master, b"client", b"worker", context)
+    client_receiver = PipelineTensorInterceptor(master, b"client", b"worker", context)
     session = store.get(session_id)
 
     request = seal_tensors({"value": torch.tensor([1])}, "shared-request", client_sender)
