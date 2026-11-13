@@ -118,6 +118,7 @@ def test_offers_create_and_instance_responses_are_sanitized() -> None:
                     "instances": {
                         "id": 123,
                         "actual_status": "running",
+                        "status_msg": "image download in progress",
                         "ssh_host": "ssh.example",
                         "ssh_port": 2200,
                         "ports": {"9444/tcp": [{"HostPort": "54304"}]},
@@ -133,6 +134,7 @@ def test_offers_create_and_instance_responses_are_sanitized() -> None:
     assert client.create(offers[0], image="vllm:test", disk_gb=40, label="validation") == 123
     instance = client.instance(123)
     assert instance["ssh_host"] == "ssh.example"
+    assert instance["status_msg"] == "image download in progress"
     assert instance["ports"]["9444/tcp"][0]["HostPort"] == "54304"
     assert "jupyter_token" not in instance
     query = json.loads(requests[0].content)
