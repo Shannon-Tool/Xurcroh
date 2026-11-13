@@ -14,7 +14,7 @@ from xurcroh.fortress.ladder import verify_rung_evidence
 
 def test_ladder_cli_entry_points_execute_directly() -> None:
     root = Path(__file__).resolve().parents[2]
-    for name in ("run_ladder.py", "deploy_ladder.py", "cuda_baseline.py"):
+    for name in ("run_ladder.py", "deploy_ladder.py", "cuda_baseline.py", "grid_smoke.py"):
         result = subprocess.run(  # noqa: S603
             [sys.executable, str(root / "scripts/fortress" / name), "--help"],
             cwd=root,
