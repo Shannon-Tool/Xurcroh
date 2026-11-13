@@ -6,6 +6,12 @@ use rustls::{
 use xurcroh_protocol::{DataType, FrameKind, TensorFrame};
 use xurcroh_quic::{generate_self_signed, TensorClient, TensorServer};
 
+fn identity_directory() -> std::path::PathBuf {
+    static NEXT_IDENTITY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let sequence = NEXT_IDENTITY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    std::env::temp_dir().join(format!("xurcroh-mtls-{}-{sequence}", std::process::id()))
+}
+
 fn ca_signed_identity() -> (
     CertificateDer<'static>,
     CertificateDer<'static>,
@@ -31,7 +37,7 @@ leaf = (x509.CertificateBuilder().subject_name(x509.Name([x509.NameAttribute(Nam
 (root / "leaf.der").write_bytes(leaf.public_bytes(serialization.Encoding.DER))
 (root / "leaf-key.der").write_bytes(leaf_key.private_bytes(serialization.Encoding.DER, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
 "#;
-    let directory = std::env::temp_dir().join(format!("xurcroh-mtls-{}", std::process::id()));
+    let directory = identity_directory();
     let status = std::process::Command::new("python3")
         .arg("-c")
         .arg(script)
@@ -44,6 +50,13 @@ leaf = (x509.CertificateBuilder().subject_name(x509.Name([x509.NameAttribute(Nam
         std::fs::read(directory.join("leaf.der")).unwrap().into(),
         PrivatePkcs8KeyDer::from(std::fs::read(directory.join("leaf-key.der")).unwrap()),
     )
+}
+
+#[test]
+fn identity_directories_are_unique_per_identity() {
+    let paths: Vec<_> = (0..32).map(|_| identity_directory()).collect();
+    let unique: std::collections::HashSet<_> = paths.iter().collect();
+    assert_eq!(unique.len(), paths.len());
 }
 
 fn frame(sequence: u64) -> TensorFrame {
