@@ -27,5 +27,9 @@ ln -s "$first/.venv" "$second/.venv"
 rm -rf "$first/target"
 "$second/scripts/build-wheels.sh"
 diff -u <(cd "$first" && sha256sum dist/* | sort -k2) <(cd "$second" && sha256sum dist/* | sort -k2)
+if [[ -n "${XURCROH_REPRODUCIBLE_DIST:-}" ]]; then
+  mkdir -p "$XURCROH_REPRODUCIBLE_DIST"
+  cp -a "$first/dist/." "$XURCROH_REPRODUCIBLE_DIST/"
+fi
 echo "Reproducible wheel hashes match for $(git -C "$root" rev-parse HEAD)"
 (cd "$first" && sha256sum dist/* | sort -k2)
