@@ -52,10 +52,11 @@ def test_random_shares_reconstruct_and_refresh_without_changing_the_secret() -> 
 
 def test_seeded_shares_are_deterministic_and_computational_not_information_theoretic() -> None:
     secret = torch.arange(12, dtype=torch.int64).reshape(3, 4)
-    first = seeded_split_secret(secret, seed=bytes(range(32)), count=2)
-    second = seeded_split_secret(secret, seed=bytes(range(32)), count=2)
+    first = seeded_split_secret(secret, seed=bytes(range(32)), count=3)
+    second = seeded_split_secret(secret, seed=bytes(range(32)), count=3)
 
     assert torch.equal(combine_shares(first.shares), secret.remainder(2**32))
+    assert not torch.equal(first.shares[0], first.shares[1])
     assert all(
         torch.equal(left, right) for left, right in zip(first.shares, second.shares, strict=False)
     )

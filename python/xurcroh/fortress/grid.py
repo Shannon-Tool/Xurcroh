@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 
@@ -20,6 +20,7 @@ class WeightShare:
     challenge: ExactFreivaldsChallenge
     provider_id: str
     replica_provider_id: str | None = None
+    seed: bytes | None = field(default=None, repr=False)
 
 
 class RoleExecutionError(ValueError):

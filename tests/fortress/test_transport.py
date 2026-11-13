@@ -39,6 +39,28 @@ def test_role_artifact_reconstructs_only_its_own_weight_share() -> None:
     assert "challenge" not in document
 
 
+def test_seeded_role_artifact_expands_without_storing_the_weight_matrix() -> None:
+    operation = compile_operation(
+        torch.arange(48, dtype=torch.int64).reshape(6, 8),
+        threshold=2,
+        slice_count=3,
+        share_count=3,
+        seed=bytes(range(32)),
+        challenge_seed=19,
+    )
+    encoded = encode_role_artifact(operation, weight_index=0, recipient_public=bytes(range(32)))
+    document = json.loads(encoded)
+    assert document["format"] == "xurcroh-fortress-role-v2"
+    assert "storage" not in document
+    artifact = decode_role_artifact(encoded)
+    assert torch.equal(artifact.matrix, operation.shares[0].matrix)
+    final = json.loads(
+        encode_role_artifact(operation, weight_index=2, recipient_public=bytes(range(32)))
+    )
+    assert final["format"] == "xurcroh-fortress-role-v1"
+    assert "storage" in final
+
+
 def test_real_grid_transport_is_exact_and_isolates_duplicate_request_ids(
     mtls_identities: MutualTLSIdentities,
 ) -> None:

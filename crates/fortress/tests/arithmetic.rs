@@ -52,6 +52,10 @@ fn tampering_is_attributed_to_the_responsible_role() {
 #[test]
 fn seeded_shares_reconstruct_exactly() {
     let weight = Matrix::new(2, 2, vec![-8, 7, 3, -2]).unwrap();
-    let shares = seeded_split_matrix(&weight, 2, [9u8; 32]);
-    assert_eq!(shares[0].clone() + shares[1].clone(), weight);
+    let shares = seeded_split_matrix(&weight, 3, [9u8; 32]);
+    assert_eq!(
+        shares[0].clone() + shares[1].clone() + shares[2].clone(),
+        weight
+    );
+    assert_ne!(shares[0].data, shares[1].data);
 }

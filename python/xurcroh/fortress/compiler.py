@@ -99,11 +99,18 @@ def compile_operation(
                 0, PRIME_MODULUS, (matrix.shape[0],), generator=generator, dtype=torch.int64
             )
         challenge = freivalds_challenge(matrix, r=challenge_vector)
+        from xurcroh.fortress.arithmetic import seeded_share_seed
+
         shares[index] = WeightShare(
             weight_index=index,
             matrix=matrix if materialize_shares else None,
             challenge=challenge,
             provider_id=f"weight-share-{index}",
+            seed=(
+                seeded_share_seed(seed, index)
+                if seed is not None and index < share_count - 1
+                else None
+            ),
         )
         if materialize_shares:
             payload = matrix.detach().cpu().numpy().tobytes()
