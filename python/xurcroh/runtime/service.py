@@ -72,6 +72,7 @@ class RuntimeService:
         self._closed = False
         self._semaphores: dict[str, threading.BoundedSemaphore] = {}
         self._metrics = RuntimeMetrics()
+        self._fortress_metrics: dict[str, int] = {}
         if cluster.provision_workers:
             if cluster.controller_endpoint is None:
                 raise ConfigurationError("controller_endpoint is required for provisioning")
@@ -203,7 +204,12 @@ class RuntimeService:
             self._metrics.failed()
 
     def metrics(self) -> dict[str, int | float]:
-        return self._metrics.snapshot()
+        snapshot = self._metrics.snapshot()
+        snapshot.update(self._fortress_metrics)
+        for engine in self._engines.values():
+            if isinstance(engine, FortressEngine):
+                snapshot.update(engine.transport_metrics())
+        return snapshot
 
     def _metadata(
         self,
@@ -447,6 +453,9 @@ class RuntimeService:
             for handle in self._requests.values():
                 handle.cancelled.set()
             engines = list(self._engines.values())
+            for engine in engines:
+                if isinstance(engine, FortressEngine):
+                    self._fortress_metrics.update(engine.transport_metrics())
             self._engines.clear()
             self._requests.clear()
         for engine in engines:

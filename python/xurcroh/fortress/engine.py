@@ -263,6 +263,17 @@ class FortressEngine:
             finally:
                 self._combiner.drop_request(state_key)
 
+    def transport_metrics(self) -> dict[str, int]:
+        clients = list(self._clients.values())
+        return {
+            "fortress_role_requests": sum(client.request_count for client in clients),
+            "fortress_bytes_sent": sum(client.bytes_sent for client in clients),
+            "fortress_bytes_received": sum(client.bytes_received for client in clients),
+            "fortress_cover_requests": sum(client.cover_request_count for client in clients),
+            "fortress_cover_bytes_sent": sum(client.cover_bytes_sent for client in clients),
+            "fortress_cover_bytes_received": sum(client.cover_bytes_received for client in clients),
+        }
+
     def close(self) -> None:
         self._closed = True
         for client in self._clients.values():
