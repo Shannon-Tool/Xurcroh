@@ -19,4 +19,6 @@ mkdir -p "$OUT"
 "$PYTHON" -m pip wheel --no-deps --no-build-isolation . --wheel-dir "$OUT"
 "$PYTHON" -m maturin build --release \
   --manifest-path crates/transport/Cargo.toml --features python --out "$OUT"
+"$PYTHON" "$ROOT/scripts/normalize-wheel-sbom.py" \
+  --project-root "$ROOT" "$OUT"/xurcroh_quic-*.whl
 printf '%s\n' "$OUT"
