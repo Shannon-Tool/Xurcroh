@@ -11,7 +11,7 @@ if ! command -v cargo >/dev/null; then
     | sh -s -- -y --profile minimal --default-toolchain 1.99.1
   export PATH="$HOME/.cargo/bin:$PATH"
 fi
-"$PYTHON" -m venv "$VENV"
+"$PYTHON" -m venv --system-site-packages "$VENV"
 "$VENV/bin/pip" install --no-cache-dir -r requirements-cuda.lock maturin==1.16.0
 "$VENV/bin/pip" install --no-cache-dir --no-deps -e .
 VIRTUAL_ENV="$VENV" "$VENV/bin/maturin" develop --release --manifest-path crates/transport/Cargo.toml --features python

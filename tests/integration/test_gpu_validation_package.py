@@ -13,7 +13,7 @@ from cryptography import x509
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_cuda_package_is_pinned_and_isolated() -> None:
+def test_cuda_package_is_pinned_and_records_hardware() -> None:
     lock = (ROOT / "requirements-cuda.lock").read_text().splitlines()
     assert "torch==2.9.1" in lock
     assert "transformers==4.57.6" in lock
@@ -21,6 +21,7 @@ def test_cuda_package_is_pinned_and_isolated() -> None:
     assert "pytest==9.2.0" in lock
     assert "pytest-asyncio==1.4.1.post1" in lock
     bootstrap = (ROOT / "scripts/gpu/bootstrap.sh").read_text()
+    assert '"$PYTHON" -m venv --system-site-packages "$VENV"' in bootstrap
     assert 'VIRTUAL_ENV="$VENV" "$VENV/bin/maturin" develop' in bootstrap
     assert "export LD_LIBRARY_PATH=" in bootstrap
     assert "/usr/local/nvidia/lib64" in bootstrap
