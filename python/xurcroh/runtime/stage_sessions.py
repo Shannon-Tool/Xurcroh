@@ -9,11 +9,19 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+    PublicFormat,
+)
 
 from xurcroh.adapters.pipeline import PipelineTensorInterceptor
 from xurcroh.errors import ProtocolError
+
+HPKE_CIPHERTEXT_BYTES = 48
+SESSION_ENVELOPE_BYTES = 32 + 32 + 32 + HPKE_CIPHERTEXT_BYTES
 
 
 def encode_session_public(private: X25519PrivateKey) -> str:
@@ -25,13 +33,13 @@ def decode_session_public(value: str) -> bytes:
     try:
         public = base64.b64decode(value, validate=True)
     except ValueError as error:
-        raise ProtocolError("invalid stage-session public key") from error
+        raise ProtocolError("invalid stage-session encapsulated key") from error
     if len(public) != 32:
-        raise ProtocolError("stage-session public key must contain 32 bytes")
+        raise ProtocolError("stage-session encapsulated key must contain 32 bytes")
     return public
 
 
-def _token_digest(token: str | bytes) -> bytes:
+def _decode_token(token: str | bytes) -> bytes:
     if isinstance(token, str):
         try:
             token = base64.b64decode(token, validate=True)
@@ -39,27 +47,48 @@ def _token_digest(token: str | bytes) -> bytes:
             raise ProtocolError("invalid stage-session token") from error
     if len(token) != 32:
         raise ProtocolError("stage-session token must contain 32 bytes")
-    return hashlib.sha256(token).digest()
+    return token
+
+
+def _token_digest(token: str | bytes) -> bytes:
+    return hashlib.sha256(_decode_token(token)).digest()
 
 
 def _context(stage_index: int, session_id: str) -> bytes:
     return f"xurcroh-stage-{stage_index}-session-v2:{session_id}".encode()
 
 
+def _hpke_info(stage_index: int) -> bytes:
+    return f"xurcroh-stage-hpke-v1:{stage_index}".encode()
+
+
+def _hpke_associated_data(session_id: str, token: bytes) -> bytes:
+    return session_id.encode() + token
+
+
 class ClientStageSession:
     def __init__(self, stage_index: int, recipient_public: bytes) -> None:
+        import xurcroh_quic
+
         if len(recipient_public) != 32:
             raise ValueError("recipient public key must contain 32 bytes")
         self.stage_index = stage_index
         self.session_id = uuid.uuid4().hex
         self._token = secrets.token_bytes(32)
         self.session_token = base64.b64encode(self._token).decode()
-        self._private = X25519PrivateKey.generate()
-        self.client_public = encode_session_public(self._private)
-        shared = self._private.exchange(X25519PublicKey.from_public_bytes(recipient_public))
+        master = secrets.token_bytes(32)
+        associated_data = _hpke_associated_data(self.session_id, self._token)
+        self.handshake: bytes
+        encapsulated, self.handshake = xurcroh_quic.hpke_seal_session_master(
+            recipient_public,
+            _hpke_info(stage_index),
+            associated_data,
+            master,
+        )
+        self.client_public = base64.b64encode(encapsulated).decode()
         context = _context(stage_index, self.session_id)
-        self.sender = PipelineTensorInterceptor(shared, b"client", b"stage", context)
-        self.receiver = PipelineTensorInterceptor(shared, b"client", b"stage", context)
+        self.sender = PipelineTensorInterceptor(master, b"client", b"stage", context)
+        self.receiver = PipelineTensorInterceptor(master, b"client", b"stage", context)
 
     def auth_headers(self) -> dict[str, str]:
         return {
@@ -82,6 +111,7 @@ class ClientStageSession:
             decode_session_public(self.client_public)
             + self.session_id.encode()
             + self._token
+            + self.handshake
             + packet
         )
 
@@ -118,8 +148,14 @@ class StageSessionStore:
             self._sessions.pop(session_id, None)
 
     def get_or_create(
-        self, session_id: str, client_public: str, session_token: str | bytes
+        self,
+        session_id: str,
+        client_public: str,
+        session_token: str | bytes,
+        handshake: bytes,
     ) -> tuple[PipelineTensorInterceptor, PipelineTensorInterceptor]:
+        import xurcroh_quic
+
         if len(session_id) != 32:
             raise ProtocolError("invalid stage-session identifier")
         try:
@@ -127,7 +163,8 @@ class StageSessionStore:
         except ValueError as error:
             raise ProtocolError("invalid stage-session identifier") from error
         public = decode_session_public(client_public)
-        token_digest = _token_digest(session_token)
+        token = _decode_token(session_token)
+        token_digest = _token_digest(token)
         with self._lock:
             self._prune()
             existing = self._sessions.get(session_id)
@@ -140,14 +177,25 @@ class StageSessionStore:
                 return existing.receiver, existing.sender
             if len(self._sessions) >= self.capacity:
                 raise ProtocolError("stage-session capacity is exhausted")
-            shared = self._private.exchange(X25519PublicKey.from_public_bytes(public))
+            if len(handshake) != HPKE_CIPHERTEXT_BYTES:
+                raise ProtocolError("stage-session HPKE ciphertext is invalid")
+            recipient_private = self._private.private_bytes(
+                Encoding.Raw, PrivateFormat.Raw, NoEncryption()
+            )
+            master = xurcroh_quic.hpke_open_session_master(
+                recipient_private,
+                public,
+                handshake,
+                _hpke_info(self.stage_index),
+                _hpke_associated_data(session_id, token),
+            )
             context = _context(self.stage_index, session_id)
             session = _ServerSession(
                 expires_at=time.monotonic() + self.ttl_seconds,
                 client_public=public,
                 token_digest=token_digest,
-                receiver=PipelineTensorInterceptor(shared, b"stage", b"client", context),
-                sender=PipelineTensorInterceptor(shared, b"stage", b"client", context),
+                receiver=PipelineTensorInterceptor(master, b"stage", b"client", context),
+                sender=PipelineTensorInterceptor(master, b"stage", b"client", context),
             )
             self._sessions[session_id] = session
             return session.receiver, session.sender

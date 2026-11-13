@@ -14,7 +14,7 @@ def test_stage_session_directions_use_distinct_keys_for_the_same_sequence() -> N
     client = ClientStageSession(0, recipient_public)
     store = StageSessionStore(private, 0)
     receiver, sender = store.get_or_create(
-        client.session_id, client.client_public, client.session_token
+        client.session_id, client.client_public, client.session_token, client.handshake
     )
 
     request = client.sender.seal("shared-request", "u8", [4], b"data")
@@ -38,5 +38,6 @@ def test_native_session_envelope_carries_an_authentication_secret() -> None:
 
     packet = client.wire_packet(b"payload")
 
-    assert len(packet) == 32 + 32 + 32 + len(b"payload")
+    assert len(packet) == 32 + 32 + 32 + 48 + len(b"payload")
     assert packet[32:64] == client.session_id.encode()
+    assert packet[96:144] == client.handshake

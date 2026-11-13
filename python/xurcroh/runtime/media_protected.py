@@ -10,6 +10,11 @@ from typing import Any
 import httpx
 import torch
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+)
 
 from xurcroh.adapters.pipeline import PipelineTensorInterceptor
 from xurcroh.config import ModelDefinition, SecurityConfig, WorkerConfig
@@ -19,7 +24,7 @@ from xurcroh.runtime.attestation import RemoteAttestationClient
 from xurcroh.runtime.dit_stage import CompiledDiTClientBoundary
 from xurcroh.runtime.generation import check_request_health
 from xurcroh.runtime.media_boundary import DiffusionMediaBoundary
-from xurcroh.runtime.media_sessions import decode_public, encode_public, open_tensors, seal_tensors
+from xurcroh.runtime.media_sessions import encode_public, open_tensors, seal_tensors
 from xurcroh.runtime.remote import RemoteOpenAIEngine
 from xurcroh.types import (
     ExecutionMetadata,
@@ -108,6 +113,8 @@ class RemoteProtectedMediaEngine:
         started: float,
         timeout: float,
     ) -> torch.Tensor:
+        import xurcroh_quic
+
         private = X25519PrivateKey.generate()
         worker = self.workers[0]
         session_id: str | None = None
@@ -120,10 +127,16 @@ class RemoteProtectedMediaEngine:
             handshake.raise_for_status()
             session = handshake.json()
             session_id = session["session_id"]
-            shared = private.exchange(decode_public(session["worker_public"]))
+            master = xurcroh_quic.hpke_open_session_master(
+                private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                base64.b64decode(session["encapsulated_key"], validate=True),
+                base64.b64decode(session["handshake"], validate=True),
+                b"xurcroh-media-hpke-v1",
+                session_id.encode(),
+            )
             context = session_id.encode()
-            sender = PipelineTensorInterceptor(shared, b"client", b"worker", context)
-            receiver = PipelineTensorInterceptor(shared, b"client", b"worker", context)
+            sender = PipelineTensorInterceptor(master, b"client", b"worker", context)
+            receiver = PipelineTensorInterceptor(master, b"client", b"worker", context)
             response = self._client.post(
                 f"{self._endpoint(worker)}{path}",
                 json={

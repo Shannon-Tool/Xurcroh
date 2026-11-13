@@ -8,6 +8,7 @@ from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
+from xurcroh.runtime.stage_sessions import SESSION_ENVELOPE_BYTES
 from xurcroh.stage_worker import DenseStage, _decode_tensor, _encode_tensor
 
 
@@ -66,18 +67,19 @@ class NativeStageServer:
                     return
                 if kind != "tensor" or dtype != "u8" or shape != [len(packet)]:
                     raise ValueError("native stage expects a bounded byte tensor")
-                if len(packet) < 97:
+                if len(packet) <= SESSION_ENVELOPE_BYTES:
                     raise ValueError("native stage session envelope is truncated")
                 client_public = base64.b64encode(packet[:32]).decode()
                 session_id = packet[32:64].decode()
                 session_token = packet[64:96]
+                handshake = packet[96:SESSION_ENVELOPE_BYTES]
                 receiver, sender = self.stage.sessions.get_or_create(
-                    session_id, client_public, session_token
+                    session_id, client_public, session_token, handshake
                 )
                 state_key = f"{session_id}:{request_id.hex()}"
                 with self._lock:
                     self._session_requests.setdefault(session_id, set()).add(state_key)
-                hidden = _decode_tensor(packet[96:], receiver)
+                hidden = _decode_tensor(packet[SESSION_ENVELOPE_BYTES:], receiver)
                 output = self.stage.execute(hidden, request_id.hex(), state_key=state_key)
                 response, _ = _encode_tensor(output, request_id.hex(), sender)
                 connection.send(
