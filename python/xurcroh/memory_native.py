@@ -29,6 +29,11 @@ class NativeMemoryController:
         self.library.xurcroh_get_scrubbed_bytes.restype = ctypes.c_uint64
         self.library.xurcroh_get_scrub_calls.restype = ctypes.c_uint64
         self.library.xurcroh_launch_shared_scrub.argtypes = [ctypes.c_int, ctypes.c_void_p]
+        self.library.xurcroh_run_leftover_probe.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+        ]
         self.library.xurcroh_mask_words.argtypes = [
             ctypes.c_void_p,
             ctypes.c_size_t,
@@ -59,6 +64,23 @@ class NativeMemoryController:
         if status != 0:
             raise CompatibilityError(f"shared-memory scrub failed with CUDA status {status}")
         torch.cuda.synchronize(device)
+
+    def probe_shared_memory(self, device: int = 0) -> torch.Tensor:
+        properties = torch.cuda.get_device_properties(device)
+        words = (48 * 1024) // 4
+        output = torch.empty(
+            (properties.multi_processor_count, words), dtype=torch.int32, device=device
+        )
+        stream = torch.cuda.current_stream(device).cuda_stream
+        status = self.library.xurcroh_run_leftover_probe(
+            ctypes.c_void_p(output.data_ptr()),
+            properties.multi_processor_count,
+            ctypes.c_void_p(stream),
+        )
+        if status != 0:
+            raise CompatibilityError(f"shared-memory probe failed with CUDA status {status}")
+        torch.cuda.synchronize(device)
+        return output
 
     def mask_words(
         self, tensor: torch.Tensor, key: torch.Tensor, nonce: torch.Tensor, *, unmask: bool
