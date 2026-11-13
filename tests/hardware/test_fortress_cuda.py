@@ -17,6 +17,7 @@ def require_cuda() -> None:
     if shutil.which("nvcc") is None or shutil.which("nvidia-smi") is None:
         pytest.skip("CUDA compiler and GPU are required for Fortress CUDA validation")
     executable = shutil.which("nvidia-smi")
+    assert executable is not None
     result = subprocess.run(  # noqa: S603
         [executable, "--query-gpu=count", "--format=csv,noheader"],
         capture_output=True,
@@ -54,7 +55,7 @@ def _chacha_reference(key: list[int], nonce: bytes, count: int) -> list[int]:
         state[c] = (state[c] + state[d]) & 0xFFFFFFFF
         state[b] = rotate(state[b] ^ state[c], 7)
 
-    output = []
+    output: list[int] = []
     for block in range((count + 15) // 16):
         state = [
             0x61707865,
@@ -77,12 +78,22 @@ def _chacha_reference(key: list[int], nonce: bytes, count: int) -> list[int]:
     return output[:count]
 
 
-def test_field_kernel_matches_torch_single_product() -> None:
+@pytest.mark.parametrize(
+    "weight,activation",
+    [
+        (804968700, 3266489909),
+        (0, FIELD_MODULUS - 1),
+        (1, FIELD_MODULUS - 1),
+        (FIELD_MODULUS - 1, FIELD_MODULUS - 1),
+        (FIELD_MODULUS - 2, FIELD_MODULUS - 3),
+        (2**31 + 17, 2**31 + 19),
+        (65535, 65537),
+    ],
+)
+def test_field_kernel_matches_torch_single_product(weight: int, activation: int) -> None:
     require_cuda()
     root = Path(__file__).parents[2]
     controller = FortressNativeController(root / "native/build/xurcroh_burn_alloc.so")
-    weight = 804968700
-    activation = 3266489909
     torch_result = (
         torch.tensor(weight, dtype=torch.int64, device="cuda")
         * torch.tensor(activation, dtype=torch.int64, device="cuda")
