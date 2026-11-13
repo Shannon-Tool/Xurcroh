@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import base64
+import csv
 import hashlib
+import io
 import json
 import tomllib
 import uuid
 from pathlib import Path
 from typing import Any
+from zipfile import ZipFile
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -19,6 +23,58 @@ def _canonical(document: dict[str, Any]) -> bytes:
 
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _normalize_workspace(value: Any, project_root: str) -> Any:
+    if isinstance(value, dict):
+        return {key: _normalize_workspace(item, project_root) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_workspace(item, project_root) for item in value]
+    if isinstance(value, str):
+        return value.replace(project_root, "/workspace")
+    return value
+
+
+def normalize_wheel_sbom(wheel_path: str | Path, *, project_root: str | Path) -> None:
+    wheel = Path(wheel_path)
+    root = str(Path(project_root).resolve())
+    with ZipFile(wheel) as source:
+        entries = [(info, source.read(info.filename)) for info in source.infolist()]
+    payloads = {info.filename: payload for info, payload in entries}
+    for info, payload in entries:
+        if not info.filename.endswith(".cyclonedx.json"):
+            continue
+        document = json.loads(payload)
+        normalized = _normalize_workspace(document, root)
+        payloads[info.filename] = (json.dumps(normalized, indent=2, sort_keys=True) + "\n").encode()
+    record_names = [
+        info.filename for info, _ in entries if info.filename.endswith(".dist-info/RECORD")
+    ]
+    if len(record_names) != 1:
+        raise ValueError("native wheel must contain exactly one RECORD file")
+    record_name = record_names[0]
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    for info, _ in entries:
+        name = info.filename
+        if name == record_name:
+            writer.writerow((name, "", ""))
+            continue
+        payload = payloads[name]
+        digest = base64.urlsafe_b64encode(hashlib.sha256(payload).digest()).rstrip(b"=")
+        writer.writerow((name, f"sha256={digest.decode()}", len(payload)))
+    payloads[record_name] = output.getvalue().encode()
+    temporary = wheel.with_suffix(wheel.suffix + ".tmp")
+    try:
+        with ZipFile(temporary, "w") as destination:
+            for info, _ in entries:
+                destination.writestr(info, payloads[info.filename])
+        with ZipFile(temporary) as verification:
+            if verification.testzip() is not None:
+                raise ValueError("normalized native wheel failed ZIP integrity verification")
+        temporary.replace(wheel)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def generate_sbom(project_root: str | Path, output: str | Path) -> dict[str, Any]:
