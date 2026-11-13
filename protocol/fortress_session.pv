@@ -24,9 +24,9 @@ event ClientAccepted(master).
 
 free control: channel.
 free server_secret: secretkey [private].
-free client_label, stage_label: label [public].
-free epoch_zero, epoch_one: epoch [public].
-free session_id, session_token: bitstring [public].
+free client_label, stage_label: label.
+free epoch_zero, epoch_one: epoch.
+free session_id, session_token: bitstring.
 free activation_secret, response_secret: bitstring [private].
 
 query attacker(activation_secret).
