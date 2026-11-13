@@ -101,6 +101,10 @@ def test_public_sdk_executes_remote_fortress_grid(
         assert response.usage.completion_tokens == 1
         assert response.execution.engine == "fortress-grid"
         assert len(response.execution.worker_ids) == 4
+        metrics = client.metrics()
+        assert metrics["fortress_bytes_sent"] > 0
+        assert metrics["fortress_bytes_received"] > 0
+        assert metrics["fortress_role_requests"] > 0
     finally:
         for worker in workers:
             worker.close()
