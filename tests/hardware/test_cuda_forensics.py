@@ -25,7 +25,9 @@ def test_allocator_and_shared_scrubber() -> None:
     subprocess.run([str(root / "scripts/build-native.sh")], check=True)  # noqa: S603
     controller = NativeMemoryController(root / "native/build/xurcroh_burn_alloc.so")
     controller.scrub_shared_memory()
-    assert controller.telemetry()["scrub_calls"] >= 0
+    probe = controller.probe_shared_memory()
+    assert probe.numel() > 0
+    assert torch.count_nonzero(probe).item() == 0
 
 
 def test_chacha20_mask_round_trip() -> None:
