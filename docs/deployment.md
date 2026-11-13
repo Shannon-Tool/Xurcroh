@@ -1,6 +1,6 @@
 # Deployment and Operations
 
-Xurcroh is in the pre-GPU engineering phase. These files provide reproducible service packaging; they are not evidence of physical multi-GPU execution, production security acceptance, or measured hardware performance.
+Xurcroh is undergoing physical hardware validation. These files provide reproducible service packaging; packaging and scoped single-GPU results are not evidence of independent multi-host acceptance, production security acceptance, or measured production performance.
 
 ## Build
 
@@ -63,7 +63,7 @@ Start the controller with:
 4. Select nodes with the intended GPU and high-bandwidth topology. Keep tensor/expert groups within a high-bandwidth host group; use pipeline stages across independent hosts.
 5. Add an explicit ingress policy for the authorized client/controller networks. The supplied namespace-only policy intentionally denies other ingress by default.
 6. Configure attestation and strict encrypted-shard loading before treating workers as zero-trust stages. Merely running two copies of a plaintext checkpoint is not the Xurcroh zero-trust architecture.
-7. Run `docs/hardware-validation.md` and real numerical/security acceptance tests. No such result is included in this pre-GPU repository.
+7. Run `docs/hardware-validation.md` and real numerical/security acceptance tests. The repository does not include a completed independent multi-host production-acceptance result.
 
 Validate YAML locally with the deployment integration tests. `kubectl apply` is a Stage Two infrastructure action and has not been run.
 
