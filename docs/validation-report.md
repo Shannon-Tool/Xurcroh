@@ -29,11 +29,11 @@ The latest local suite at `e3c0ef979911d46a462f3efe1ca74b50c05b38d9` reports **3
 | Frontend interaction tests | **32 passed** |
 | Frontend typecheck, lint, production build, content validation | Passed; 22 sections, equations, links, and Mermaid syntax validated |
 | ProVerif model and protocol fuzzing | Passed in the hosted run above; newer runs are blocked before startup |
-| Clean reproducible wheel builds | Matched at `a2f5847887cb9954a037d58575d30158e1d878dd`; current hosted rebuild is billing-blocked |
+| Clean reproducible wheel builds | Matched at `e2a2b02bbf5aefbff87162856acffc36b250ebc9`; current hosted rebuild is billing-blocked |
 | `pip-audit` | No known vulnerabilities in audited dependencies |
 | `npm audit` | 0 vulnerabilities |
 
-`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The prior wheel comparison preserved Maturin's CycloneDX dependency inventory while normalizing checkout paths, compiler paths, file modes, ZIP encoding, and `RECORD`. Its cross-host SHA-256 values were `57a3e9c309ac80ed575eeedee09ea64d8cf13d2ff6b3f6ca3d3feb3a335cbaa0` for the Python wheel and `113652e94e084a89c0908a3dedc8a09ce843edd29258ce0c90eb85c93232b6c2` for the native wheel. This is automated cross-machine evidence, not second-party attestation.
+`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The prior wheel comparison preserved Maturin's CycloneDX dependency inventory while normalizing checkout paths, compiler paths, file modes, ZIP encoding, and `RECORD`. Its cross-host SHA-256 values were `57a3e9c309ac80ed575eeedee09ea64d8cf13d2ff6b3f6ca3d3feb3a335cbaa0` for the Python wheel and `113652e94e084a89c0908a3dedc8a09ce843edd29258ce0c90eb85c93232b6c2` for the native wheel. This is automated cross-machine evidence, not second-party attestation. The current local reproducibility run at `e2a2b02` produced matching SHA-256 values `103f9b590bae5cce535fe2efce1d33692c2662347ab391f9b7905bfbf549df70` (Python) and `e8ace861e23eea61bfbbed7f2f664da75a484778c4f928be661db56241387e2c` (native).
 
 Primary commands:
 
