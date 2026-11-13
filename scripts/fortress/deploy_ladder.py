@@ -104,6 +104,29 @@ def source_revision() -> str:
     ).stdout.strip()
 
 
+def wait_for_ssh(worker: dict[str, Any], timeout: float = 900) -> None:
+    deadline = time.monotonic() + timeout
+    while True:
+        result = subprocess.run(  # noqa: S603
+            [
+                SSH,
+                *options(worker),
+                f"{worker['ssh_user']}@{worker['host']}",
+                "true",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return
+        if "permission denied" in result.stderr.lower():
+            raise RuntimeError("SSH authentication failed")
+        if time.monotonic() >= deadline:
+            raise TimeoutError("SSH transport did not become ready")
+        time.sleep(5)
+
+
 def prepare_worker(
     worker: Any,
     *,
@@ -115,6 +138,7 @@ def prepare_worker(
     archive: bytes,
     skip_bootstrap: bool,
 ) -> None:
+    wait_for_ssh(worker)
     root = shlex.quote(remote_root)
     ssh(worker, f"rm -rf {root} && mkdir -p {root}/tls", input_data=None)
     ssh(worker, f"tar -xzf - -C {root}", input_data=archive)

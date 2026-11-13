@@ -77,4 +77,5 @@ def test_public_documentation_avoids_stale_internal_references() -> None:
     assert "docs/handoff.md" not in readme
     assert "docs/requirements/matrix.yaml" not in contributing
     assert "designed for defence in depth; claims under evaluation" in readme
-    assert "docs/roadmap.md" in contributing
+    assert "docs/architecture/decisions.md" in contributing
+    assert "AGENTS.md" not in contributing

@@ -7,9 +7,10 @@ The following programs define the hardware acceptance procedure. Scoped RTX 4090
 ```bash
 ./scripts/build-native.sh
 .venv/bin/pytest tests/hardware -q --runxfail
+PYTHON=/path/to/cuda/python ./scripts/fortress/cuda_forensics.sh
 ```
 
-The suite builds the allocator and ChaCha20 mask, exercises shared-memory scrubbing and mask/unmask round trips, and requires `nvcc` plus a CUDA device. Without those prerequisites it reports two explicit skips.
+The forensic script builds the native controls, runs all hardware tests, and then requires `compute-sanitizer --tool initcheck` over the native CUDA paths. Coverage includes exact ring matrix multiplication on small, irregular, and larger shapes; ChaCha20 comparison with a CPU reference; shared-memory scrub/probe behavior; zero-on-free telemetry; and allocation/reuse checks in an isolated process. Missing CUDA prerequisites produce explicit skips during ordinary CPU test runs, but the physical forensic gate fails rather than skipping.
 
 Validate separately:
 
@@ -72,3 +73,11 @@ Aggregate the SDK report, actual `hardware.json` files, provider ledger, and des
 ```
 
 A successful SDK report establishes hardware execution of that request path only. It does not establish MoE/media execution, complete side-channel resistance, numerical equivalence across every model, or production acceptance.
+
+## Fortress ladder automation
+
+`scripts/fortress/deploy_ladder.py` deploys a validated share-grid manifest using clean `git archive HEAD` source, per-role recipient keys, mutual TLS, and the real Fortress worker CLI. `scripts/fortress/run_ladder.py` additionally executes the public-SDK and numerical verifier, collects actual worker exit statuses, destroys provider resources, and writes signed evidence. It refuses incomplete numerical, attack, hardware, cost, or teardown evidence.
+
+Use `checkpoint_metadata()` from `python/xurcroh/fortress/checkpoints.py` to populate the immutable checkpoint fields. The client-held Fortress seed is supplied through `XURCROH_FORTRESS_SEED` or generated locally; it is never sent in a worker request or written into the signed public manifest. Keep recipient private keys, TLS private keys, signing keys, generated role packages, and SDK responses in trusted, access-controlled artifact directories.
+
+The Vast provisioner accepts `--uncapped` only as an explicit operator decision. Uncapped operation disables monetary thresholds but retains cost accounting, provider diversity, TTL watchdog teardown, and verified destruction. Existing capped defaults remain unchanged.

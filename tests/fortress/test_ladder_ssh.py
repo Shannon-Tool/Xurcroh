@@ -92,3 +92,24 @@ def test_hardware_validation_requires_a_reported_gpu_per_worker() -> None:
     reports[2]["gpus"] = []
     with pytest.raises(ValueError, match="hardware"):
         module.hardware_validated(reports, 4)
+
+
+def test_ssh_waits_for_transport_readiness(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_module()
+    results = iter(
+        [
+            type("Result", (), {"returncode": 255, "stderr": "Connection refused"})(),
+            type("Result", (), {"returncode": 0, "stderr": ""})(),
+        ]
+    )
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: next(results))
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
+    module.wait_for_ssh({"ssh_user": "root", "host": "192.0.2.1"}, timeout=60)
+
+
+def test_ssh_rejects_authentication_failure() -> None:
+    module = load_module()
+    result = type("Result", (), {"returncode": 255, "stderr": "Permission denied"})()
+    module.subprocess.run = lambda *args, **kwargs: result
+    with pytest.raises(RuntimeError, match="authentication"):
+        module.wait_for_ssh({"ssh_user": "root", "host": "192.0.2.1"}, timeout=60)
