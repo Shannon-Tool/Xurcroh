@@ -12,8 +12,8 @@ if ! command -v cargo >/dev/null; then
   export PATH="$HOME/.cargo/bin:$PATH"
 fi
 "$PYTHON" -m venv --system-site-packages "$VENV"
-"$VENV/bin/pip" install --no-cache-dir -r requirements-cuda.lock maturin==1.16.0
-"$VENV/bin/pip" install --no-cache-dir --no-deps -e .
+"$VENV/bin/pip" install --retries 10 --timeout 120 --no-cache-dir -r requirements-cuda.lock maturin==1.16.0
+"$VENV/bin/pip" install --retries 10 --timeout 120 --no-cache-dir --no-deps -e .
 VIRTUAL_ENV="$VENV" "$VENV/bin/maturin" develop --release --manifest-path crates/transport/Cargo.toml --features python
 "$VENV/bin/python" - <<'PY'
 import importlib.metadata
