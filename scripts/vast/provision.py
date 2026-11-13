@@ -26,6 +26,24 @@ def budget_policy(args: argparse.Namespace) -> BudgetPolicy:
     return BudgetPolicy(target_usd=args.target_usd, hard_limit_usd=args.hard_limit_usd)
 
 
+def eligible_offers(args: argparse.Namespace, offers: list[dict]) -> list[dict]:
+    excluded_drivers = getattr(args, "exclude_driver_prefix", [])
+    return [
+        offer
+        for offer in offers
+        if float(offer.get("gpu_ram", 0)) >= args.min_gpu_ram_gb * 1024
+        and float(offer.get("cpu_ram", 0)) >= args.min_host_ram_gb * 1024
+        and (
+            getattr(args, "driver_version", None) is None
+            or str(offer.get("driver_version")) == args.driver_version
+        )
+        and not any(
+            str(offer.get("driver_version") or "").startswith(prefix) for prefix in excluded_drivers
+        )
+        and float(offer["dph_total"]) <= args.max_hourly_usd
+    ]
+
+
 def watchdog(state: Path, ttl_seconds: float, policy: BudgetPolicy) -> None:
     store = StateStore(state)
     guard = BudgetGuard(store, policy)
@@ -67,17 +85,7 @@ def provision(args: argparse.Namespace) -> None:
     with VastClient() as client:
         client.refresh_charges(store)
         offers = client.offers(args.gpu_name, limit=args.offer_limit)
-        eligible = [
-            offer
-            for offer in offers
-            if float(offer.get("gpu_ram", 0)) >= args.min_gpu_ram_gb * 1024
-            and float(offer.get("cpu_ram", 0)) >= args.min_host_ram_gb * 1024
-            and (
-                getattr(args, "driver_version", None) is None
-                or str(offer.get("driver_version")) == args.driver_version
-            )
-            and float(offer["dph_total"]) <= args.max_hourly_usd
-        ]
+        eligible = eligible_offers(args, offers)
         selected, forecasts = select_diverse_offers(
             eligible,
             count=args.count,
@@ -133,17 +141,7 @@ def provision(args: argparse.Namespace) -> None:
                 if attempt == 2 or not isinstance(error, ProviderError):
                     raise
                 offers = client.offers(args.gpu_name, limit=args.offer_limit)
-                eligible = [
-                    offer
-                    for offer in offers
-                    if float(offer.get("gpu_ram", 0)) >= args.min_gpu_ram_gb * 1024
-                    and float(offer.get("cpu_ram", 0)) >= args.min_host_ram_gb * 1024
-                    and (
-                        getattr(args, "driver_version", None) is None
-                        or str(offer.get("driver_version")) == args.driver_version
-                    )
-                    and float(offer["dph_total"]) <= args.max_hourly_usd
-                ]
+                eligible = eligible_offers(args, offers)
                 selected, forecasts = select_diverse_offers(
                     eligible,
                     count=args.count,
@@ -210,6 +208,7 @@ def main() -> None:
     parser.add_argument("--max-provider-fraction", type=float, default=0.5)
     parser.add_argument("--gpu-name")
     parser.add_argument("--driver-version")
+    parser.add_argument("--exclude-driver-prefix", action="append", default=[])
     parser.add_argument("--min-gpu-ram-gb", type=float, default=12)
     parser.add_argument("--min-host-ram-gb", type=float, default=0)
     parser.add_argument("--offer-limit", type=int, default=200)
