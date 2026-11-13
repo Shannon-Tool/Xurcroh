@@ -9,7 +9,7 @@ import tomllib
 import uuid
 from pathlib import Path
 from typing import Any
-from zipfile import ZipFile
+from zipfile import ZIP_STORED, ZipFile
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -68,6 +68,7 @@ def normalize_wheel_sbom(wheel_path: str | Path, *, project_root: str | Path) ->
     try:
         with ZipFile(temporary, "w") as destination:
             for info, _ in entries:
+                info.compress_type = ZIP_STORED
                 destination.writestr(info, payloads[info.filename])
         with ZipFile(temporary) as verification:
             if verification.testzip() is not None:

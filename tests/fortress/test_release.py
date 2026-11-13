@@ -80,6 +80,7 @@ def test_wheel_sbom_workspace_paths_are_reproducible(tmp_path: Path) -> None:
 
     assert wheels[0].read_bytes() == wheels[1].read_bytes()
     with ZipFile(wheels[0]) as wheel:
+        assert all(info.compress_type == 0 for info in wheel.infolist())
         sbom_name = next(name for name in wheel.namelist() if name.endswith(".cyclonedx.json"))
         sbom = json.loads(wheel.read(sbom_name))
         assert sbom["metadata"]["component"]["bom-ref"].startswith(
@@ -101,3 +102,4 @@ def test_wheel_sbom_workspace_paths_are_reproducible(tmp_path: Path) -> None:
 def test_native_wheel_build_normalizes_sbom_paths() -> None:
     script = Path("scripts/build-wheels.sh").read_text()
     assert "scripts/normalize-wheel-sbom.py" in script
+    assert '"$OUT"/*.whl' in script
