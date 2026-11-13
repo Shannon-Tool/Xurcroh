@@ -457,7 +457,8 @@ def test_provision_preserves_offer_diversity_metadata(
         def refresh_charges(self, store):
             return {}
 
-        def offers(self, gpu_name):
+        def offers(self, gpu_name, limit=0):
+            FakeClient.offer_limit = limit
             return [selected_offer]
 
         def create(self, offer, **kwargs):
@@ -510,6 +511,7 @@ def test_provision_preserves_offer_diversity_metadata(
             "gpu_name": None,
             "min_gpu_ram_gb": 1,
             "min_host_ram_gb": 0,
+            "offer_limit": 200,
             "max_hourly_usd": 10,
             "planned_hours": 1,
             "disk_gb": 40,
@@ -530,6 +532,7 @@ def test_provision_preserves_offer_diversity_metadata(
     assert stored["provider_id"] == "provider-a"
     assert stored["geolocation"] == "de"
     assert stored["cpu_vendor"] == "amd"
+    assert module.VastClient.offer_limit == 200
 
 
 def test_register_ssh_key_uses_only_public_key() -> None:

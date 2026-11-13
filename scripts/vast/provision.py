@@ -66,7 +66,7 @@ def provision(args: argparse.Namespace) -> None:
         )
     with VastClient() as client:
         client.refresh_charges(store)
-        offers = client.offers(args.gpu_name)
+        offers = client.offers(args.gpu_name, limit=args.offer_limit)
         eligible = [
             offer
             for offer in offers
@@ -128,7 +128,7 @@ def provision(args: argparse.Namespace) -> None:
                 client.destroy_tracked(store, guard)
                 if attempt == 2 or not isinstance(error, ProviderError):
                     raise
-                offers = client.offers(args.gpu_name)
+                offers = client.offers(args.gpu_name, limit=args.offer_limit)
                 eligible = [
                     offer
                     for offer in offers
@@ -203,6 +203,7 @@ def main() -> None:
     parser.add_argument("--gpu-name")
     parser.add_argument("--min-gpu-ram-gb", type=float, default=12)
     parser.add_argument("--min-host-ram-gb", type=float, default=0)
+    parser.add_argument("--offer-limit", type=int, default=200)
     parser.add_argument("--max-hourly-usd", type=float, default=0.75)
     parser.add_argument("--disk-gb", type=float, default=40)
     parser.add_argument("--planned-hours", type=float, default=1.0)
