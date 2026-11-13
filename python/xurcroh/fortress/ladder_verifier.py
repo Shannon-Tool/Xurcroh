@@ -41,6 +41,8 @@ def _roles(cluster: list[dict[str, Any]]) -> list[RoleEndpoint]:
 
 def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
     rung = LadderRung.from_mapping(deployment["rung"])
+    if rung.modality in {"image", "video"}:
+        return _verify_media(deployment, rung)
     if rung.modality not in {"text", "vlm"}:
         raise CapabilityError("this verifier currently accepts text and VLM text-boundary rungs")
     sdk = deployment["sdk"]
@@ -128,4 +130,131 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
             "response": response.model_dump(mode="json"),
             "metrics": metrics,
         },
+    }
+
+
+def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any]:
+    import inspect
+
+    from xurcroh.config import ModelDefinition
+    from xurcroh.fortress.diffusers_loader import compile_diffusers_component
+    from xurcroh.fortress.module import replace_linear_layers
+    from xurcroh.requests import ImageGenerationRequest, VideoGenerationRequest
+    from xurcroh.runtime.media_boundary import DiffusionMediaBoundary
+
+    sdk = deployment["sdk"]
+    definition = ModelDefinition.model_validate(sdk["model_path"][rung.model])
+    component = str(
+        deployment["rung"].get(
+            "diffusion_component",
+            "transformer" if (Path(definition.path) / "transformer").is_dir() else "unet",
+        )
+    )
+    started = time.perf_counter()
+    operations = compile_diffusers_component(
+        definition.path,
+        component=component,
+        seed=definition.fortress_seed,
+        share_count=rung.share_count,
+    )
+    cluster = sdk["cluster"]
+    identity = _identity(cluster)
+    roles = _roles(cluster)
+    clients = {
+        name: FortressRoleClient(operation, roles, identity, operation_name=name)
+        for name, operation in operations.items()
+    }
+
+    def boundary(grid: dict[str, FortressRoleClient] | None) -> Any:
+        result = DiffusionMediaBoundary.from_definition(definition)
+        module = getattr(result.pipeline, component)
+        replace_linear_layers(module, operations, grid_clients=grid)
+        return result
+
+    try:
+        local = boundary(None)
+        remote = boundary(clients)
+        original = DiffusionMediaBoundary.from_definition(definition)
+        common: dict[str, Any] = {
+            "model": rung.model,
+            "prompt": "a small red square",
+            "steps": 1,
+            "seed": 11,
+            "size": "64x64",
+        }
+        width, height = (int(value) for value in str(common["size"]).split("x"))
+        request: ImageGenerationRequest | VideoGenerationRequest
+        if rung.modality == "image":
+            request = ImageGenerationRequest(**common)
+            parameters = {
+                "prompt": request.prompt,
+                "width": width,
+                "height": height,
+                "num_inference_steps": 1,
+                "output_type": "latent",
+            }
+        else:
+            request = VideoGenerationRequest(**common, frames=4, fps=4)
+            parameters = {
+                "prompt": request.prompt,
+                "width": width,
+                "height": height,
+                "num_frames": 4,
+                "fps": 4,
+                "num_inference_steps": 1,
+                "output_type": "latent",
+            }
+
+        supports_latent_decode = hasattr(original.pipeline, "decode_latents") or hasattr(
+            original.pipeline, "vae"
+        )
+        if not supports_latent_decode:
+            parameters["output_type"] = "pt"
+
+        def generate(pipeline: Any) -> torch.Tensor:
+            signature = inspect.signature(pipeline.__call__).parameters
+            selected = {key: value for key, value in parameters.items() if key in signature}
+            selected["generator"] = torch.Generator().manual_seed(11)
+            result = pipeline(**selected)
+            values = (
+                getattr(result, "images", None)
+                if rung.modality == "image"
+                else getattr(result, "frames", None)
+            )
+            if not isinstance(values, torch.Tensor):
+                raise CapabilityError("media pipeline did not return a latent tensor")
+            return values
+
+        expected = generate(local.pipeline)
+        actual = generate(remote.pipeline)
+        original_values = generate(original.pipeline)
+        quantized_error = float((actual - expected).abs().max())
+        original_error = float((expected - original_values).abs().max())
+        from xurcroh.fortress.attacks import exercise_adversarial_grid
+
+        adversarial = exercise_adversarial_grid(clients, roles, operations)
+    finally:
+        for role_client in clients.values():
+            role_client.close()
+    direct_sent = sum(client.bytes_sent for client in clients.values())
+    direct_received = sum(client.bytes_received for client in clients.values())
+    from Xurcroh import Xurcroh
+
+    response: Any
+    with Xurcroh(**sdk) as client:
+        if rung.modality == "image":
+            response = client.images.generate(**common)
+        else:
+            response = client.videos.generate(**common, frames=4, fps=4)
+        metrics = client.metrics()
+    return {
+        "hardware_validated": deployment.get("hardware_validated", False),
+        "production_accepted": False,
+        "quantized_reference_max_abs_error": quantized_error,
+        "original_model_max_abs_error": original_error,
+        "bytes_sent": direct_sent + int(metrics.get("fortress_bytes_sent", 0)),
+        "bytes_received": direct_received + int(metrics.get("fortress_bytes_received", 0)),
+        "inference_seconds": time.perf_counter() - started,
+        **adversarial,
+        "sdk": {"response": response.model_dump(mode="json"), "metrics": metrics},
     }

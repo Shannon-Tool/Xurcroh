@@ -107,9 +107,9 @@ def test_ssh_waits_for_transport_readiness(monkeypatch: pytest.MonkeyPatch) -> N
     module.wait_for_ssh({"ssh_user": "root", "host": "192.0.2.1"}, timeout=60)
 
 
-def test_ssh_rejects_authentication_failure() -> None:
+def test_ssh_rejects_authentication_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     module = load_module()
     result = type("Result", (), {"returncode": 255, "stderr": "Permission denied"})()
-    module.subprocess.run = lambda *args, **kwargs: result
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: result)
     with pytest.raises(RuntimeError, match="authentication"):
         module.wait_for_ssh({"ssh_user": "root", "host": "192.0.2.1"}, timeout=60)
