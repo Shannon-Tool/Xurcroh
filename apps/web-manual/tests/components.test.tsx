@@ -87,3 +87,34 @@ describe("interactive manual", () => {
     expect(results.violations).toHaveLength(0);
   });
 });
+
+
+describe("Fortress laboratories", () => {
+  it("rejects a tampered share-grid role and preserves exact output", async () => {
+    const { ShareGridLab } = await import("@/components/labs/ShareGridLab");
+    render(<ShareGridLab />);
+    expect(screen.getByText("19, 43")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Tamper role (0,0)" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("role 0:0");
+    fireEvent.click(screen.getByRole("button", { name: "Step forward" }));
+    expect(screen.getByText("Role (0,1) exact signed product")).toBeInTheDocument();
+  });
+
+  it("rejects a modified Freivalds product and validates challenge input", async () => {
+    const { FreivaldsLab } = await import("@/components/labs/FreivaldsLab");
+    render(<FreivaldsLab />);
+    expect(screen.getByText("accepted")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Add one to the first product" }));
+    expect(screen.getByText("rejected")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Challenge vector r"), { target: { value: "invalid" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter two nonnegative safe integers");
+  });
+
+  it("reshuffles actual operation placement", async () => {
+    const { PlacementLab } = await import("@/components/labs/PlacementLab");
+    render(<PlacementLab />);
+    expect(screen.getByText(/Current epoch:/)).toHaveTextContent("Current epoch: 0; assignments: 16");
+    fireEvent.click(screen.getByRole("button", { name: "Reshuffle" }));
+    expect(screen.getByText(/Current epoch:/)).toHaveTextContent("Current epoch: 1; assignments: 16");
+  });
+});

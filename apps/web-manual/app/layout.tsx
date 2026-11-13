@@ -25,6 +25,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <aside className="sidebar" aria-label="Manual navigation">
             <Search />
             <nav>
+              <Link href="/laboratory" className="nav-link"><span className="nav-number">↳</span><span>Mounted laboratory</span></Link>
               {sections.map((section, index) => (
                 <Link key={section.slug} href={`/${section.slug}`} className="nav-link">
                   <span className="nav-number">{String(index + 1).padStart(2, "0")}</span>
