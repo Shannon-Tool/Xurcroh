@@ -53,6 +53,8 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
         definition["path"],
         seed=definition["fortress_seed"],
         share_count=rung.share_count,
+        materialize_shares=False,
+        load_model=False,
     )
     cluster = sdk["cluster"]
     identity = _identity(cluster)
@@ -100,6 +102,7 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
         with torch.inference_mode():
             original_logits = original(input_ids=input_ids).logits[0, -1].to(torch.float64)
         original_error = float((quantized_logits - original_logits).abs().max())
+        del original
         from xurcroh.fortress.attacks import exercise_adversarial_grid
 
         adversarial = exercise_adversarial_grid(clients, roles, compiled.operations)
@@ -172,7 +175,9 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
         nonlocal phase_started
         now = time.perf_counter()
         phase_times[name] = now - phase_started
-        logging.getLogger(__name__).info("Fortress media phase %s took %.3fs", name, now - phase_started)
+        logging.getLogger(__name__).info(
+            "Fortress media phase %s took %.3fs", name, now - phase_started
+        )
         phase_started = now
 
     phase("compile_and_connect")
@@ -188,13 +193,17 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
         remote = boundary(clients)
         original = DiffusionMediaBoundary.from_definition(definition)
         phase("load_boundaries")
+        verification = deployment["rung"].get("verification", {})
         common: dict[str, Any] = {
             "model": rung.model,
             "prompt": "a small red square",
-            "steps": 1,
+            "steps": int(verification.get("steps", 1)),
             "seed": 11,
-            "size": "64x64",
+            "size": str(verification.get("size", "64x64")),
+            "timeout": float(verification.get("timeout", 3600)),
         }
+        frames = int(verification.get("frames", 4))
+        fps = int(verification.get("fps", 4))
         width, height = (int(value) for value in str(common["size"]).split("x"))
         request: ImageGenerationRequest | VideoGenerationRequest
         if rung.modality == "image":
@@ -203,18 +212,18 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
                 "prompt": request.prompt,
                 "width": width,
                 "height": height,
-                "num_inference_steps": 1,
+                "num_inference_steps": request.steps,
                 "output_type": "latent",
             }
         else:
-            request = VideoGenerationRequest(**common, frames=4, fps=4)
+            request = VideoGenerationRequest(**common, frames=frames, fps=fps)
             parameters = {
                 "prompt": request.prompt,
                 "width": width,
                 "height": height,
-                "num_frames": 4,
-                "fps": 4,
-                "num_inference_steps": 1,
+                "num_frames": frames,
+                "fps": fps,
+                "num_inference_steps": request.steps,
                 "output_type": "latent",
             }
 
@@ -262,7 +271,7 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
         if rung.modality == "image":
             response = client.images.generate(**common)
         else:
-            response = client.videos.generate(**common, frames=4, fps=4)
+            response = client.videos.generate(**common, frames=frames, fps=fps)
         metrics = client.metrics()
     phase("public_sdk")
     return {

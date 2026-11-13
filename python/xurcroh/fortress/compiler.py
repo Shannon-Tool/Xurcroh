@@ -127,6 +127,26 @@ def compile_operation(
     )
 
 
+def materialize_weight_shares(operation: CompiledOperation) -> list[torch.Tensor]:
+    from xurcroh.fortress.arithmetic import _seeded_uniform
+
+    matrices: list[torch.Tensor] = []
+    for index, share in sorted(operation.shares.items()):
+        if share.matrix is not None:
+            matrix = share.matrix
+        elif share.seed is not None:
+            matrix = _seeded_uniform(share.seed, tuple(operation.quantized.values.shape))
+        elif index == len(operation.shares) - 1:
+            total = torch.sum(torch.stack(matrices), dim=0)
+            matrix = (
+                operation.quantized.values.to(torch.int64).remainder(RING_MODULUS) - total
+            ).remainder(RING_MODULUS)
+        else:
+            raise ValueError("non-final weight share has neither a matrix nor a seed")
+        matrices.append(matrix)
+    return matrices
+
+
 def reap_prune_experts(
     experts: Mapping[str, torch.Tensor],
     saliency_scores: Mapping[str, float],

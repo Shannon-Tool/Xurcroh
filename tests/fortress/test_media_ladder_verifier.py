@@ -136,11 +136,15 @@ def test_video_ladder_verifier_compares_latents_and_public_sdk(
     )
     pipeline.save_pretrained(tmp_path / "video-model")
     mutable = manifest_mapping()
-    mutable.update({"model": "tiny-video", "modality": "video"})
-    rung = LadderRung.from_mapping(mutable)
-    operations = compile_diffusers_component(
-        tmp_path / "video-model", component="unet", seed=731
+    mutable.update(
+        {
+            "model": "tiny-video",
+            "modality": "video",
+            "verification": {"size": "32x32", "frames": 2, "fps": 2},
+        }
     )
+    rung = LadderRung.from_mapping(mutable)
+    operations = compile_diffusers_component(tmp_path / "video-model", component="unet", seed=731)
     workers: list[FortressRoleWorker] = []
     try:
         for index, placement in enumerate(rung.workers):
