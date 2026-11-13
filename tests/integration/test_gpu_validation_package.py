@@ -18,6 +18,7 @@ def test_cuda_package_is_pinned_and_isolated() -> None:
     assert "torch==2.9.1" in lock
     assert "transformers==4.57.6" in lock
     assert "vllm==0.15.0" in lock
+    assert "pytest==9.2.0" in lock
     bootstrap = (ROOT / "scripts/gpu/bootstrap.sh").read_text()
     assert 'VIRTUAL_ENV="$VENV" "$VENV/bin/maturin" develop' in bootstrap
     assert "export LD_LIBRARY_PATH=" in bootstrap
