@@ -6,6 +6,7 @@ from typing import Any
 import torch
 
 from xurcroh.fortress.arithmetic import combine_shares
+from xurcroh.fortress.compiler import materialize_weight_shares as _materialize_weight_shares
 
 
 @dataclass(frozen=True)
@@ -126,7 +127,7 @@ def exercise_adversarial_grid(
     attack = evaluate_share_reconstruction(
         operation.quantized.values,
         torch.arange(features, dtype=torch.int64),
-        [share.matrix for share in operation.shares.values()],
+        _materialize_weight_shares(operation),
         real_shares,
     )
     observations = clients[name].timing_observations

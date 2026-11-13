@@ -26,6 +26,22 @@ def test_compiler_quantizes_shares_and_disperses_every_weight_share() -> None:
     assert torch.equal(combined, compiled.quantized.values.remainder(2**32))
 
 
+def test_metadata_only_shares_can_be_reconstructed_for_client_attacks() -> None:
+    from xurcroh.fortress import compiler
+
+    operation = compile_operation(
+        torch.arange(24, dtype=torch.int64).reshape(4, 6),
+        threshold=2,
+        slice_count=3,
+        share_count=3,
+        seed=bytes(range(32)),
+        materialize_shares=False,
+    )
+    shares = compiler.materialize_weight_shares(operation)
+    assert all(share.dtype == torch.int64 for share in shares)
+    assert torch.equal(combine_shares(shares), operation.quantized.values.remainder(2**32))
+
+
 def test_reap_pruning_precedes_compilation() -> None:
     experts = {
         "expert-0": torch.ones(2, 2, dtype=torch.int64),

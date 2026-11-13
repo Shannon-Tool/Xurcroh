@@ -128,6 +128,7 @@ def compile_fortress_checkpoint(
     share_count: int = 2,
     materialize_shares: bool = True,
     model_dtype: torch.dtype | None = None,
+    load_model: bool = True,
 ) -> FortressCheckpoint:
     reader = CheckpointReader(Path(checkpoint))
     config = _text_config(reader)
@@ -282,7 +283,7 @@ def compile_fortress_checkpoint(
     from transformers.models.auto.configuration_auto import CONFIG_MAPPING
 
     model = None
-    if reader.config.get("model_type") in CONFIG_MAPPING:
+    if load_model and reader.config.get("model_type") in CONFIG_MAPPING:
         loader = (
             AutoModelForMultimodalLM
             if reader.config.get("model_type") in {"gemma4", "qwen3_5"}

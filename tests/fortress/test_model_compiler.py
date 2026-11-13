@@ -69,6 +69,16 @@ def test_remote_model_uses_fp32_and_shares_boundary_storage(tiny_llama_path: Pat
     assert compiled.model.get_output_embeddings().weight.data_ptr() == compiled.lm_head.data_ptr()
 
 
+def test_reference_compilation_can_omit_the_official_model(tiny_llama_path: Path) -> None:
+    compiled = compile_fortress_checkpoint(
+        tiny_llama_path, seed=731, materialize_shares=False, load_model=False
+    )
+    assert compiled.model is None
+    hidden = torch.tensor([[0.1, -0.2, 0.3, 0.4] * 4], dtype=torch.float64)
+    reference = compiled.combiner().reference_forward(hidden)
+    assert reference.shape == hidden.shape
+
+
 def test_checkpoint_compiles_and_executes_three_way_shares(tiny_llama_path: Path) -> None:
     compiled = compile_fortress_checkpoint(tiny_llama_path, seed=731, share_count=3)
     assert all(len(operation.shares) == 3 for operation in compiled.operations.values())
