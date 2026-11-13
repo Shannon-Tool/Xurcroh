@@ -77,6 +77,12 @@ class FortressRoleWorker:
         self._cuda_controller: Any = None
         self._cuda_weights: dict[str, torch.Tensor] = {}
         if device == "cuda":
+            from xurcroh.fortress.cuda_driver import (
+                collect_driver_diagnostics,
+                require_compatible_driver,
+            )
+
+            require_compatible_driver(collect_driver_diagnostics())
             if not torch.cuda.is_available():
                 raise ValueError("Fortress CUDA worker requires an available CUDA device")
             from xurcroh.fortress.native import FortressNativeController
