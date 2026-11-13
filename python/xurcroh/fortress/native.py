@@ -9,6 +9,10 @@ from xurcroh.fortress.arithmetic import FIELD_MODULUS
 
 
 class FortressNativeController:
+    @staticmethod
+    def _canonical_field_words(words: torch.Tensor) -> torch.Tensor:
+        return words.to(torch.int64).remainder(2**32).remainder(FIELD_MODULUS)
+
     def __init__(self, library: str | Path) -> None:
         self._library = ctypes.CDLL(str(library))
         self._u32 = ctypes.POINTER(ctypes.c_uint32)
@@ -85,7 +89,7 @@ class FortressNativeController:
         output = torch.empty(cols, dtype=torch.int32, device="cuda")
         try:
             self.matvec_device(weight_device, activation_device, output)
-            return output.cpu().to(torch.int64).remainder(2**32).remainder(FIELD_MODULUS).tolist()
+            return self._canonical_field_words(output.cpu()).tolist()
         finally:
             weight_device.zero_()
             activation_device.zero_()
