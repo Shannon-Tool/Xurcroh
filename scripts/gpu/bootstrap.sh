@@ -7,7 +7,7 @@ PYTHON="${PYTHON:-python3.12}"
 VENV="${XURCROH_CUDA_VENV:-$ROOT/.venv-cuda}"
 command -v nvidia-smi >/dev/null || { echo "nvidia-smi is required" >&2; exit 2; }
 if ! command -v cargo >/dev/null; then
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+  curl --proto '=https' --tlsv1.2 --retry 3 --retry-delay 5 --retry-all-errors -sSf https://sh.rustup.rs \
     | sh -s -- -y --profile minimal --default-toolchain 1.99.1
   export PATH="$HOME/.cargo/bin:$PATH"
 fi
