@@ -401,15 +401,10 @@ def combine_role_results(
                     providers[key],
                     "Freivalds check failed",
                 )
-    columns: list[int] = []
-    for column in range(output_size):
-        total = sum(
-            results[(activation_index, weight_index)][column]
-            for activation_index in range(len(activation_shares))
-            for weight_index in weight_shares
-        )
-        columns.append(total % FIELD_MODULUS)
-    return torch.tensor(columns, dtype=torch.int64)
+    ordered = [results[key] for key in sorted(expected)]
+    return torch.tensor(
+        xurcroh_quic.combine_field_products(ordered, FIELD_MODULUS), dtype=torch.int64
+    )
 
 
 def execute_native_grid(

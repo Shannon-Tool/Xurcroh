@@ -14,6 +14,10 @@ def test_native_challenge_consumes_packed_integer_matrices() -> None:
     assert result == [50, 74]
 
 
+def test_native_field_reconstruction_combines_packed_products() -> None:
+    assert xurcroh_quic.combine_field_products([[1, 2], [3, 4]], 2**32 - 5) == [4, 6]
+
+
 def test_native_grid_executes_rust_engine_and_attributes_tampering() -> None:
     share = xurcroh_quic.FortressWeightShare(
         0,
