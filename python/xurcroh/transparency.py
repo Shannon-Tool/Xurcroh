@@ -84,3 +84,38 @@ def verify_transparency_log(
     for image, expected in expected_measurements.items():
         if by_image.get(image) != expected:
             raise TransparencyError(f"worker image measurement mismatch for {image}")
+
+
+def fetch_transparency_log(
+    endpoint: str,
+    *,
+    public_key: bytes,
+    expected_measurements: dict[str, str],
+    client: Any | None = None,
+) -> dict[str, Any]:
+    from urllib.parse import urlsplit
+
+    import httpx
+
+    parsed = urlsplit(endpoint)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise TransparencyError("remote transparency logs require an HTTPS endpoint")
+    owns_client = client is None
+    remote = client or httpx.Client(base_url=endpoint, timeout=30)
+    try:
+        response = remote.get("/v1/log")
+        response.raise_for_status()
+        document = response.json()
+        if not isinstance(document, dict):
+            raise TransparencyError("remote transparency document must be an object")
+    except (httpx.HTTPError, ValueError) as error:
+        raise TransparencyError("could not retrieve the remote transparency log") from error
+    finally:
+        if owns_client:
+            remote.close()
+    verify_transparency_log(
+        document,
+        public_key=public_key,
+        expected_measurements=expected_measurements,
+    )
+    return document
