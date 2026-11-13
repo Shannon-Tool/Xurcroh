@@ -47,3 +47,4 @@ def test_ladder_runner_writes_verified_signed_evidence(tmp_path: Path) -> None:
     assert rung.rung == "L0"
     assert verified["worker_exit_codes"] == [0, 0, 0, 0]
     assert verified["cost_usd"] == 0
+    assert verified["source_revision"] == "a" * 40
