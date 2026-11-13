@@ -182,7 +182,12 @@ def run_ladder_rung(
     except BaseException:
         teardown()
         raise
-    report = {**execution, "destruction": dict(teardown())}
+    cleanup = dict(teardown())
+    report = (
+        {**execution, **cleanup}
+        if "destruction" in cleanup
+        else {**execution, "destruction": cleanup}
+    )
     validate_rung_evidence(rung, report)
     return report
 

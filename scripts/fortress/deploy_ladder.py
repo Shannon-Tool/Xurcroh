@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 import yaml
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-from scripts.gpu.deploy_two_node import options, scp, ssh
+from scripts.gpu.deploy_two_node import download, options, scp, ssh
 
 from xurcroh.fortress.diffusers_loader import compile_diffusers_component
 from xurcroh.fortress.ladder import LadderRung
@@ -53,6 +53,12 @@ def endpoint_host(endpoint: str) -> str:
     if parsed.hostname is None or parsed.port is None:
         raise ValueError(f"invalid Fortress endpoint: {endpoint}")
     return parsed.hostname
+
+
+def hardware_validated(reports: list[dict[str, Any]], worker_count: int) -> bool:
+    if len(reports) != worker_count or any(not report.get("gpus") for report in reports):
+        raise ValueError("hardware validation requires one nonempty GPU report per worker")
+    return True
 
 
 def start_command(remote_root: str, name: str) -> str:
@@ -254,6 +260,24 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
                     enumerate(workers),
                 )
             )
+        hardware_directory = output / "hardware"
+        hardware_directory.mkdir(exist_ok=True)
+        with ThreadPoolExecutor(max_workers=len(workers)) as executor:
+            list(
+                executor.map(
+                    lambda worker: download(
+                        worker,
+                        f"{remote_root}/artifacts/hardware.json",
+                        hardware_directory / f"{worker['name']}.json",
+                    ),
+                    workers,
+                )
+            )
+        hardware_reports = [
+            json.loads((hardware_directory / f"{worker['name']}.json").read_text())
+            for worker in workers
+        ]
+        hardware_validated(hardware_reports, len(workers))
         with ThreadPoolExecutor(max_workers=len(workers)) as executor:
             list(
                 executor.map(
@@ -268,6 +292,9 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
         "schema_version": 1,
         "source_revision": revision,
         "rung": raw,
+        "hardware_validated": hardware_validated(hardware_reports, len(workers)),
+        "hardware": hardware_reports,
+        "workers": workers,
         "sdk": sdk_configuration(
             rung,
             checkpoint_path=checkpoint,
