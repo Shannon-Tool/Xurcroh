@@ -28,6 +28,7 @@ class FortressCheckpoint:
     rope_theta: float
     activation_bits: int
     media_projections: dict[str, torch.Tensor] = field(default_factory=dict)
+    model: Any = field(default=None, repr=False)
 
     def combiner(self) -> FortressCombiner:
         return FortressCombiner(
@@ -136,9 +137,13 @@ def compile_fortress_checkpoint(
         tensors = reader.read_tensors(layer_names)
         attention_prefix = f"{prefix}.self_attn"
         for projection in ("q_proj", "k_proj", "v_proj", "o_proj"):
+            name = f"{attention_prefix}.{projection}"
+            weight = tensors.get(f"{name}.weight")
+            if weight is None:
+                continue
             _compile_matrix(
-                f"{attention_prefix}.{projection}",
-                tensors[f"{attention_prefix}.{projection}.weight"],
+                name,
+                weight,
                 operations,
                 threshold=threshold,
                 slice_count=slice_count,
@@ -172,6 +177,26 @@ def compile_fortress_checkpoint(
                     seed=seed,
                     share_count=share_count,
                 )
+        for name, tensor in tensors.items():
+            operation_name = name.removesuffix(".weight")
+            if (
+                name.endswith(".weight")
+                and tensor.ndim == 2
+                and operation_name not in operations
+                and ".per_layer_" not in name
+                and ".router." not in name
+                and name != f"{mlp_prefix}.gate.weight"
+            ):
+                _compile_matrix(
+                    operation_name,
+                    tensor,
+                    operations,
+                    threshold=threshold,
+                    slice_count=slice_count,
+                    inner_bases=inner_bases,
+                    seed=seed,
+                    share_count=share_count,
+                )
         router = tensors[f"{mlp_prefix}.gate.weight"].to(torch.float64) if expert_indices else None
         top_k = int(
             config.get("num_experts_per_tok", config.get("moe_top_k", config.get("top_k", 1)))
@@ -194,9 +219,18 @@ def compile_fortress_checkpoint(
     embedding = _boundary_tensor(
         reader,
         names,
-        ("model.embed_tokens.weight", "embed_tokens.weight", "transformer.wte.weight"),
+        (
+            "model.embed_tokens.weight",
+            "model.language_model.embed_tokens.weight",
+            "embed_tokens.weight",
+            "transformer.wte.weight",
+        ),
     )
-    final_norm = _boundary_tensor(reader, names, ("model.norm.weight", "transformer.ln_f.weight"))
+    final_norm = _boundary_tensor(
+        reader,
+        names,
+        ("model.norm.weight", "model.language_model.norm.weight", "transformer.ln_f.weight"),
+    )
     head_name = next(
         (name for name in ("lm_head.weight", "model.lm_head.weight") if name in names),
         None,
@@ -221,6 +255,42 @@ def compile_fortress_checkpoint(
         media_projections["vision"] = vision
     if audio is not None:
         media_projections["audio"] = audio
+    from transformers import AutoModelForCausalLM, AutoModelForMultimodalLM
+    from transformers.models.auto.configuration_auto import CONFIG_MAPPING
+
+    model = None
+    if reader.config.get("model_type") in CONFIG_MAPPING:
+        loader = (
+            AutoModelForMultimodalLM
+            if reader.config.get("model_type") in {"gemma4", "qwen3_5"}
+            else AutoModelForCausalLM
+        )
+        model = loader.from_pretrained(
+            checkpoint,
+            dtype=torch.float64,
+            local_files_only=True,
+            trust_remote_code=False,
+        )
+        from xurcroh.fortress.module import replace_linear_layers
+
+        replace_linear_layers(
+            model,
+            operations,
+            client_only=(
+                "lm_head",
+                "model.per_layer_model_projection",
+                "model.language_model.per_layer_model_projection",
+                "per_layer_input_gate",
+                "per_layer_projection",
+                "vision_projection",
+                "model.vision_projection",
+                "multi_modal_projector",
+                "audio_projection",
+                "model.audio_projection",
+                "model.embed_audio",
+            ),
+        )
+        model.eval()
     return FortressCheckpoint(
         layers=tuple(layers),
         operations=operations,
@@ -232,4 +302,5 @@ def compile_fortress_checkpoint(
         rope_theta=float(config.get("rope_theta", 10_000)),
         activation_bits=activation_bits,
         media_projections=media_projections,
+        model=model,
     )

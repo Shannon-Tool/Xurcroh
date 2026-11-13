@@ -71,23 +71,51 @@ def replace_linear_layers(
     *,
     grid_clients: dict[str, FortressRoleClient] | None = None,
     prefix: str = "",
+    client_only: tuple[str, ...] = (),
 ) -> torch.nn.Module:
     for name, child in module.named_children():
         qualified = f"{prefix}{name}"
         if isinstance(child, torch.nn.Linear):
-            operation = operations.get(f"{qualified}.weight")
+            operation_name = next(
+                (
+                    candidate
+                    for candidate in (f"{qualified}.weight", qualified)
+                    if candidate in operations
+                ),
+                qualified,
+            )
+            operation = operations.get(operation_name)
             if operation is None:
+                if qualified in client_only or any(
+                    qualified.endswith(f".{name}") for name in client_only
+                ):
+                    continue
                 raise ValueError(f"missing Fortress operation for {qualified}.weight")
             bias = child.bias.detach().clone() if child.bias is not None else None
             replacement = FortressLinear(
-                f"{qualified}.weight",
+                operation_name,
                 operation,
-                grid_client=None if grid_clients is None else grid_clients[f"{qualified}.weight"],
+                grid_client=None if grid_clients is None else grid_clients[operation_name],
                 bias=bias,
             )
             setattr(module, name, replacement)
         else:
             replace_linear_layers(
-                child, operations, grid_clients=grid_clients, prefix=f"{qualified}."
+                child,
+                operations,
+                grid_clients=grid_clients,
+                prefix=f"{qualified}.",
+                client_only=client_only,
             )
     return module
+
+
+def connect_grid_clients(
+    module: torch.nn.Module,
+    grid_clients: dict[str, FortressRoleClient],
+) -> None:
+    for child in module.modules():
+        if isinstance(child, FortressLinear):
+            if child.name not in grid_clients:
+                raise ValueError(f"missing grid client for {child.name}")
+            child.grid_client = grid_clients[child.name]
