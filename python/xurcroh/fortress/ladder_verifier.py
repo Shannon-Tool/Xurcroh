@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -164,6 +165,17 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
         name: FortressRoleClient(operation, roles, identity, operation_name=name)
         for name, operation in operations.items()
     }
+    phase_times: dict[str, float] = {}
+    phase_started = time.perf_counter()
+
+    def phase(name: str) -> None:
+        nonlocal phase_started
+        now = time.perf_counter()
+        phase_times[name] = now - phase_started
+        logging.getLogger(__name__).info("Fortress media phase %s took %.3fs", name, now - phase_started)
+        phase_started = now
+
+    phase("compile_and_connect")
 
     def boundary(grid: dict[str, FortressRoleClient] | None) -> Any:
         result = DiffusionMediaBoundary.from_definition(definition)
@@ -175,6 +187,7 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
         local = boundary(None)
         remote = boundary(clients)
         original = DiffusionMediaBoundary.from_definition(definition)
+        phase("load_boundaries")
         common: dict[str, Any] = {
             "model": rung.model,
             "prompt": "a small red square",
@@ -226,13 +239,17 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
             return values
 
         expected = generate(local.pipeline)
+        phase("quantized_reference")
         actual = generate(remote.pipeline)
+        phase("remote_grid")
         original_values = generate(original.pipeline)
+        phase("original_model")
         quantized_error = float((actual - expected).abs().max())
         original_error = float((expected - original_values).abs().max())
         from xurcroh.fortress.attacks import exercise_adversarial_grid
 
         adversarial = exercise_adversarial_grid(clients, roles, operations)
+        phase("adversarial")
     finally:
         for role_client in clients.values():
             role_client.close()
@@ -247,8 +264,10 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
         else:
             response = client.videos.generate(**common, frames=4, fps=4)
         metrics = client.metrics()
+    phase("public_sdk")
     return {
         "hardware_validated": deployment.get("hardware_validated", False),
+        "phase_seconds": phase_times,
         "production_accepted": False,
         "quantized_reference_max_abs_error": quantized_error,
         "original_model_max_abs_error": original_error,
