@@ -116,6 +116,25 @@ def test_offer_sanitizer_preserves_operator_and_capacity_metadata() -> None:
     assert "secret" not in result
 
 
+def test_capacity_eligibility_excludes_selected_driver_series() -> None:
+    from scripts.vast.provision import eligible_offers
+
+    args = type(
+        "Arguments",
+        (),
+        {
+            "min_gpu_ram_gb": 1,
+            "min_host_ram_gb": 0,
+            "max_hourly_usd": 10,
+            "driver_version": None,
+            "exclude_driver_prefix": ["580"],
+        },
+    )()
+    compatible = {**offer(), "driver_version": "595.91.07"}
+    incompatible = {**offer(11, 21), "driver_version": "580.159.03"}
+    assert eligible_offers(args, [incompatible, compatible]) == [compatible]
+
+
 def test_offers_create_and_instance_responses_are_sanitized() -> None:
     requests = []
 
