@@ -17,6 +17,12 @@ An early experiment multiplied by the output basis twice and produced implausibl
 - Rust fuzzing and loopback QUIC tests reject malformed input and wrong identities.
 - Two CUDA tests remain explicit skips without CUDA; no hardware result is fabricated.
 
+## Fortress F0 and M0
+
+Four independently spawned local workers execute real Rust QUIC role calls. F0 completes dense prefill, cached decode, and sampling with zero error against the fixed-point reference across 168 inference role calls. M0 completes two synthetic DiT steps with zero fixed-point error across 328 inference role calls. Their reports also include original-model deltas, frame bytes, mixed decoys, canary revocation, collusion measurements, zero local cost, and zero worker exit codes. These are local CPU results, not physical multi-host or GPU validation. See `docs/evidence/fortress/f0.json` and `m0.json` for exact measurements.
+
+The mounted laboratory uses exact BigInt role products and prime-field verification. It caught and corrected a lossy JavaScript `number` conversion above 2^53, illustrating why simulations must be tested against the same arithmetic contract as production.
+
 ## Stage Two acceptance
 
 Required work includes official checkpoints, physical multi-GPU correctness, native forensics, TEE trust-root verification, WAN/NAT behavior, side-channel evaluation, resource profiling, and quality/performance benchmarks. See [hardware validation](/18-deployment) for executable preparation.
