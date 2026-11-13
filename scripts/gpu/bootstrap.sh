@@ -6,10 +6,12 @@ export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/l
 PYTHON="${PYTHON:-python3.12}"
 VENV="${XURCROH_CUDA_VENV:-$ROOT/.venv-cuda}"
 command -v nvidia-smi >/dev/null || { echo "nvidia-smi is required" >&2; exit 2; }
-if ! command -v cargo >/dev/null; then
+export CARGO_HOME="${XURCROH_CARGO_HOME:-$ROOT/.cargo}"
+export RUSTUP_HOME="${XURCROH_RUSTUP_HOME:-$ROOT/.rustup}"
+export PATH="$CARGO_HOME/bin:$PATH"
+if [[ ! -x "$CARGO_HOME/bin/cargo" ]]; then
   curl --proto '=https' --tlsv1.2 --retry 3 --retry-delay 5 --retry-all-errors -sSf https://sh.rustup.rs \
     | sh -s -- -y --profile minimal --default-toolchain 1.99.1
-  export PATH="$HOME/.cargo/bin:$PATH"
 fi
 IMAGE_PACKAGES=0
 if "$PYTHON" - <<'PY'
