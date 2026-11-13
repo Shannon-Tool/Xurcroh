@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xurcroh-fortress-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: xurcroh-fortress-worker
+  template:
+    metadata:
+      labels:
+        app: xurcroh-fortress-worker
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: worker
+          image: ghcr.io/shannon-tool/xurcroh-fortress-worker@sha256:REPLACE_WITH_MEASURED_DIGEST
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          volumeMounts:
+            - name: shards
+              mountPath: /runtime-data/shards:ro
+            - name: scratch
+              mountPath: /runtime-data/scratch
+      volumes:
+        - name: shards
+          secret:
+            secretName: xurcroh-fortress-shards
+        - name: scratch
+          emptyDir: {}
