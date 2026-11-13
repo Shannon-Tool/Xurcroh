@@ -2,6 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 PYTHON="${PYTHON:-$ROOT/.venv-cuda/bin/python}"
 ./scripts/build-native.sh
 "$PYTHON" -m pytest tests/hardware -q --runxfail

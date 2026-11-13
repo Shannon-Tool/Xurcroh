@@ -9,8 +9,8 @@ from pathlib import Path
 import torch
 
 from xurcroh.fortress.arithmetic import (
+    FIELD_MODULUS,
     PRIME_MODULUS,
-    RING_MODULUS,
     ShareSecurity,
     combine_shares,
     freivalds_challenge,
@@ -35,8 +35,8 @@ def benchmark(iterations: int = 5) -> dict[str, object]:
     for _ in range(iterations):
         seeded = seeded_split_secret(secret, seed=bytes(range(32)), count=2)
     seeded_ms = (time.perf_counter() - started) * 1000 / iterations
-    assert torch.equal(combine_shares(full.shares), secret.remainder(RING_MODULUS))
-    assert torch.equal(combine_shares(seeded.shares), secret.remainder(RING_MODULUS))
+    assert torch.equal(combine_shares(full.shares), secret.remainder(FIELD_MODULUS))
+    assert torch.equal(combine_shares(seeded.shares), secret.remainder(FIELD_MODULUS))
 
     started = time.perf_counter()
     for _ in range(iterations):
@@ -45,7 +45,7 @@ def benchmark(iterations: int = 5) -> dict[str, object]:
     return {
         "iterations": iterations,
         "matrix_shape": list(secret.shape),
-        "ring_modulus": RING_MODULUS,
+        "field_modulus": FIELD_MODULUS,
         "prime_modulus": PRIME_MODULUS,
         "full_share_storage_bytes": full_storage,
         "seed_expanded_storage_bytes": seed_storage,
