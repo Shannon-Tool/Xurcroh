@@ -110,6 +110,7 @@ def test_offers_create_and_instance_responses_are_sanitized() -> None:
             body = json.loads(request.content)
             assert "VAST_API_KEY" not in str(body)
             assert body["runtype"] == "ssh_direct"
+            assert "-p 9400:9400" in body["env"]
             return httpx.Response(200, json={"new_contract": 123, "instance_api_key": "private"})
         if request.url.path == "/api/v0/instances/123/":
             return httpx.Response(
@@ -480,3 +481,17 @@ def test_provision_preserves_offer_diversity_metadata(
     assert stored["provider_id"] == "provider-a"
     assert stored["geolocation"] == "de"
     assert stored["cpu_vendor"] == "amd"
+
+
+def test_register_ssh_key_uses_only_public_key() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/api/v0/ssh"
+        body = json.loads(request.content)
+        assert body["ssh_key"].startswith("ssh-ed25519 ")
+        assert "PRIVATE" not in body["ssh_key"]
+        return httpx.Response(200, json={"success": True, "key": {"id": 1}})
+
+    client = client_for(handler)
+    result = client.register_ssh_key("ssh-ed25519 public-test-key")
+    assert result["success"] is True
