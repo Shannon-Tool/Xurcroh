@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -14,6 +15,7 @@ from xurcroh.providers.vast import (
     BudgetPolicy,
     StateStore,
     VastClient,
+    select_diverse_offers,
     write_deployment_config,
 )
 
@@ -47,6 +49,8 @@ def watchdog(state: Path, ttl_seconds: float, policy: BudgetPolicy) -> None:
 
 
 def provision(args: argparse.Namespace) -> None:
+    if args.count < 1:
+        raise ProviderError("host count must be positive")
     store = StateStore(args.state)
     policy = BudgetPolicy(target_usd=args.target_usd, hard_limit_usd=args.hard_limit_usd)
     guard = BudgetGuard(store, policy)
@@ -63,23 +67,15 @@ def provision(args: argparse.Namespace) -> None:
             if float(offer.get("gpu_ram", 0)) >= args.min_gpu_ram_gb * 1024
             and float(offer["dph_total"]) <= args.max_hourly_usd
         ]
-        selected = []
-        machines = set()
-        forecasts = 0.0
-        for offer in eligible:
-            if offer["machine_id"] in machines:
-                continue
-            forecast = guard.forecast(offer, args.planned_hours, args.disk_gb)
-            if forecasts + forecast > args.target_usd:
-                continue
-            selected.append(offer)
-            machines.add(offer["machine_id"])
-            forecasts += forecast
-            if len(selected) == args.count:
-                break
-        if len(selected) != args.count:
-            raise ProviderError("not enough distinct eligible GPU hosts within the cost policy")
-        guard.require_capacity(forecasts)
+        selected, forecasts = select_diverse_offers(
+            eligible,
+            count=args.count,
+            guard=guard,
+            planned_hours=args.planned_hours,
+            disk_gb=args.disk_gb,
+            max_country_fraction=args.max_country_fraction,
+            max_cpu_vendor_fraction=args.max_cpu_vendor_fraction,
+        )
         created = []
         try:
             for index, offer in enumerate(selected):
@@ -112,8 +108,11 @@ def provision(args: argparse.Namespace) -> None:
         except Exception:
             client.destroy_tracked(store, guard)
             raise
-        revision = subprocess.run(
-            ["git", "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+        git = shutil.which("git")
+        if git is None:
+            raise ProviderError("Git is required to record the deployment revision")
+        revision = subprocess.run(  # noqa: S603
+            [git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True
         ).stdout.strip()
         config = write_deployment_config(
             store,
@@ -158,7 +157,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("state", type=Path, nargs="?", default=Path("artifacts/vast/state.json"))
     parser.add_argument("--watchdog-child", action="store_true")
-    parser.add_argument("--count", type=int, choices=[1, 2], default=1)
+    parser.add_argument("--count", type=int, default=1)
+    parser.add_argument("--max-country-fraction", type=float, default=0.5)
+    parser.add_argument("--max-cpu-vendor-fraction", type=float, default=0.5)
     parser.add_argument("--gpu-name")
     parser.add_argument("--min-gpu-ram-gb", type=float, default=12)
     parser.add_argument("--max-hourly-usd", type=float, default=0.75)

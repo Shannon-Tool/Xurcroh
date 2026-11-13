@@ -317,3 +317,37 @@ def test_rate_limited_request_uses_retry_after(monkeypatch: pytest.MonkeyPatch) 
     assert client.offers() == []
     assert len(attempts) == 2
     assert delays == [2.0]
+
+
+def test_diverse_offer_selection_supports_four_hosts_and_cost_guards(tmp_path: Path) -> None:
+    from xurcroh.providers.vast import select_diverse_offers
+
+    offers = [
+        {
+            "id": index,
+            "machine_id": index,
+            "gpu_ram": 24_576,
+            "dph_total": 0.2,
+            "geolocation": "de" if index % 2 else "us",
+            "cpu_vendor": "amd" if index % 3 else "intel",
+        }
+        for index in range(6)
+    ]
+    store = StateStore(tmp_path / "state.json")
+    guard = BudgetGuard(store)
+    selected, forecast = select_diverse_offers(
+        offers, count=4, guard=guard, planned_hours=1, disk_gb=40
+    )
+    assert len(selected) == 4
+    assert len({offer["machine_id"] for offer in selected}) == 4
+    assert len({offer["geolocation"] for offer in selected}) == 2
+    assert len({offer["cpu_vendor"] for offer in selected}) == 2
+    assert forecast == pytest.approx(1.2)
+    with pytest.raises(ProviderError, match="diversity"):
+        select_diverse_offers(
+            [{**offer, "geolocation": "us", "cpu_vendor": "amd"} for offer in offers],
+            count=4,
+            guard=guard,
+            planned_hours=1,
+            disk_gb=40,
+        )
