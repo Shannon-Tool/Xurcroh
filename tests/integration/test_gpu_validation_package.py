@@ -28,6 +28,7 @@ def test_cuda_package_is_pinned_and_records_hardware() -> None:
     assert "--retry-all-errors" in bootstrap
     assert "vendor_id" in bootstrap
     assert "--retries 10 --timeout 120" in bootstrap
+    assert '"$ROOT/scripts/build-native.sh"' in bootstrap
     compose = yaml.safe_load((ROOT / "deploy/cuda/compose.yaml").read_text())
     for index, name in enumerate(("worker-a", "worker-b")):
         worker = compose["services"][name]

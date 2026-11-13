@@ -15,6 +15,7 @@ fi
 "$VENV/bin/pip" install --retries 10 --timeout 120 --no-cache-dir -r requirements-cuda.lock maturin==1.16.0
 "$VENV/bin/pip" install --retries 10 --timeout 120 --no-cache-dir --no-deps -e .
 VIRTUAL_ENV="$VENV" "$VENV/bin/maturin" develop --release --manifest-path crates/transport/Cargo.toml --features python
+"$ROOT/scripts/build-native.sh"
 "$VENV/bin/python" - <<'PY'
 import importlib.metadata
 import json
