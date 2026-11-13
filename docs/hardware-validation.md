@@ -10,7 +10,7 @@ The following programs define the hardware acceptance procedure. Scoped RTX 4090
 PYTHON=/path/to/cuda/python ./scripts/fortress/cuda_forensics.sh
 ```
 
-The forensic script builds the native controls, runs all hardware tests, and then requires `compute-sanitizer --tool initcheck` over the native CUDA paths. Coverage includes exact ring matrix multiplication on small, irregular, and larger shapes; ChaCha20 comparison with a CPU reference; shared-memory scrub/probe behavior; zero-on-free telemetry; and allocation/reuse checks in an isolated process. Missing CUDA prerequisites produce explicit skips during ordinary CPU test runs, but the physical forensic gate fails rather than skipping.
+The forensic script builds the native controls, runs all hardware tests, and then requires `compute-sanitizer --tool initcheck` over the native CUDA paths. Coverage includes exact `2^32-5` field matrix multiplication on boundary products and small, irregular, and larger shapes, with same-device torch controls; ChaCha20 comparison with a CPU reference; shared-memory scrub/probe behavior; zero-on-free telemetry; and allocation/reuse checks in an isolated process. Missing CUDA prerequisites produce explicit skips during ordinary CPU test runs, but the physical forensic gate fails rather than skipping.
 
 Validate separately:
 
