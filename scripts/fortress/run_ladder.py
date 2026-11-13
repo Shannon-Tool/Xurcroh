@@ -30,13 +30,17 @@ def run(args: argparse.Namespace) -> Path:
         manifest = materialize_ladder_manifest(
             template, provisioned, store, args.output / "manifest.json"
         )
-    rung = LadderRung.from_mapping(yaml.safe_load(manifest.read_text()))
+    rung = LadderRung.from_mapping(
+        yaml.safe_load(manifest.read_text()), allow_unverified_hardware=True
+    )
 
     def execute(_rung: LadderRung) -> dict[str, Any]:
+        nonlocal rung
         deployment_path = args.existing_deployment or deploy(
             manifest, args.output, skip_bootstrap=args.skip_bootstrap
         )
         deployment = json.loads(Path(deployment_path).read_text())
+        rung = LadderRung.from_mapping(deployment["rung"])
         try:
             report = verify_ladder(deployment)
         finally:

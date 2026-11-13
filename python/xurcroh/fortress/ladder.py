@@ -79,7 +79,9 @@ class LadderRung:
     workers: tuple[WorkerPlacement, ...]
 
     @classmethod
-    def from_mapping(cls, document: Mapping[str, Any]) -> LadderRung:
+    def from_mapping(
+        cls, document: Mapping[str, Any], *, allow_unverified_hardware: bool = False
+    ) -> LadderRung:
         raw_workers = document.get("workers")
         if not isinstance(raw_workers, list):
             raise LadderEvidenceError("workers must be a list")
@@ -94,10 +96,10 @@ class LadderRung:
             share_count=_integer(document, "share_count"),
             workers=tuple(WorkerPlacement.from_mapping(worker) for worker in raw_workers),
         )
-        rung._validate()
+        rung._validate(allow_unverified_hardware=allow_unverified_hardware)
         return rung
 
-    def _validate(self) -> None:
+    def _validate(self, *, allow_unverified_hardware: bool = False) -> None:
         if re.fullmatch(r"(F0|M0|L[0-6]|M[1-4])", self.rung) is None:
             raise LadderEvidenceError("unknown ladder rung")
         if self.modality not in {"text", "vlm", "image", "video"}:
@@ -121,8 +123,10 @@ class LadderRung:
         for field in ("provider_id", "country", "cpu_vendor"):
             if len({getattr(worker, field) for worker in self.workers}) < 2:
                 raise LadderEvidenceError(f"worker {field} diversity is required")
-        if self.rung not in {"F0", "M0"} and any(
-            worker.cpu_vendor.lower() in {"", "unknown"} for worker in self.workers
+        if (
+            not allow_unverified_hardware
+            and self.rung not in {"F0", "M0"}
+            and any(worker.cpu_vendor.lower() in {"", "unknown"} for worker in self.workers)
         ):
             raise LadderEvidenceError("hardware workers cannot have unknown CPU vendor metadata")
 

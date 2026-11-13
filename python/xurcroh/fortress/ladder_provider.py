@@ -54,7 +54,7 @@ def materialize_ladder_manifest(
         "workers": placements,
         "recipient_key_directory": str(key_directory),
     }
-    rung = LadderRung.from_mapping(document)
+    rung = LadderRung.from_mapping(document, allow_unverified_hardware=True)
     if len(rung.workers) != len(workers):
         raise ValueError("provisioned worker count does not match the share grid")
     destination.parent.mkdir(parents=True, exist_ok=True)

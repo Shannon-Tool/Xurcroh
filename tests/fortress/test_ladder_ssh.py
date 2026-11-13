@@ -87,10 +87,17 @@ def test_worker_shutdown_collects_actual_exit_status(monkeypatch: pytest.MonkeyP
 
 def test_hardware_validation_requires_a_reported_gpu_per_worker() -> None:
     module = load_module()
-    reports = [{"gpus": [{"name": "RTX 4090"}]} for _ in range(4)]
+    reports = [
+        {"gpus": [{"name": "RTX 4090"}], "cpu_vendor": "AMD" if index % 2 else "Intel"}
+        for index in range(4)
+    ]
     assert module.hardware_validated(reports, 4) is True
     reports[2]["gpus"] = []
     with pytest.raises(ValueError, match="hardware"):
+        module.hardware_validated(reports, 4)
+    reports[2]["gpus"] = [{"name": "RTX 4090"}]
+    del reports[2]["cpu_vendor"]
+    with pytest.raises(ValueError, match="CPU vendor"):
         module.hardware_validated(reports, 4)
 
 

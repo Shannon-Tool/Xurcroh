@@ -61,6 +61,10 @@ def endpoint_host(endpoint: str) -> str:
 def hardware_validated(reports: list[dict[str, Any]], worker_count: int) -> bool:
     if len(reports) != worker_count or any(not report.get("gpus") for report in reports):
         raise ValueError("hardware validation requires one nonempty GPU report per worker")
+    if any(
+        str(report.get("cpu_vendor", "unknown")).lower() in {"", "unknown"} for report in reports
+    ):
+        raise ValueError("hardware validation requires a known CPU vendor per worker")
     return True
 
 
@@ -249,7 +253,7 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
     raw = yaml.safe_load(manifest_path.read_text())
     if not isinstance(raw, dict):
         raise ValueError("ladder manifest must be an object")
-    rung = LadderRung.from_mapping(raw)
+    rung = LadderRung.from_mapping(raw, allow_unverified_hardware=True)
     revision = source_revision()
     checkpoint = Path(raw.get("checkpoint_path", ""))
     if not checkpoint.is_dir():
@@ -338,6 +342,9 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
             for worker in workers
         ]
         hardware_validated(hardware_reports, len(workers))
+        for raw_worker, report in zip(raw["workers"], hardware_reports, strict=True):
+            raw_worker["cpu_vendor"] = report["cpu_vendor"]
+        rung = LadderRung.from_mapping(raw)
         with ThreadPoolExecutor(max_workers=len(workers)) as executor:
             list(
                 executor.map(
