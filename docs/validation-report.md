@@ -2,8 +2,8 @@
 
 ## Scope and acceptance status
 
-- Engineering branch: `fix/pre-gpu-corrective-implementation`
-- Validated implementation revision: `9f9249b084bd4f9e016da8be1439e8aab2bc40b2`
+- Engineering branch: `feat/fortress-implementation`
+- Validated implementation revision: `a6d0c0d`
 - Local implementation and CI: **passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -15,22 +15,22 @@ The earlier “PRE-GPU IMPLEMENTATION COMPLETE” declaration remains withdrawn.
 
 ## Local and CI evidence
 
-The following checks ran on implementation revision `9f9249b084bd4f9e016da8be1439e8aab2bc40b2`:
+The following checks ran on implementation revision `a6d0c0d`:
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **228 passed, 6 hardware-deselected** |
-| Python branch coverage | **81.72%**, above the 80% requirement |
+| Python unit/integration/security tests | **286 passed, 7 hardware-deselected** |
+| Python branch coverage | **82.80%**, above the 80% requirement |
 | Ruff format and lint | Passed |
-| Strict mypy, 93 source files | Passed |
-| Rust tests | **18 passed** |
+| Strict mypy, 118 source files | Passed |
+| Rust tests | **28 passed** |
 | Rust formatting, Clippy, RustSec | Passed; no known advisories |
-| Frontend interaction tests | **26 passed** |
+| Frontend interaction tests | **32 passed** |
 | Frontend typecheck, lint, production build, content validation | Passed; 22 sections, equations, links, and Mermaid syntax validated |
-| Python and native wheel builds | Passed with Cargo 1.99.1 selected through `CARGO_BIN` |
+| ProVerif model and protocol fuzzing | Passed in GitHub Actions run [43389923926](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43389923926) |
+| Clean reproducible wheel builds | **Pending** |
 | `pip-audit` | No known vulnerabilities in audited dependencies |
 | `npm audit` | 0 vulnerabilities |
-| GitHub Actions | Run [43122818749](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43122818749), all jobs passed |
 
 `pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed.
 
@@ -49,6 +49,15 @@ cd apps/web-manual && npm run check && npm audit
 CARGO_BIN=/root/.cargo/bin/cargo ./scripts/build-wheels.sh
 .venv/bin/pip-audit
 ```
+
+## Fortress local execution evidence
+
+- F0: four independent local worker processes, exact fixed-point prefill/decode/sampling, 168 inference role calls, 62,496 bytes sent and 48,768 bytes received, zero quantized-reference error, and all worker exit codes zero.
+- M0: four independent local worker processes, exact two-step synthetic DiT execution, 328 inference role calls, 117,592 bytes sent and 89,728 bytes received, zero quantized-reference error, and all worker exit codes zero.
+- Public SDK: dense/MoE text grids pass locally and over four real mutual-TLS role workers; real `DDPMPipeline` image generation and `TextToVideoSDPipeline` video generation pass, including public `images.generate` and `videos.generate` calls.
+- VLM boundary: local image/audio projections feed the Fortress decoder without entering worker operations.
+- Protocol: ProVerif and bounded frame/AEAD/HPKE fuzzing pass in CI. Noncanonical unused shape slots are rejected.
+- Reproducible wheel hashes and external audits remain open. No physical multi-GPU, independent attestation, external cryptography review, or production acceptance is claimed.
 
 ## Physical hardware and checkpoint
 
