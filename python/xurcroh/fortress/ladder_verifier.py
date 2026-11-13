@@ -54,7 +54,8 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
         seed=definition["fortress_seed"],
         share_count=rung.share_count,
         materialize_shares=False,
-        load_model=False,
+        model_dtype=torch.float32,
+        load_model=True,
     )
     cluster = sdk["cluster"]
     identity = _identity(cluster)
@@ -65,7 +66,7 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
     }
     prompt = "user: Reply with a short technical sentence."
     try:
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import AutoModelForCausalLM, AutoModelForMultimodalLM, AutoTokenizer
 
         tokenizer = AutoTokenizer.from_pretrained(
             definition["path"],
@@ -76,29 +77,48 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
         input_ids = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)["input_ids"]
         hidden = compiled.embedding[input_ids[0]]
         reference = compiled.combiner()
-        expected = reference.reference_forward(hidden)
-        remote = FortressCombiner(
-            layers=list(compiled.layers),
-            operations=compiled.operations,
-            query_heads=compiled.query_heads,
-            kv_heads=compiled.kv_heads,
-            final_norm=compiled.final_norm,
-            lm_head=compiled.lm_head,
-            rope_theta=compiled.rope_theta,
-            activation_bits=compiled.activation_bits,
-            grid_clients=clients,
+        if compiled.model is not None:
+            from xurcroh.fortress.module import connect_grid_clients, set_reference_mode
+
+            set_reference_mode(compiled.model)
+            with torch.inference_mode():
+                expected_output = compiled.model(input_ids=input_ids)
+            set_reference_mode(compiled.model, False)
+            connect_grid_clients(compiled.model, clients)
+            with torch.inference_mode():
+                actual_output = compiled.model(input_ids=input_ids)
+            quantized_error = float((actual_output.logits - expected_output.logits).abs().max())
+            quantized_logits = expected_output.logits[0, -1].to(torch.float64)
+        else:
+            expected = reference.reference_forward(hidden)
+            remote = FortressCombiner(
+                layers=list(compiled.layers),
+                operations=compiled.operations,
+                query_heads=compiled.query_heads,
+                kv_heads=compiled.kv_heads,
+                final_norm=compiled.final_norm,
+                lm_head=compiled.lm_head,
+                rope_theta=compiled.rope_theta,
+                activation_bits=compiled.activation_bits,
+                grid_clients=clients,
+            )
+            actual = remote.run(hidden)
+            quantized_error = float((actual - expected).abs().max())
+            quantized_logits = reference.logits(expected[-1:])[0]
+        original_loader = (
+            AutoModelForMultimodalLM
+            if compiled.model is not None
+            and getattr(compiled.model.config, "model_type", None) in {"gemma4", "qwen3_5"}
+            else AutoModelForCausalLM
         )
-        actual = remote.run(hidden)
-        quantized_error = float((actual - expected).abs().max())
-        quantized_logits = reference.logits(expected[-1:])[0]
-        original = AutoModelForCausalLM.from_pretrained(
+        original = original_loader.from_pretrained(
             definition["path"],
             revision=rung.revision,
             local_files_only=True,
             trust_remote_code=False,
             dtype=torch.float32,
         )
-        original.eval()  # type: ignore[no-untyped-call]
+        original.eval()
         with torch.inference_mode():
             original_logits = original(input_ids=input_ids).logits[0, -1].to(torch.float64)
         original_error = float((quantized_logits - original_logits).abs().max())
@@ -111,6 +131,7 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
             role_client.close()
     direct_sent = sum(client.bytes_sent for client in clients.values())
     direct_received = sum(client.bytes_received for client in clients.values())
+    del compiled, reference
     from Xurcroh import Xurcroh
 
     with Xurcroh(**sdk) as client:

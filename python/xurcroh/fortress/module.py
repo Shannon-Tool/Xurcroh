@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -24,6 +24,7 @@ class FortressLinear(torch.nn.Module):
         grid_client: FortressRoleClient | None = None,
         bias: torch.Tensor | None = None,
         activation_bits: int = 12,
+        reference_mode: bool = False,
     ) -> None:
         super().__init__()
         if not 8 <= activation_bits <= 12:
@@ -33,8 +34,11 @@ class FortressLinear(torch.nn.Module):
         self.grid_client = grid_client
         self.activation_bits = activation_bits
         self.bias = bias
+        self.reference_mode = reference_mode
 
     def forward(self, hidden: torch.Tensor) -> torch.Tensor:
+        if self.reference_mode:
+            return self.reference(hidden)
         from xurcroh.fortress.transport import execute_native_grid
 
         operation = self.operation
@@ -56,13 +60,18 @@ class FortressLinear(torch.nn.Module):
         return result.reshape(*original_shape[:-1], result.shape[-1])
 
     def reference(self, hidden: torch.Tensor) -> torch.Tensor:
-        reference = FortressLinear(
-            self.name,
-            self.operation,
-            bias=self.bias,
-            activation_bits=self.activation_bits,
-        )
-        return cast(torch.Tensor, reference(hidden))
+        operation = self.operation
+        original_shape = hidden.shape
+        flattened = hidden.reshape(-1, hidden.shape[-1])
+        transformed = apply_input_basis(operation, flattened)
+        activation = quantize_activations(transformed, bits=self.activation_bits)
+        product = activation.values @ operation.quantized.values.to(torch.int64).T
+        result = signed_ring(product).to(torch.float64) * activation.scales.unsqueeze(-1)
+        result = result * operation.quantized.scale
+        result = apply_output_basis(operation, result).to(hidden.dtype)
+        if self.bias is not None:
+            result = result + self.bias.to(result.dtype)
+        return result.reshape(*original_shape[:-1], result.shape[-1])
 
 
 def replace_linear_layers(
@@ -119,3 +128,9 @@ def connect_grid_clients(
             if child.name not in grid_clients:
                 raise ValueError(f"missing grid client for {child.name}")
             child.grid_client = grid_clients[child.name]
+
+
+def set_reference_mode(module: torch.nn.Module, enabled: bool = True) -> None:
+    for child in module.modules():
+        if isinstance(child, FortressLinear):
+            child.reference_mode = enabled
