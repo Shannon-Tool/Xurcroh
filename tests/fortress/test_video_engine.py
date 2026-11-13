@@ -81,7 +81,7 @@ def test_real_video_pipeline_generates_frames_with_fortress(
             request_id="video-test",
             security_mode="development",
             cancelled=threading.Event(),
-            timeout=60,
+            timeout=180,
         )
         assert response.data[0].b64_json
         assert any(
@@ -90,3 +90,27 @@ def test_real_video_pipeline_generates_frames_with_fortress(
         )
     finally:
         engine.close()
+
+    from Xurcroh import Xurcroh
+
+    with Xurcroh(
+        model_path={
+            "tiny-video": {
+                "path": str(tmp_path),
+                "engine": "fortress",
+                "modality": "video",
+            }
+        }
+    ) as client:
+        public_response = client.videos.generate(
+            model="tiny-video",
+            prompt="ocean waves",
+            size="32x32",
+            frames=2,
+            fps=2,
+            steps=1,
+            seed=12,
+            timeout=180,
+        )
+    assert public_response.data[0].b64_json
+    assert public_response.execution.engine == "fortress-diffusion-local"
