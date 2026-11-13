@@ -16,7 +16,7 @@ from xurcroh.fortress.arithmetic import (
 @dataclass(frozen=True)
 class WeightShare:
     weight_index: int
-    matrix: torch.Tensor
+    matrix: torch.Tensor | None
     challenge: ExactFreivaldsChallenge
     provider_id: str
     replica_provider_id: str | None = None
@@ -54,8 +54,12 @@ def execute_grid(
         if activation.dtype != torch.int64:
             raise ValueError("activation shares must use int64")
         for weight_index, share in weight_shares.items():
-            if share.weight_index != weight_index or share.matrix.dtype != torch.int64:
-                raise ValueError("weight share index or dtype is invalid")
+            if (
+                share.weight_index != weight_index
+                or share.matrix is None
+                or share.matrix.dtype != torch.int64
+            ):
+                raise ValueError("local execution requires materialized int64 weight shares")
             product = _modular_matmul(activation, share.matrix.T, RING_MODULUS)
             verified_product = _modular_matmul(activation, share.matrix.T, share.challenge.prime)
             if not verify_freivalds(activation, verified_product, share.challenge):

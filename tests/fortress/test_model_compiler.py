@@ -37,6 +37,22 @@ def test_real_checkpoint_compiles_without_retaining_full_client_weights(
     combiner.drop_request("compiled-request")
 
 
+def test_remote_client_compilation_discards_worker_weight_matrices(
+    tiny_llama_path: Path,
+) -> None:
+    full = compile_fortress_checkpoint(tiny_llama_path, seed=731)
+    client = compile_fortress_checkpoint(tiny_llama_path, seed=731, materialize_shares=False)
+    assert client.operations.keys() == full.operations.keys()
+    for name, operation in client.operations.items():
+        reference = full.operations[name]
+        assert set(operation.shares) == set(reference.shares)
+        assert operation.storage == {}
+        assert all(share.matrix is None for share in operation.shares.values())
+        for index, share in operation.shares.items():
+            assert torch.equal(share.challenge.r, reference.shares[index].challenge.r)
+            assert torch.equal(share.challenge.v, reference.shares[index].challenge.v)
+
+
 def test_checkpoint_compiles_and_executes_three_way_shares(tiny_llama_path: Path) -> None:
     compiled = compile_fortress_checkpoint(tiny_llama_path, seed=731, share_count=3)
     assert all(len(operation.shares) == 3 for operation in compiled.operations.values())

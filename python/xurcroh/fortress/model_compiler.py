@@ -69,6 +69,7 @@ def _compile_matrix(
     inner_bases: bool,
     seed: int | None,
     share_count: int = 2,
+    materialize_shares: bool = True,
 ) -> None:
     if name in operations:
         raise ConfigurationError(f"duplicate Fortress operation: {name}")
@@ -90,6 +91,7 @@ def _compile_matrix(
         challenge_seed=seed + len(operations) if seed is not None else None,
         input_basis=input_basis,
         output_basis=output_basis,
+        materialize_shares=materialize_shares,
     )
 
 
@@ -120,6 +122,7 @@ def compile_fortress_checkpoint(
     activation_bits: int = 12,
     seed: int | None = None,
     share_count: int = 2,
+    materialize_shares: bool = True,
 ) -> FortressCheckpoint:
     reader = CheckpointReader(Path(checkpoint))
     config = _text_config(reader)
@@ -158,6 +161,7 @@ def compile_fortress_checkpoint(
                 inner_bases=inner_bases,
                 seed=seed,
                 share_count=share_count,
+                materialize_shares=materialize_shares,
             )
         mlp_prefix = f"{prefix}.mlp"
         if expert_indices:
@@ -172,6 +176,7 @@ def compile_fortress_checkpoint(
                         inner_bases=inner_bases,
                         seed=seed,
                         share_count=share_count,
+                        materialize_shares=materialize_shares,
                     )
         else:
             for projection in ("gate_proj", "up_proj", "down_proj"):
@@ -184,6 +189,7 @@ def compile_fortress_checkpoint(
                     inner_bases=inner_bases,
                     seed=seed,
                     share_count=share_count,
+                    materialize_shares=materialize_shares,
                 )
         for name, tensor in tensors.items():
             operation_name = name.removesuffix(".weight")
@@ -204,6 +210,7 @@ def compile_fortress_checkpoint(
                     inner_bases=inner_bases,
                     seed=seed,
                     share_count=share_count,
+                    materialize_shares=materialize_shares,
                 )
         router = tensors[f"{mlp_prefix}.gate.weight"].to(torch.float64) if expert_indices else None
         top_k = int(
