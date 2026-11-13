@@ -30,6 +30,9 @@ def test_cuda_package_is_pinned_and_records_hardware() -> None:
     assert "--retry-all-errors" in bootstrap
     assert "vendor_id" in bootstrap
     assert "--retries 10 --timeout 120" in bootstrap
+    forensic = (ROOT / "scripts/fortress/cuda_forensics.sh").read_text()
+    assert "export LD_LIBRARY_PATH=" in forensic
+    assert "/usr/lib/x86_64-linux-gnu" in forensic
     assert '"$ROOT/scripts/build-native.sh"' in bootstrap
     compose = yaml.safe_load((ROOT / "deploy/cuda/compose.yaml").read_text())
     for index, name in enumerate(("worker-a", "worker-b")):
