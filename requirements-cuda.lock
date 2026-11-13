@@ -125,6 +125,7 @@ py-cpuinfo==9.0.0
 pybase64==1.5.1
 pycountry==26.2.16
 pytest==9.2.0
+pytest-asyncio==1.4.1.post1
 pycparser==3.12
 pydantic-extra-types==2.11.1
 pydantic-settings==2.16.2

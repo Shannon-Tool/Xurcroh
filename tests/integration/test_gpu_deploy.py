@@ -38,6 +38,23 @@ def test_ssh_options_pin_identity_and_known_hosts(tmp_path: Path) -> None:
     ]
 
 
+def test_download_uses_remote_destination_and_local_path(monkeypatch, tmp_path: Path) -> None:
+    module = load_deploy_module()
+    commands = []
+    monkeypatch.setattr(
+        module.subprocess, "run", lambda command, **kwargs: commands.append(command)
+    )
+    module.download(
+        {"ssh_user": "root", "ssh_host": "192.0.2.1", "host": "192.0.2.1"},
+        "/remote/hardware.json",
+        tmp_path / "hardware.json",
+    )
+    assert commands[0][-2:] == [
+        "root@192.0.2.1:/remote/hardware.json",
+        str(tmp_path / "hardware.json"),
+    ]
+
+
 def test_start_detaches_remote_worker_stdin(monkeypatch, tmp_path: Path) -> None:
     module = load_deploy_module()
     commands = []

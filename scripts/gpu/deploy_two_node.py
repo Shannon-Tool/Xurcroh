@@ -71,7 +71,7 @@ def scp(
     )
 
 
-def download(worker: dict[str, object], source: str, destination: Path) -> None:
+def download(worker: dict[str, object], source: str, local_path: Path) -> None:
     scp_options = ["-P", str(worker.get("ssh_port", 22))]
     if worker.get("ssh_key"):
         scp_options.extend(["-o", "IdentitiesOnly=yes"])
@@ -87,7 +87,7 @@ def download(worker: dict[str, object], source: str, destination: Path) -> None:
     if worker.get("ssh_key"):
         scp_options.extend(["-i", str(Path(str(worker["ssh_key"])).expanduser())])
     subprocess.run(  # noqa: S603, S607
-        ["scp", *scp_options, f"{destination(worker)}:{source}", str(destination)],
+        ["scp", *scp_options, f"{destination(worker)}:{source}", str(local_path)],
         check=True,
     )
 
