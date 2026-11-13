@@ -24,6 +24,10 @@ def test_provisioned_hosts_generate_valid_role_manifest(tmp_path: Path) -> None:
         workers.append(
             {
                 "name": f"worker-{index}",
+                "host": f"ssh-{index}.example",
+                "ssh_user": "ubuntu",
+                "ssh_port": 2200 + index,
+                "ssh_key": f"/keys/worker-{index}",
                 "public_host": f"192.0.2.{index + 1}",
                 "tls_port": 10000 + index,
                 "provider_instance_id": index + 1,
@@ -49,9 +53,16 @@ def test_provisioned_hosts_generate_valid_role_manifest(tmp_path: Path) -> None:
         store,
         tmp_path / "manifest.json",
     )
-    rung = LadderRung.from_mapping(__import__("json").loads(path.read_text()))
+    document = __import__("json").loads(path.read_text())
+    rung = LadderRung.from_mapping(document)
     assert len(rung.workers) == 4
-    for worker in rung.workers:
+    for index, worker in enumerate(rung.workers):
+        assert document["workers"][index]["ssh"] == {
+            "host": f"ssh-{index}.example",
+            "username": "ubuntu",
+            "port": 2200 + index,
+            "key_path": f"/keys/worker-{index}",
+        }
         private_path = tmp_path / "recipient-keys" / f"{worker.name}.key"
         private = X25519PrivateKey.from_private_bytes(private_path.read_bytes())
         public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
