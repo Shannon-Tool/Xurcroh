@@ -28,3 +28,4 @@ rm -rf "$first/target"
 "$second/scripts/build-wheels.sh"
 diff -u <(cd "$first" && sha256sum dist/* | sort -k2) <(cd "$second" && sha256sum dist/* | sort -k2)
 echo "Reproducible wheel hashes match for $(git -C "$root" rev-parse HEAD)"
+(cd "$first" && sha256sum dist/* | sort -k2)

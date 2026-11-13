@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Validated implementation revision: `a6d0c0d`
+- Validated implementation revision: `400c0885d43afb66cb8b182f4fcf408a3b6bd258`
 - Local implementation and CI: **passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -15,24 +15,24 @@ The earlier “PRE-GPU IMPLEMENTATION COMPLETE” declaration remains withdrawn.
 
 ## Local and CI evidence
 
-The following checks ran on implementation revision `a6d0c0d`:
+The following local checks and GitHub Actions run [43398680549](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43398680549) cover implementation revision `400c0885d43afb66cb8b182f4fcf408a3b6bd258`:
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **286 passed, 7 hardware-deselected** |
-| Python branch coverage | **82.80%**, above the 80% requirement |
+| Python unit/integration/security tests | **288 passed, 7 hardware-deselected** |
+| Python branch coverage | **82.85%**, above the 80% requirement |
 | Ruff format and lint | Passed |
 | Strict mypy, 118 source files | Passed |
 | Rust tests | **28 passed** |
 | Rust formatting, Clippy, RustSec | Passed; no known advisories |
 | Frontend interaction tests | **32 passed** |
 | Frontend typecheck, lint, production build, content validation | Passed; 22 sections, equations, links, and Mermaid syntax validated |
-| ProVerif model and protocol fuzzing | Passed in GitHub Actions run [43389923926](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43389923926) |
-| Clean reproducible wheel builds | **Pending** |
+| ProVerif model and protocol fuzzing | Passed in GitHub Actions run [43398680549](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43398680549) |
+| Clean reproducible wheel builds | **Passed locally**; independent clean directories produced matching SHA-256 hashes for both wheels |
 | `pip-audit` | No known vulnerabilities in audited dependencies |
 | `npm audit` | 0 vulnerabilities |
 
-`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed.
+`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The wheel comparison preserves Maturin's CycloneDX dependency inventory while normalizing checkout paths and regenerating `RECORD`; this is same-machine evidence, not second-party reproducibility.
 
 Primary commands:
 
@@ -46,7 +46,7 @@ PATH=/root/.cargo/bin:$PATH cargo clippy --workspace --all-targets -- -D warning
 PATH=/root/.cargo/bin:$PATH cargo test --workspace
 PATH=/root/.cargo/bin:$PATH cargo audit
 cd apps/web-manual && npm run check && npm audit
-CARGO_BIN=/root/.cargo/bin/cargo ./scripts/build-wheels.sh
+./scripts/reproducible-build.sh
 .venv/bin/pip-audit
 ```
 
@@ -57,7 +57,7 @@ CARGO_BIN=/root/.cargo/bin/cargo ./scripts/build-wheels.sh
 - Public SDK: dense/MoE text grids pass locally and over four real mutual-TLS role workers; real `DDPMPipeline` image generation and `TextToVideoSDPipeline` video generation pass, including public `images.generate` and `videos.generate` calls.
 - VLM boundary: local image/audio projections feed the Fortress decoder without entering worker operations.
 - Protocol: ProVerif and bounded frame/AEAD/HPKE fuzzing pass in CI. Noncanonical unused shape slots are rejected.
-- Reproducible wheel hashes and external audits remain open. No physical multi-GPU, independent attestation, external cryptography review, or production acceptance is claimed.
+- Local wheel reproducibility passes. Second-party reproducibility, a live public transparency log, external audits, physical multi-GPU execution, independent attestation, external cryptography review, and production acceptance remain open and are not claimed.
 
 ## Physical hardware and checkpoint
 
