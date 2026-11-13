@@ -9,7 +9,12 @@ from xurcroh.algebra.feedforward import FeedForwardWeights
 from xurcroh.algebra.modulation import adaln
 from xurcroh.algebra.rmsnorm import unit_rms_norm
 from xurcroh.fortress.arithmetic import quantize_activations, signed_ring, split_secret
-from xurcroh.fortress.compiler import CompiledOperation, compile_operation
+from xurcroh.fortress.compiler import (
+    CompiledOperation,
+    apply_input_basis,
+    apply_output_basis,
+    compile_operation,
+)
 from xurcroh.fortress.grid import execute_grid
 from xurcroh.models.diffusion import FlowEulerScheduler
 from xurcroh.models.dit import (
@@ -130,7 +135,8 @@ class FortressDiTCombiner:
 
     def _linear(self, name: str, hidden: torch.Tensor) -> torch.Tensor:
         operation = self.operations[name]
-        activation = quantize_activations(hidden, bits=self.activation_bits)
+        transformed = apply_input_basis(operation, hidden)
+        activation = quantize_activations(transformed, bits=self.activation_bits)
         shares = split_secret(activation.values, count=2).shares
         product = (
             execute_grid(shares, operation.shares)
@@ -138,7 +144,8 @@ class FortressDiTCombiner:
             else self.grid_clients[name].execute(shares, request_id=name)
         )
         scales = activation.scales.unsqueeze(-1) if hidden.ndim == 2 else activation.scales
-        return signed_ring(product).to(torch.float64) * scales * operation.quantized.scale
+        result = signed_ring(product).to(torch.float64) * scales * operation.quantized.scale
+        return apply_output_basis(operation, result)
 
     def _attention(
         self, image: torch.Tensor, text: torch.Tensor, block: DiTBlockWeights, index: int

@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import torch
+
+from xurcroh.fortress.combiner import FortressLayerMetadata
+from xurcroh.fortress.model_compiler import compile_fortress_checkpoint
+from xurcroh.fortress.transport import encode_role_artifact
+
+
+def test_real_checkpoint_compiles_without_retaining_full_client_weights(
+    tiny_llama_path: Path,
+) -> None:
+    compiled = compile_fortress_checkpoint(tiny_llama_path)
+    assert len(compiled.layers) == 2
+    assert len(compiled.operations) == 14
+    assert all(isinstance(layer, FortressLayerMetadata) for layer in compiled.layers)
+    combiner = compiled.combiner()
+    hidden = torch.tensor(
+        [
+            [0.1, -0.2, 0.3, 0.4] * 4,
+            [0.5, 0.2, -0.1, -0.3] * 4,
+        ],
+        dtype=torch.float64,
+    )
+    expected = combiner.reference_forward(hidden)
+    prefill = combiner.run_cached("compiled-request", hidden[:1])
+    decoded = combiner.run_cached("compiled-request", hidden[1:])
+    actual = torch.cat([prefill, decoded])
+    torch.testing.assert_close(actual, expected, atol=1e-7, rtol=1e-7)
+    assert combiner.sample(actual[-1:]).item() == combiner.reference_sample(expected[-1:]).item()
+    assert all(
+        b"basis" not in encode_role_artifact(operation, 0, bytes(range(32)))
+        for operation in compiled.operations.values()
+    )
+    combiner.drop_request("compiled-request")
+
+
+def test_moe_checkpoint_keeps_router_local_and_compiles_each_expert(tmp_path: Path) -> None:
+    import json
+
+    from safetensors.torch import save_file
+
+    config = {
+        "model_type": "test_moe",
+        "hidden_size": 4,
+        "num_attention_heads": 2,
+        "num_key_value_heads": 2,
+        "head_dim": 2,
+        "num_hidden_layers": 1,
+        "num_experts_per_tok": 1,
+        "rope_theta": 10000,
+    }
+    (tmp_path / "config.json").write_text(json.dumps(config))
+    generator = torch.Generator().manual_seed(912)
+
+    def matrix(*shape: int) -> torch.Tensor:
+        return torch.randn(*shape, generator=generator, dtype=torch.float64) / 8
+
+    tensors = {
+        "model.embed_tokens.weight": matrix(12, 4),
+        "model.norm.weight": torch.ones(4, dtype=torch.float64),
+        "lm_head.weight": matrix(12, 4),
+        "model.layers.0.input_layernorm.weight": torch.ones(4, dtype=torch.float64),
+        "model.layers.0.post_attention_layernorm.weight": torch.ones(4, dtype=torch.float64),
+        "model.layers.0.mlp.gate.weight": matrix(2, 4),
+    }
+    for projection in ("q_proj", "k_proj", "v_proj", "o_proj"):
+        tensors[f"model.layers.0.self_attn.{projection}.weight"] = matrix(4, 4)
+    for expert in range(2):
+        tensors[f"model.layers.0.mlp.experts.{expert}.gate_proj.weight"] = matrix(6, 4)
+        tensors[f"model.layers.0.mlp.experts.{expert}.up_proj.weight"] = matrix(6, 4)
+        tensors[f"model.layers.0.mlp.experts.{expert}.down_proj.weight"] = matrix(4, 6)
+    save_file(tensors, str(tmp_path / "model.safetensors"))
+
+    compiled = compile_fortress_checkpoint(tmp_path)
+    assert len(compiled.operations) == 10
+    assert compiled.layers[0].router is not None
+    combiner = compiled.combiner()
+    hidden = torch.tensor([[0.2, -0.1, 0.3, 0.4], [0.1, 0.5, -0.2, 0.2]], dtype=torch.float64)
+    expected = combiner.reference_forward(hidden)
+    actual = combiner.run_cached("moe-request", hidden)
+    torch.testing.assert_close(actual, expected, atol=1e-7, rtol=1e-7)
+    combiner.drop_request("moe-request")
