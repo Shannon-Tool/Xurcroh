@@ -71,6 +71,18 @@ def test_budget_guard_includes_compute_storage_bandwidth_and_reported_charges(
         BudgetPolicy(target_usd=31)
 
 
+def test_uncapped_budget_retains_accounting_without_a_spend_threshold(tmp_path: Path) -> None:
+    store = StateStore(tmp_path / "state.json")
+    now = time.time()
+    store.add_instance(record(now))
+    guard = BudgetGuard(store, BudgetPolicy.uncapped())
+    guard.require_capacity(1_000_000)
+    guard.require_below_limit()
+    assert guard.total(now=now) == pytest.approx(0.502)
+    with pytest.raises(ValueError, match="finite"):
+        guard.require_capacity(float("inf"))
+
+
 def test_state_store_is_atomic_and_does_not_contain_api_keys(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     store = StateStore(path)
@@ -290,6 +302,18 @@ def test_watchdog_destroys_after_budget_threshold(
     monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
     module.watchdog(tmp_path / "state.json", 3600, BudgetPolicy())
     assert destroyed == [123]
+
+
+def test_uncapped_provision_policy_is_explicit() -> None:
+    module_path = Path(__file__).resolve().parents[2] / "scripts/vast/provision.py"
+    spec = importlib.util.spec_from_file_location("vast_provision_policy", module_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    args = type("Arguments", (), {"uncapped": True, "target_usd": 25, "hard_limit_usd": 30})()
+    policy = module.budget_policy(args)
+    assert policy.target_usd is None
+    assert policy.hard_limit_usd is None
 
 
 def test_null_instance_is_accepted_while_provisioning() -> None:

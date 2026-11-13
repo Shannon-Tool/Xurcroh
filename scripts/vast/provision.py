@@ -20,6 +20,12 @@ from xurcroh.providers.vast import (
 )
 
 
+def budget_policy(args: argparse.Namespace) -> BudgetPolicy:
+    if args.uncapped:
+        return BudgetPolicy.uncapped()
+    return BudgetPolicy(target_usd=args.target_usd, hard_limit_usd=args.hard_limit_usd)
+
+
 def watchdog(state: Path, ttl_seconds: float, policy: BudgetPolicy) -> None:
     store = StateStore(state)
     guard = BudgetGuard(store, policy)
@@ -52,7 +58,7 @@ def provision(args: argparse.Namespace) -> None:
     if args.count < 1:
         raise ProviderError("host count must be positive")
     store = StateStore(args.state)
-    policy = BudgetPolicy(target_usd=args.target_usd, hard_limit_usd=args.hard_limit_usd)
+    policy = budget_policy(args)
     guard = BudgetGuard(store, policy)
     if any("destroyed_at" not in item for item in store.snapshot()["instances"]):
         raise ProviderError(
@@ -144,6 +150,7 @@ def provision(args: argparse.Namespace) -> None:
                     str(args.target_usd),
                     "--hard-limit-usd",
                     str(args.hard_limit_usd),
+                    *(["--uncapped"] if args.uncapped else []),
                 ],
                 stdin=subprocess.DEVNULL,
                 stdout=log,
@@ -171,13 +178,14 @@ def main() -> None:
     parser.add_argument("--ttl-seconds", type=float, default=5400)
     parser.add_argument("--target-usd", type=float, default=25)
     parser.add_argument("--hard-limit-usd", type=float, default=30)
+    parser.add_argument("--uncapped", action="store_true")
     parser.add_argument("--image", default="vllm/vllm-openai:v0.15.0")
     parser.add_argument("--model", default="qwen3-0.6b")
     parser.add_argument("--checkpoint", type=Path, default=Path("artifacts/models/Qwen3-0.6B"))
     parser.add_argument("--compiled", type=Path, default=Path("artifacts/qwen3-compiled"))
     parser.add_argument("--output", type=Path, default=Path("artifacts/vast"))
     args = parser.parse_args()
-    policy = BudgetPolicy(target_usd=args.target_usd, hard_limit_usd=args.hard_limit_usd)
+    policy = budget_policy(args)
     if args.watchdog_child:
         watchdog(args.state, args.ttl_seconds, policy)
     else:
