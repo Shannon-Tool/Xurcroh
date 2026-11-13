@@ -18,10 +18,10 @@ The experiment uses a deterministic 16×16 integer matrix and five iterations. E
 | Full-share storage | 2048 bytes |
 | Seed-expanded storage | 1056 bytes |
 | Storage saved by seed expansion | 992 bytes |
-| Full-share split | 0.245225 ms |
-| Seed-expanded split | 0.491062 ms |
-| Prime-field challenge | 1.066436 ms |
+| Full-share split | 0.248392 ms |
+| Seed-expanded split | 0.475264 ms |
+| Prime-field challenge | 0.336992 ms |
 
-The ring is `2^32`; the alternative prime is `2^32 - 5`. The prime measurement covers challenge construction only and is not a complete engine-performance comparison. Arbitrary-precision modular products avoid int64 overflow for full random 32-bit shares. Seed expansion trades additional CPU work for less stored share material and must not be described as an information-theoretic one-time pad.
+The ring is `2^32`; the alternative prime is `2^32 - 5`. The prime measurement covers packed Rust challenge construction only and is not a complete engine-performance comparison. Arbitrary-precision modular products avoid int64 overflow for full random 32-bit shares. Seed expansion trades additional CPU work for less stored share material and must not be described as an information-theoretic one-time pad.
 
 Machine-readable output fields include both storage values, all three timings, both security labels, the matrix shape, and `exact_reconstruction: true`.
