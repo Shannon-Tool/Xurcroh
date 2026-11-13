@@ -114,6 +114,9 @@ class FortressEngine:
                     seed=self.definition.fortress_seed,
                     share_count=self.definition.fortress_shares,
                     materialize_shares=self.engine_name == "fortress-local",
+                    model_dtype=(
+                        torch.float32 if self.engine_name == "fortress-grid" else torch.float64
+                    ),
                 )
                 compiled = self._compiled
                 clients: dict[str, FortressRoleClient] = {}

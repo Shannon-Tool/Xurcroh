@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +82,7 @@ def _compile_matrix(
         input_basis = SignedPermutation.generate(weight.shape[1], seed=input_seed)
         output_basis = SignedPermutation.generate(weight.shape[0], seed=output_seed)
     share_seed = hashlib.sha256(f"{seed}:{name}".encode()).digest() if seed is not None else None
-    operations[name] = compile_operation(
+    operation = compile_operation(
         weight.to(torch.float64),
         threshold=threshold,
         slice_count=slice_count,
@@ -92,6 +92,10 @@ def _compile_matrix(
         input_basis=input_basis,
         output_basis=output_basis,
         materialize_shares=materialize_shares,
+    )
+    operations[name] = replace(
+        operation,
+        quantized=replace(operation.quantized, values=operation.quantized.values.to(torch.int8)),
     )
 
 
@@ -123,6 +127,7 @@ def compile_fortress_checkpoint(
     seed: int | None = None,
     share_count: int = 2,
     materialize_shares: bool = True,
+    model_dtype: torch.dtype | None = None,
 ) -> FortressCheckpoint:
     reader = CheckpointReader(Path(checkpoint))
     config = _text_config(reader)
@@ -251,6 +256,9 @@ def compile_fortress_checkpoint(
         None,
     )
     lm_head = embedding if head_name is None else reader.read_tensors([head_name])[head_name]
+    boundary_dtype = model_dtype or torch.float64
+    embedding = embedding.to(boundary_dtype)
+    lm_head = lm_head.to(boundary_dtype)
     media_projections: dict[str, torch.Tensor] = {}
     vision = _optional_media_projection(
         reader,
@@ -282,7 +290,7 @@ def compile_fortress_checkpoint(
         )
         model = loader.from_pretrained(
             checkpoint,
-            dtype=torch.float64,
+            dtype=boundary_dtype,
             local_files_only=True,
             trust_remote_code=False,
         )
@@ -305,13 +313,17 @@ def compile_fortress_checkpoint(
                 "model.embed_audio",
             ),
         )
+        model.get_input_embeddings().weight = torch.nn.Parameter(embedding, requires_grad=False)
+        output_embeddings = model.get_output_embeddings()
+        if output_embeddings is not None:
+            output_embeddings.weight = torch.nn.Parameter(lm_head, requires_grad=False)
         model.eval()
     return FortressCheckpoint(
         layers=tuple(layers),
         operations=operations,
         embedding=embedding,
         final_norm=final_norm,
-        lm_head=lm_head.to(torch.float64),
+        lm_head=lm_head,
         query_heads=query_heads,
         kv_heads=kv_heads,
         rope_theta=float(config.get("rope_theta", 10_000)),

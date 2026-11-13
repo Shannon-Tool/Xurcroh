@@ -33,13 +33,14 @@ def evaluate_share_reconstruction(
         raise ValueError("reconstruction evaluation requires at least two shares")
     recovered_weight = combine_shares(weight_shares)
     recovered_activation = combine_shares(activation_shares)
+    canonical_weight = weight.to(torch.int64).remainder(2**32)
     return ShareReconstructionReport(
-        full_weight_collusion_exact=torch.equal(recovered_weight, weight.remainder(2**32)),
+        full_weight_collusion_exact=torch.equal(recovered_weight, canonical_weight),
         full_activation_collusion_exact=torch.equal(
             recovered_activation, activation.remainder(2**32)
         ),
         single_weight_share_reconstructs=any(
-            torch.equal(share, weight.remainder(2**32)) for share in weight_shares
+            torch.equal(share, canonical_weight) for share in weight_shares
         ),
         single_activation_share_reconstructs=any(
             torch.equal(share, activation.remainder(2**32)) for share in activation_shares
