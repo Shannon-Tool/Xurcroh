@@ -97,6 +97,9 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
         with torch.inference_mode():
             original_logits = original(input_ids=input_ids).logits[0, -1].to(torch.float64)
         original_error = float((quantized_logits - original_logits).abs().max())
+        from xurcroh.fortress.attacks import exercise_adversarial_grid
+
+        adversarial = exercise_adversarial_grid(clients, roles, compiled.operations)
     finally:
         for role_client in clients.values():
             role_client.close()
@@ -120,6 +123,7 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
         "bytes_sent": direct_sent + int(metrics.get("fortress_bytes_sent", 0)),
         "bytes_received": direct_received + int(metrics.get("fortress_bytes_received", 0)),
         "inference_seconds": time.perf_counter() - started,
+        **adversarial,
         "sdk": {
             "response": response.model_dump(mode="json"),
             "metrics": metrics,

@@ -377,3 +377,103 @@ def test_diverse_offer_selection_supports_four_hosts_and_cost_guards(tmp_path: P
             planned_hours=1,
             disk_gb=40,
         )
+
+
+def test_provision_preserves_offer_diversity_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_path = Path(__file__).resolve().parents[2] / "scripts/vast/provision.py"
+    spec = importlib.util.spec_from_file_location("vast_provision_metadata", module_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    selected_offer = {
+        "id": 10,
+        "machine_id": 20,
+        "gpu_ram": 24_576,
+        "dph_total": 0.4,
+        "storage_total_cost": 0.002,
+        "provider_id": "provider-a",
+        "geolocation": "de",
+        "cpu_vendor": "amd",
+    }
+
+    class FakeClient:
+        def __init__(self):
+            self.store = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def refresh_charges(self, store):
+            return {}
+
+        def offers(self, gpu_name):
+            return [selected_offer]
+
+        def create(self, offer, **kwargs):
+            return 123
+
+        def wait_running(self, instance_id, timeout, guard):
+            return {
+                "id": 123,
+                "ssh_host": "192.0.2.1",
+                "ssh_port": 22,
+                "public_ipaddr": "192.0.2.1",
+                "ports": {"9444/tcp": [{"HostPort": "9444"}]},
+            }
+
+    class Process:
+        pid = 1
+        returncode = 0
+
+        def __init__(self, *args):
+            self.args = args[0] if args else []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def communicate(self, input=None, timeout=None):
+            return ("abc", "")
+
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr(module, "VastClient", FakeClient)
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *args, **kwargs: Process())
+    args = type("Arguments", (), {})()
+    args.__dict__.update(
+        {
+            "state": tmp_path / "state.json",
+            "count": 1,
+            "uncapped": True,
+            "target_usd": 25,
+            "hard_limit_usd": 30,
+            "gpu_name": None,
+            "min_gpu_ram_gb": 1,
+            "max_hourly_usd": 10,
+            "planned_hours": 1,
+            "disk_gb": 40,
+            "max_country_fraction": 1,
+            "max_cpu_vendor_fraction": 1,
+            "max_provider_fraction": 1,
+            "boot_timeout": 1,
+            "ttl_seconds": 60,
+            "image": "test-image",
+            "model": "tiny",
+            "checkpoint": tmp_path / "model",
+            "compiled": tmp_path / "compiled",
+            "output": tmp_path / "output",
+        }
+    )
+    module.provision(args)
+    stored = module.StateStore(tmp_path / "state.json").snapshot()["instances"][0]
+    assert stored["provider_id"] == "provider-a"
+    assert stored["geolocation"] == "de"
+    assert stored["cpu_vendor"] == "amd"
