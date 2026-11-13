@@ -23,9 +23,17 @@ from pathlib import Path
 
 import torch
 
+cpu_vendor = "unknown"
+for line in Path("/proc/cpuinfo").read_text().splitlines():
+    if line.startswith("vendor_id"):
+        raw_vendor = line.split(":", 1)[1].strip()
+        cpu_vendor = {"AuthenticAMD": "AMD", "GenuineIntel": "Intel"}.get(raw_vendor, raw_vendor)
+        break
+
 if not torch.cuda.is_available():
     raise SystemExit("PyTorch cannot access a CUDA device")
 report = {
+    "cpu_vendor": cpu_vendor,
     "torch": torch.__version__,
     "vllm": importlib.metadata.version("vllm"),
     "cuda_runtime": torch.version.cuda,

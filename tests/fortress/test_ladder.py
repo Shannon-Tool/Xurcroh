@@ -84,6 +84,8 @@ def test_hardware_ladder_rejects_unverified_cpu_vendor_metadata() -> None:
     document["workers"][0]["cpu_vendor"] = "unknown"
     with pytest.raises(LadderEvidenceError, match="unknown"):
         LadderRung.from_mapping(document)
+    pending = LadderRung.from_mapping(document, allow_unverified_hardware=True)
+    assert pending.workers[0].cpu_vendor == "unknown"
 
 
 def test_hardware_evidence_requires_exact_results_and_teardown() -> None:
