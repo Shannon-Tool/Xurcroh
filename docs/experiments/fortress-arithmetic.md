@@ -9,7 +9,7 @@ Reproduce with:
 .venv/bin/pytest tests/fortress tests/experiments/test_fortress_arithmetic.py -q
 ```
 
-The experiment uses a deterministic 16×16 integer matrix and five iterations. Exact reconstruction is checked for both full random and ChaCha20 seed-expanded additive shares. Full shares are labelled information-theoretic only under their independence and non-collusion assumptions; seed-expanded shares are explicitly computational.
+The experiment uses a deterministic 16×16 integer matrix and five iterations. Exact reconstruction is checked for both full random and ChaCha20 seed-expanded additive shares. Each non-final seeded share uses an independent SHA-256 domain-separated seed. Full shares are labelled information-theoretic only under their independence and non-collusion assumptions; seed-expanded shares are explicitly computational.
 
 ## Measured values
 
@@ -18,9 +18,9 @@ The experiment uses a deterministic 16×16 integer matrix and five iterations. E
 | Full-share storage | 2048 bytes |
 | Seed-expanded storage | 1056 bytes |
 | Storage saved by seed expansion | 992 bytes |
-| Full-share split | 0.183534 ms |
-| Seed-expanded split | 0.445732 ms |
-| Prime-field challenge | 0.939273 ms |
+| Full-share split | 0.245225 ms |
+| Seed-expanded split | 0.491062 ms |
+| Prime-field challenge | 1.066436 ms |
 
 The ring is `2^32`; the alternative prime is `2^32 - 5`. The prime measurement covers challenge construction only and is not a complete engine-performance comparison. Arbitrary-precision modular products avoid int64 overflow for full random 32-bit shares. Seed expansion trades additional CPU work for less stored share material and must not be described as an information-theoretic one-time pad.
 
