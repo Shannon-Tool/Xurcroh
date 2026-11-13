@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -70,6 +71,7 @@ def _compile_matrix(
     seed: int | None,
     share_count: int = 2,
     materialize_shares: bool = True,
+    operation_sink: Callable[[str, CompiledOperation], None] | None = None,
 ) -> None:
     if name in operations:
         raise ConfigurationError(f"duplicate Fortress operation: {name}")
@@ -93,6 +95,15 @@ def _compile_matrix(
         output_basis=output_basis,
         materialize_shares=materialize_shares,
     )
+    if operation_sink is not None:
+        operation_sink(name, operation)
+        operation = replace(
+            operation,
+            shares={
+                index: replace(share, matrix=None) for index, share in operation.shares.items()
+            },
+            storage={},
+        )
     operations[name] = replace(
         operation,
         quantized=replace(operation.quantized, values=operation.quantized.values.to(torch.int8)),
@@ -129,7 +140,10 @@ def compile_fortress_checkpoint(
     materialize_shares: bool = True,
     model_dtype: torch.dtype | None = None,
     load_model: bool = True,
+    operation_sink: Callable[[str, CompiledOperation], None] | None = None,
 ) -> FortressCheckpoint:
+    if operation_sink is not None and not materialize_shares:
+        raise ValueError("role packaging requires materialized weight shares")
     reader = CheckpointReader(Path(checkpoint))
     config = _text_config(reader)
     names = list(reader.tensor_names())
@@ -168,6 +182,7 @@ def compile_fortress_checkpoint(
                 seed=seed,
                 share_count=share_count,
                 materialize_shares=materialize_shares,
+                operation_sink=operation_sink,
             )
         mlp_prefix = f"{prefix}.mlp"
         if expert_indices:
@@ -183,6 +198,7 @@ def compile_fortress_checkpoint(
                         seed=seed,
                         share_count=share_count,
                         materialize_shares=materialize_shares,
+                        operation_sink=operation_sink,
                     )
         else:
             for projection in ("gate_proj", "up_proj", "down_proj"):
@@ -196,6 +212,7 @@ def compile_fortress_checkpoint(
                     seed=seed,
                     share_count=share_count,
                     materialize_shares=materialize_shares,
+                    operation_sink=operation_sink,
                 )
         for name, tensor in tensors.items():
             operation_name = name.removesuffix(".weight")
@@ -217,6 +234,7 @@ def compile_fortress_checkpoint(
                     seed=seed,
                     share_count=share_count,
                     materialize_shares=materialize_shares,
+                    operation_sink=operation_sink,
                 )
         router = tensors[f"{mlp_prefix}.gate.weight"].to(torch.float64) if expert_indices else None
         top_k = int(

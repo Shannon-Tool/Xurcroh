@@ -13,6 +13,25 @@ from xurcroh.fortress.transport import encode_role_artifact
 from xurcroh.fortress.worker_cli import artifact_file_name
 
 
+def write_operation_role_artifacts(
+    name: str,
+    operation: CompiledOperation,
+    rung: LadderRung,
+    output: str | Path,
+) -> None:
+    root = Path(output)
+    for worker in rung.workers:
+        directory = root / worker.name
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"{artifact_file_name(name)}.json"
+        encoded = encode_role_artifact(
+            operation, worker.weight_index, bytes.fromhex(worker.recipient_public)
+        )
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(encoded)
+
+
 def write_role_packages(
     compiled: FortressCheckpoint | Mapping[str, CompiledOperation],
     rung: LadderRung,
@@ -25,13 +44,9 @@ def write_role_packages(
         directory = root / worker.name
         if directory.exists() and any(directory.iterdir()):
             raise ConfigurationError(f"role package directory is not empty: {directory}")
-        directory.mkdir(parents=True, exist_ok=True)
-        recipient = bytes.fromhex(worker.recipient_public)
-        for name, operation in operations.items():
-            path = directory / f"{artifact_file_name(name)}.json"
-            path.write_bytes(encode_role_artifact(operation, worker.weight_index, recipient))
-            os.chmod(path, 0o600)
         packages[worker.name] = directory
+    for name, operation in operations.items():
+        write_operation_role_artifacts(name, operation, rung, root)
     return packages
 
 

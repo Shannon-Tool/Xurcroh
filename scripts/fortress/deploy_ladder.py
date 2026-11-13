@@ -22,7 +22,11 @@ from scripts.gpu.deploy_two_node import download, options, scp, ssh
 
 from xurcroh.fortress.diffusers_loader import compile_diffusers_component
 from xurcroh.fortress.ladder import LadderRung
-from xurcroh.fortress.ladder_deployment import sdk_configuration, write_role_packages
+from xurcroh.fortress.ladder_deployment import (
+    sdk_configuration,
+    write_operation_role_artifacts,
+    write_role_packages,
+)
 from xurcroh.fortress.model_compiler import compile_fortress_checkpoint
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -275,8 +279,17 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
     descriptor = os.open(seed_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w") as handle:
         handle.write(f"{seed}\n")
+    role_root = output / "roles"
     if rung.modality in {"text", "vlm"}:
-        compiled = compile_fortress_checkpoint(checkpoint, seed=seed, share_count=rung.share_count)
+        compile_fortress_checkpoint(
+            checkpoint,
+            seed=seed,
+            share_count=rung.share_count,
+            load_model=False,
+            operation_sink=lambda name, operation: write_operation_role_artifacts(
+                name, operation, rung, role_root
+            ),
+        )
     else:
         compiled = compile_diffusers_component(
             checkpoint,
@@ -284,7 +297,8 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
             seed=seed,
             share_count=rung.share_count,
         )
-    packages = write_role_packages(compiled, rung, output / "roles")
+        write_role_packages(compiled, rung, role_root)
+    packages = {worker.name: role_root / worker.name for worker in rung.workers}
     services = []
     for worker in rung.workers:
         host = endpoint_host(worker.endpoint)
