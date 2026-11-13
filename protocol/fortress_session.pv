@@ -1,0 +1,60 @@
+(* Fortress sealed-master session model, HPKE-base abstraction.
+   mTLS peer authentication, hybrid PQ KEM, computational HPKE details, replay windows,
+   nonce exhaustion, compromise, and side channels are outside this symbolic model. *)
+
+type secretkey.
+type publickey.
+type master.
+type label.
+type epoch.
+type key.
+
+fun pk(secretkey): publickey.
+fun hpke_seal(master, publickey): bitstring.
+reduc forall m: master, sk: secretkey;
+  hpke_open(hpke_seal(m, pk(sk)), sk) = m.
+
+fun derive(master, label, epoch): key.
+fun aead_seal(bitstring, key): bitstring.
+reduc forall payload: bitstring, k: key;
+  aead_open(aead_seal(payload, k), k) = payload.
+
+event ServerEstablished(master).
+event ClientAccepted(master).
+
+free control: channel.
+free server_secret: secretkey [private].
+free client_label, stage_label: label [public].
+free epoch_zero, epoch_one: epoch [public].
+free session_id, session_token: bitstring [public].
+free activation_secret, response_secret: bitstring [private].
+
+query attacker(activation_secret).
+query attacker(response_secret).
+query m: master; event(ClientAccepted(m)) ==> event(ServerEstablished(m)).
+
+let client(server_public: publickey) =
+  new master_secret: master;
+  out(control, (session_id, session_token, hpke_seal(master_secret, server_public)));
+  out(control, aead_seal(activation_secret, derive(master_secret, client_label, epoch_zero)));
+  in(control, response: bitstring);
+  let accepted_master = master_secret in
+  let received_response = aead_open(response, derive(accepted_master, stage_label, epoch_zero)) in
+  event ClientAccepted(accepted_master);
+  out(control, aead_seal(activation_secret, derive(accepted_master, client_label, epoch_one))).
+
+let server(server_private: secretkey) =
+  in(control, (=session_id, =session_token, establishment: bitstring));
+  let established_master = hpke_open(establishment, server_private) in
+  event ServerEstablished(established_master);
+  in(control, request: bitstring);
+  let received_activation = aead_open(request, derive(established_master, client_label, epoch_zero)) in
+  out(control, aead_seal(response_secret, derive(established_master, stage_label, epoch_zero)));
+  in(control, rotated: bitstring);
+  let received_activation = aead_open(rotated, derive(established_master, client_label, epoch_one)) in
+  0.
+
+process
+  let server_public = pk(server_secret) in
+  out(control, server_public);
+  (!client(server_public) | !server(server_secret))
