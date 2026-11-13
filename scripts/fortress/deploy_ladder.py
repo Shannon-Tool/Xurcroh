@@ -99,7 +99,7 @@ def ssh_worker(manifest: dict[str, Any], worker: Any, index: int) -> dict[str, A
     }
     result = {
         "name": worker.name,
-        "host": endpoint_host(worker.endpoint),
+        "host": settings.get("host", endpoint_host(worker.endpoint)),
         "ssh_user": settings.get("username", manifest.get("ssh_user", "root")),
         "ssh_port": settings.get("port", manifest.get("ssh_port", 22)),
     }

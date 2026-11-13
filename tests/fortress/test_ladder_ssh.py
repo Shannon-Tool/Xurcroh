@@ -62,6 +62,7 @@ def test_per_worker_ssh_configuration_is_normalized() -> None:
         "workers": [
             {
                 "ssh": {
+                    "host": "ssh.example",
                     "username": "ubuntu",
                     "port": 2222,
                     "key_path": "/keys/worker",
@@ -72,7 +73,7 @@ def test_per_worker_ssh_configuration_is_normalized() -> None:
     }
     worker = type("Worker", (), {"name": "role", "endpoint": "192.0.2.1:9444"})()
     normalized = module.ssh_worker(document, worker, 0)
-    assert normalized["host"] == "192.0.2.1"
+    assert normalized["host"] == "ssh.example"
     assert normalized["ssh_user"] == "ubuntu"
     assert normalized["ssh_port"] == 2222
     assert normalized["ssh_key"] == "/keys/worker"

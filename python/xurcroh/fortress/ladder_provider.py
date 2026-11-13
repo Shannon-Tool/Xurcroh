@@ -40,6 +40,12 @@ def materialize_ladder_manifest(
             {
                 "name": name,
                 "endpoint": f"{instance['public_host']}:{int(instance['tls_port'])}",
+                "ssh": {
+                    "host": str(instance["host"]),
+                    "username": str(instance["ssh_user"]),
+                    "port": int(instance["ssh_port"]),
+                    "key_path": str(instance["ssh_key"]),
+                },
                 "machine_id": int(record["machine_id"]),
                 "provider_id": str(record.get("provider_id", "vast")),
                 "country": str(record.get("geolocation", "unknown")),
