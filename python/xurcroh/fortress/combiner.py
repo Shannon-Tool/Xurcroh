@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torch
@@ -8,19 +9,36 @@ import torch
 from xurcroh.algebra.attention import apply_rope
 from xurcroh.algebra.rmsnorm import unit_rms_norm
 from xurcroh.fortress.arithmetic import quantize_activations, signed_ring, split_secret
-from xurcroh.fortress.compiler import CompiledOperation
+from xurcroh.fortress.compiler import (
+    CompiledOperation,
+    apply_input_basis,
+    apply_output_basis,
+)
 from xurcroh.fortress.grid import execute_grid
 from xurcroh.models.dense import DenseLayerWeights
+from xurcroh.models.moe import ConstantLoadDispatcher
 
 if TYPE_CHECKING:
     from xurcroh.fortress.transport import FortressRoleClient
+
+
+@dataclass(frozen=True)
+class FortressLayerMetadata:
+    head_dimension: int
+    q_norm: torch.Tensor | None
+    k_norm: torch.Tensor | None
+    input_gain: torch.Tensor
+    post_attention_gain: torch.Tensor
+    epsilon: float = 1e-6
+    router: torch.Tensor | None = None
+    top_k: int = 1
 
 
 class FortressCombiner:
     def __init__(
         self,
         *,
-        layers: list[DenseLayerWeights],
+        layers: list[DenseLayerWeights | FortressLayerMetadata],
         operations: dict[str, CompiledOperation],
         query_heads: int,
         kv_heads: int,
@@ -61,7 +79,8 @@ class FortressCombiner:
 
     def _linear(self, name: str, hidden: torch.Tensor) -> torch.Tensor:
         operation = self.operations[name]
-        activation = quantize_activations(hidden, bits=self.activation_bits)
+        transformed = apply_input_basis(operation, hidden)
+        activation = quantize_activations(transformed, bits=self.activation_bits)
         shares = split_secret(activation.values, count=2).shares
         product = (
             execute_grid(shares, operation.shares)
@@ -69,7 +88,8 @@ class FortressCombiner:
             else self.grid_clients[name].execute(shares, request_id=name)
         )
         scales = activation.scales.unsqueeze(-1) if hidden.ndim == 2 else activation.scales
-        return signed_ring(product).to(torch.float64) * scales * operation.quantized.scale
+        result = signed_ring(product).to(torch.float64) * scales * operation.quantized.scale
+        return apply_output_basis(operation, result)
 
     def _decompiled_weight(self, name: str) -> torch.Tensor:
         return self.operations[name].quantized.dequantize()
@@ -78,13 +98,23 @@ class FortressCombiner:
         self,
         layer_index: int,
         hidden: torch.Tensor,
-        layer: DenseLayerWeights,
+        layer: DenseLayerWeights | FortressLayerMetadata,
         *,
         past: tuple[torch.Tensor, torch.Tensor] | None = None,
         position_offset: int = 0,
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         tokens = hidden.shape[0]
-        head_dimension = layer.attention.q.shape[0] // self.query_heads
+        head_dimension = (
+            layer.head_dimension
+            if isinstance(layer, FortressLayerMetadata)
+            else layer.attention.q.shape[0] // self.query_heads
+        )
+        q_norm = (
+            layer.q_norm if isinstance(layer, FortressLayerMetadata) else layer.attention.q_norm
+        )
+        k_norm = (
+            layer.k_norm if isinstance(layer, FortressLayerMetadata) else layer.attention.k_norm
+        )
         prefix = f"model.layers.{layer_index}.self_attn"
         q = self._linear(f"{prefix}.q_proj", hidden).reshape(
             tokens, self.query_heads, head_dimension
@@ -92,10 +122,10 @@ class FortressCombiner:
         k = self._linear(f"{prefix}.k_proj", hidden).reshape(tokens, self.kv_heads, head_dimension)
         v = self._linear(f"{prefix}.v_proj", hidden).reshape(tokens, self.kv_heads, head_dimension)
         epsilon = layer.epsilon
-        if layer.attention.q_norm is not None:
-            q = torch.nn.functional.rms_norm(q, (head_dimension,), layer.attention.q_norm, epsilon)
-        if layer.attention.k_norm is not None:
-            k = torch.nn.functional.rms_norm(k, (head_dimension,), layer.attention.k_norm, epsilon)
+        if q_norm is not None:
+            q = torch.nn.functional.rms_norm(q, (head_dimension,), q_norm, epsilon)
+        if k_norm is not None:
+            k = torch.nn.functional.rms_norm(k, (head_dimension,), k_norm, epsilon)
         q = apply_rope(q, base=self.rope_theta, interleaved=False, position_offset=position_offset)
         k = apply_rope(k, base=self.rope_theta, interleaved=False, position_offset=position_offset)
         if past is not None:
@@ -117,6 +147,32 @@ class FortressCombiner:
         context = context.reshape(tokens, self.query_heads * head_dimension)
         return self._linear(f"{prefix}.o_proj", context), cache
 
+    def _moe_layer(
+        self,
+        layer_index: int,
+        residual: torch.Tensor,
+        layer: FortressLayerMetadata,
+        *,
+        reference: bool = False,
+    ) -> torch.Tensor:
+        if layer.router is None:
+            raise ValueError("MoE layer requires a client-owned router")
+        linear = self._reference_linear if reference else self._linear
+        ffn_input = unit_rms_norm(residual, layer.epsilon) * layer.post_attention_gain
+        dispatcher = ConstantLoadDispatcher(
+            top_k=layer.top_k, constant_load=ffn_input.shape[0] * layer.top_k
+        )
+        plan = dispatcher.dispatch(ffn_input, layer.router)
+        outputs = []
+        for expert in range(layer.router.shape[0]):
+            prefix = f"model.layers.{layer_index}.mlp.experts.{expert}"
+            selected = ffn_input[plan.token_indices[expert]]
+            gate = linear(f"{prefix}.gate_proj", selected)
+            up = linear(f"{prefix}.up_proj", selected)
+            activated = torch.nn.functional.silu(gate) * up
+            outputs.append(linear(f"{prefix}.down_proj", activated))
+        return residual + dispatcher.combine(plan, torch.stack(outputs))
+
     def _layer(
         self,
         layer_index: int,
@@ -135,6 +191,8 @@ class FortressCombiner:
             position_offset=position_offset,
         )
         residual = hidden + attention
+        if isinstance(layer, FortressLayerMetadata) and layer.router is not None:
+            return self._moe_layer(layer_index, residual, layer), cache
         ffn_input = unit_rms_norm(residual, layer.epsilon) * layer.post_attention_gain
         gate = self._linear(f"model.layers.{layer_index}.mlp.gate_proj", ffn_input)
         up = self._linear(f"model.layers.{layer_index}.mlp.up_proj", ffn_input)
@@ -166,23 +224,35 @@ class FortressCombiner:
         return torch.argmax(normalized @ self.lm_head.to(hidden.dtype).T, dim=-1)
 
     def _reference_linear(self, name: str, hidden: torch.Tensor) -> torch.Tensor:
-        activation = quantize_activations(hidden, bits=self.activation_bits)
         operation = self.operations[name]
+        transformed = apply_input_basis(operation, hidden)
+        activation = quantize_activations(transformed, bits=self.activation_bits)
         product = activation.values @ operation.quantized.values.T
         scales = activation.scales.unsqueeze(-1) if hidden.ndim == 2 else activation.scales
-        return product.to(torch.float64) * scales * operation.quantized.scale
+        result = product.to(torch.float64) * scales * operation.quantized.scale
+        return apply_output_basis(operation, result)
 
     def _reference_attention(
         self,
         layer_index: int,
         hidden: torch.Tensor,
-        layer: DenseLayerWeights,
+        layer: DenseLayerWeights | FortressLayerMetadata,
         *,
         past: tuple[torch.Tensor, torch.Tensor] | None = None,
         position_offset: int = 0,
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         tokens = hidden.shape[0]
-        head_dimension = layer.attention.q.shape[0] // self.query_heads
+        head_dimension = (
+            layer.head_dimension
+            if isinstance(layer, FortressLayerMetadata)
+            else layer.attention.q.shape[0] // self.query_heads
+        )
+        q_norm = (
+            layer.q_norm if isinstance(layer, FortressLayerMetadata) else layer.attention.q_norm
+        )
+        k_norm = (
+            layer.k_norm if isinstance(layer, FortressLayerMetadata) else layer.attention.k_norm
+        )
         prefix = f"model.layers.{layer_index}.self_attn"
         q = self._reference_linear(f"{prefix}.q_proj", hidden).reshape(
             tokens, self.query_heads, head_dimension
@@ -193,14 +263,10 @@ class FortressCombiner:
         v = self._reference_linear(f"{prefix}.v_proj", hidden).reshape(
             tokens, self.kv_heads, head_dimension
         )
-        if layer.attention.q_norm is not None:
-            q = torch.nn.functional.rms_norm(
-                q, (head_dimension,), layer.attention.q_norm, layer.epsilon
-            )
-        if layer.attention.k_norm is not None:
-            k = torch.nn.functional.rms_norm(
-                k, (head_dimension,), layer.attention.k_norm, layer.epsilon
-            )
+        if q_norm is not None:
+            q = torch.nn.functional.rms_norm(q, (head_dimension,), q_norm, layer.epsilon)
+        if k_norm is not None:
+            k = torch.nn.functional.rms_norm(k, (head_dimension,), k_norm, layer.epsilon)
         q = apply_rope(q, base=self.rope_theta, interleaved=False, position_offset=position_offset)
         k = apply_rope(k, base=self.rope_theta, interleaved=False, position_offset=position_offset)
         if past is not None:
@@ -227,6 +293,9 @@ class FortressCombiner:
             attention_input = unit_rms_norm(hidden, layer.epsilon) * layer.input_gain
             attention, _ = self._reference_attention(index, attention_input, layer)
             residual = hidden + attention
+            if isinstance(layer, FortressLayerMetadata) and layer.router is not None:
+                hidden = self._moe_layer(index, residual, layer, reference=True)
+                continue
             ffn_input = unit_rms_norm(residual, layer.epsilon) * layer.post_attention_gain
             prefix = f"model.layers.{index}.mlp"
             gate = self._reference_linear(f"{prefix}.gate_proj", ffn_input)
