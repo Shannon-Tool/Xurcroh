@@ -251,6 +251,7 @@ def select_diverse_offers(
             provider = str(offer.get("provider_id") or "vast")
             if (
                 machine in machines
+                or (count > 1 and vendor.lower() in {"", "unknown"})
                 or countries.get(country, 0) >= country_limit
                 or vendors.get(vendor, 0) >= vendor_limit
                 or providers.get(provider, 0) >= provider_limit

@@ -121,6 +121,10 @@ class LadderRung:
         for field in ("provider_id", "country", "cpu_vendor"):
             if len({getattr(worker, field) for worker in self.workers}) < 2:
                 raise LadderEvidenceError(f"worker {field} diversity is required")
+        if self.rung not in {"F0", "M0"} and any(
+            worker.cpu_vendor.lower() in {"", "unknown"} for worker in self.workers
+        ):
+            raise LadderEvidenceError("hardware workers cannot have unknown CPU vendor metadata")
 
 
 def _metric(report: Mapping[str, Any], name: str) -> float:

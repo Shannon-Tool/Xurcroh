@@ -400,6 +400,31 @@ def test_diverse_offer_selection_supports_four_hosts_and_cost_guards(tmp_path: P
         )
 
 
+def test_multi_host_selection_rejects_unknown_cpu_vendors(tmp_path: Path) -> None:
+    from xurcroh.providers.vast import select_diverse_offers
+
+    offers = [
+        {
+            **offer(index + 1, index + 10),
+            "geolocation": f"country-{index}",
+            "provider_id": f"operator-{index}",
+            "cpu_vendor": "unknown" if index == 0 else "amd",
+        }
+        for index in range(4)
+    ]
+    with pytest.raises(ProviderError, match="diversity"):
+        select_diverse_offers(
+            offers,
+            count=4,
+            guard=BudgetGuard(StateStore(tmp_path / "state.json")),
+            planned_hours=1,
+            disk_gb=40,
+            max_country_fraction=1,
+            max_cpu_vendor_fraction=1,
+            max_provider_fraction=1,
+        )
+
+
 def test_provision_preserves_offer_diversity_metadata(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
