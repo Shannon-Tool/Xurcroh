@@ -42,6 +42,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--ca", required=True, type=Path)
     parser.add_argument("--host", default="0.0.0.0")  # noqa: S104
     parser.add_argument("--port", type=int, default=9444)
+    parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--exit-status-file", type=Path)
     args = parser.parse_args(argv)
     exit_code = 0
@@ -53,6 +54,7 @@ def main(argv: list[str] | None = None) -> None:
             private_key=args.private_key.read_bytes(),
             client_ca=args.ca.read_bytes(),
             address=f"{args.host}:{args.port}",
+            device=args.device,
         )
         stopped = threading.Event()
 

@@ -4,6 +4,7 @@ import base64
 import logging
 import threading
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -39,12 +40,17 @@ class FortressRoleWorker:
         rotation_interval: int = 64,
         frame_bytes: int = DEFAULT_FRAME_BYTES,
         onion_private_key: bytes | None = None,
+        device: str = "cpu",
+        cuda_library: str | Path | None = None,
     ) -> None:
         import xurcroh_quic
 
         if frame_bytes < 256:
             raise ValueError("fixed frame size is too small")
         self._frame_bytes = frame_bytes
+        if device not in {"cpu", "cuda"}:
+            raise ValueError("Fortress worker device must be cpu or cuda")
+        self.device = device
         if rotation_interval <= 0:
             raise ValueError("rotation interval must be positive")
         self._rotation_interval = rotation_interval
@@ -62,9 +68,28 @@ class FortressRoleWorker:
         self.weight_index = weight_indices.pop()
         private = X25519PrivateKey.from_private_bytes(recipient_private_key)
         self.sessions = StageSessionStore(private, self.weight_index, capacity=session_capacity)
-        self._native_weights = {
-            name: native_role_matrix(artifact) for name, artifact in self.artifacts.items()
-        }
+        self._native_weights = (
+            {}
+            if device == "cuda"
+            else {name: native_role_matrix(artifact) for name, artifact in self.artifacts.items()}
+        )
+        self._cuda_controller: Any = None
+        self._cuda_weights: dict[str, torch.Tensor] = {}
+        if device == "cuda":
+            if not torch.cuda.is_available():
+                raise ValueError("Fortress CUDA worker requires an available CUDA device")
+            from xurcroh.fortress.native import FortressNativeController
+
+            library = cuda_library or (
+                Path(__file__).resolve().parents[3] / "native/build/xurcroh_burn_alloc.so"
+            )
+            if not Path(library).is_file():
+                raise ValueError("Fortress CUDA worker requires the compiled native library")
+            self._cuda_controller = FortressNativeController(library)
+            self._cuda_weights = {
+                name: artifact.matrix.remainder(RING_MODULUS).to(torch.int32).T.contiguous().cuda()
+                for name, artifact in self.artifacts.items()
+            }
         self.server = xurcroh_quic.TensorServer.bind_mutual(
             address, list(certificates), private_key, client_ca
         )
@@ -128,6 +153,23 @@ class FortressRoleWorker:
         activation = torch.frombuffer(bytearray(activation_payload), dtype=torch.int64).clone()
         return name, activation
 
+    def _execute_activation(self, name: str, activation: torch.Tensor) -> list[int]:
+        if self._cuda_controller is None:
+            return [
+                int(value)
+                for value in self._quic.execute_fortress_role(
+                    activation.remainder(RING_MODULUS).tolist(), self._native_weights[name]
+                )
+            ]
+        activation_device = activation.remainder(RING_MODULUS).to(torch.int32).cuda()
+        output = torch.empty(self.artifacts[name].matrix.shape[0], dtype=torch.int32, device="cuda")
+        try:
+            self._cuda_controller.matvec_device(self._cuda_weights[name], activation_device, output)
+            return output.cpu().to(torch.int64).remainder(RING_MODULUS).tolist()
+        finally:
+            activation_device.zero_()
+            output.zero_()
+
     def _execute(self, connection: Any) -> None:
         completed = 0
         try:
@@ -178,9 +220,7 @@ class FortressRoleWorker:
                     if result_dtype != "u8" or result_shape != [len(payload)]:
                         raise ProtocolError("Fortress operation payload must be a byte vector")
                     name, activation = self._decode_activation(payload)
-                    values = self._quic.execute_fortress_role(
-                        activation.remainder(RING_MODULUS).tolist(), self._native_weights[name]
-                    )
+                    values = self._execute_activation(name, activation)
                     exact_payload = bytearray(
                         b"".join(value.to_bytes(16, "little", signed=True) for value in values)
                     )
@@ -231,5 +271,10 @@ class FortressRoleWorker:
         for thread in threads:
             thread.join(timeout=10)
         self.sessions.close()
+        for weights in self._cuda_weights.values():
+            weights.zero_()
+        self._cuda_weights.clear()
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
         for artifact in self.artifacts.values():
             artifact.matrix.zero_()

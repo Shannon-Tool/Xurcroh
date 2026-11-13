@@ -75,7 +75,7 @@ def hardware_validated(reports: list[dict[str, Any]], worker_count: int) -> bool
     return True
 
 
-def start_command(remote_root: str, name: str) -> str:
+def start_command(remote_root: str, name: str, device: str = "cpu") -> str:
     root = shlex.quote(remote_root)
     return (
         f"cd {root} && nohup env HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 "
@@ -84,7 +84,8 @@ def start_command(remote_root: str, name: str) -> str:
         f"--artifact-dir {root}/role-artifacts --recipient-key {root}/recipient.key "
         f"--certificate {root}/tls/{shlex.quote(name)}.crt "
         f"--private-key {root}/tls/{shlex.quote(name)}.key --ca {root}/tls/ca.crt "
-        f"--host 0.0.0.0 --port 9444 --exit-status-file {root}/role.exit "
+        f"--host 0.0.0.0 --port 9444 --device {shlex.quote(device)} "
+        f"--exit-status-file {root}/role.exit "
         f"</dev/null >{root}/role.log 2>&1 & "
         f"echo $! > {root}/role.pid"
     )
@@ -365,7 +366,9 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
         with ThreadPoolExecutor(max_workers=len(workers)) as executor:
             list(
                 executor.map(
-                    lambda worker: ssh(worker, start_command(remote_root, worker["name"])),
+                    lambda worker: ssh(
+                        worker, start_command(remote_root, worker["name"], device="cuda")
+                    ),
                     workers,
                 )
             )
