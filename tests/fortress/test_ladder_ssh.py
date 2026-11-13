@@ -36,6 +36,7 @@ def test_remote_command_executes_real_fortress_worker() -> None:
     assert "--artifact-dir /srv/fortress/role-artifacts" in command
     assert "--host 0.0.0.0 --port 9444" in command
     assert "--recipient-key /srv/fortress/recipient.key" in command
+    assert "--exit-status-file /srv/fortress/role.exit" in command
 
 
 def test_per_worker_ssh_configuration_is_normalized() -> None:
@@ -59,3 +60,26 @@ def test_per_worker_ssh_configuration_is_normalized() -> None:
     assert normalized["ssh_port"] == 2222
     assert normalized["ssh_key"] == "/keys/worker"
     assert normalized["known_hosts"] == "/keys/known_hosts"
+
+
+def test_worker_shutdown_collects_actual_exit_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_module()
+    commands = []
+
+    class Result:
+        stdout = "0\n"
+        returncode = 0
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return Result()
+
+    monkeypatch.setattr(module.subprocess, "run", run)
+    worker = {
+        "name": "role",
+        "host": "192.0.2.1",
+        "ssh_user": "ubuntu",
+        "ssh_port": 22,
+    }
+    assert module.stop_workers([worker], "a" * 40) == [0]
+    assert any("role.exit" in argument for command in commands for argument in command)

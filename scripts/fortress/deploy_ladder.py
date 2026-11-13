@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -63,7 +64,8 @@ def start_command(remote_root: str, name: str) -> str:
         f"--artifact-dir {root}/role-artifacts --recipient-key {root}/recipient.key "
         f"--certificate {root}/tls/{shlex.quote(name)}.crt "
         f"--private-key {root}/tls/{shlex.quote(name)}.key --ca {root}/tls/ca.crt "
-        f"--host 0.0.0.0 --port 9444 </dev/null >{root}/role.log 2>&1 & "
+        f"--host 0.0.0.0 --port 9444 --exit-status-file {root}/role.exit "
+        f"</dev/null >{root}/role.log 2>&1 & "
         f"echo $! > {root}/role.pid"
     )
 
@@ -138,6 +140,43 @@ def kill_workers(workers: list[Any], revision: str) -> None:
             ],
             check=False,
         )
+
+
+def stop_workers(workers: list[Any], revision: str, *, timeout: float = 60) -> list[int]:
+    kill_workers(workers, revision)
+    exit_codes = []
+    for worker in workers:
+        root = f"/tmp/xurcroh-fortress-{revision[:12]}"  # noqa: S108
+        deadline = time.monotonic() + timeout
+        while True:
+            result = subprocess.run(  # noqa: S603
+                [
+                    SSH,
+                    *options(worker),
+                    f"{worker['ssh_user']}@{worker['host']}",
+                    f"if test -f {root}/role.exit; then cat {root}/role.exit; fi",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.stdout.strip():
+                exit_codes.append(int(result.stdout.strip()))
+                break
+            if time.monotonic() >= deadline:
+                subprocess.run(  # noqa: S603
+                    [
+                        SSH,
+                        *options(worker),
+                        f"{worker['ssh_user']}@{worker['host']}",
+                        f"if test -f {root}/role.pid; then kill -KILL $(cat {root}/role.pid); fi",
+                    ],
+                    check=False,
+                )
+                exit_codes.append(124)
+                break
+            time.sleep(1)
+    return exit_codes
 
 
 def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -> Path:
