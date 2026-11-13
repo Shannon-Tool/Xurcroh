@@ -19,20 +19,39 @@ MAX_SIGNED_FIELD_VALUE = PRIME_MODULUS // 2
 
 @dataclass(frozen=True)
 class QuantizedTensor:
-    values: torch.Tensor
+    values: torch.Tensor | None
     scale: float
     zero_point: int
+    shape: tuple[int, int] | None = None
 
     def __post_init__(self) -> None:
-        if self.values.dtype not in {torch.int8, torch.int16, torch.int32, torch.int64}:
-            raise ValueError("quantized values must use a signed integer dtype")
-        if self.values.ndim != 2:
-            raise ValueError("quantized tensors must be matrices")
+        if self.values is None:
+            if self.shape is None or len(self.shape) != 2 or any(value < 1 for value in self.shape):
+                raise ValueError("quantized descriptors require positive matrix dimensions")
+        else:
+            if self.values.dtype not in {torch.int8, torch.int16, torch.int32, torch.int64}:
+                raise ValueError("quantized values must use a signed integer dtype")
+            if self.values.ndim != 2:
+                raise ValueError("quantized tensors must be matrices")
+            if self.shape is not None and self.shape != tuple(self.values.shape):
+                raise ValueError("quantized descriptor shape does not match its values")
         if self.scale <= 0:
             raise ValueError("quantization scale must be positive")
 
+    @property
+    def dimensions(self) -> tuple[int, int]:
+        if self.values is not None:
+            return (self.values.shape[0], self.values.shape[1])
+        assert self.shape is not None
+        return self.shape
+
+    def require_values(self) -> torch.Tensor:
+        if self.values is None:
+            raise ValueError("reference arithmetic requires materialized quantized values")
+        return self.values
+
     def dequantize(self) -> torch.Tensor:
-        return (self.values - self.zero_point).to(torch.float64) * self.scale
+        return (self.require_values() - self.zero_point).to(torch.float64) * self.scale
 
 
 @dataclass(frozen=True)
@@ -99,10 +118,10 @@ def quantize_activations(values: torch.Tensor, *, bits: int) -> ActivationQuanti
 
 
 def quantized_matmul(left: QuantizedTensor, right: QuantizedTensor) -> QuantizedProduct:
-    if left.values.shape[1] != right.values.shape[0]:
+    if left.dimensions[1] != right.dimensions[0]:
         raise ValueError("matrix dimensions do not match")
-    left_values = left.values.to(torch.int64) - left.zero_point
-    right_values = right.values.to(torch.int64) - right.zero_point
+    left_values = left.require_values().to(torch.int64) - left.zero_point
+    right_values = right.require_values().to(torch.int64) - right.zero_point
     inner = left_values.shape[1]
     left_bound = int(left_values.abs().max().item()) if left_values.numel() else 0
     right_bound = int(right_values.abs().max().item()) if right_values.numel() else 0

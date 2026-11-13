@@ -67,6 +67,20 @@ def test_integrity_challenges_are_not_derived_from_deployment_seed(
         assert operation.shares[0].seed == other.shares[0].seed
 
 
+def test_remote_client_can_discard_quantized_weight_values(tiny_llama_path: Path) -> None:
+    compiled = compile_fortress_checkpoint(
+        tiny_llama_path,
+        seed=731,
+        materialize_shares=False,
+        retain_quantized=False,
+        load_model=False,
+    )
+    for operation in compiled.operations.values():
+        assert operation.quantized.values is None
+        assert len(operation.quantized.dimensions) == 2
+        assert operation.quantized.scale > 0
+
+
 def test_remote_model_uses_fp32_and_shares_boundary_storage(tiny_llama_path: Path) -> None:
     compiled = compile_fortress_checkpoint(
         tiny_llama_path,

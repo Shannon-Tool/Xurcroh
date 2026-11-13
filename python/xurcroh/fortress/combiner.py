@@ -230,7 +230,7 @@ class FortressCombiner:
         operation = self.operations[name]
         transformed = apply_input_basis(operation, hidden)
         activation = quantize_activations(transformed, bits=self.activation_bits)
-        product = activation.values @ operation.quantized.values.to(torch.int64).T
+        product = activation.values @ operation.quantized.require_values().to(torch.int64).T
         scales = activation.scales.unsqueeze(-1) if hidden.ndim == 2 else activation.scales
         result = product.to(torch.float64) * scales * operation.quantized.scale
         return apply_output_basis(operation, result)

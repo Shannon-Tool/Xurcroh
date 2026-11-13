@@ -107,7 +107,7 @@ def encode_role_artifact(
         document.update(
             {
                 "format": "xurcroh-fortress-role-v2",
-                "shape": list(operation.quantized.values.shape),
+                "shape": list(operation.quantized.dimensions),
                 "seed": _encode_bytes(share.seed),
             }
         )
@@ -538,7 +538,7 @@ class FortressRoleClient:
             raise
 
     def _cover_loop(self) -> None:
-        features = self.operation.quantized.values.shape[1]
+        features = self.operation.quantized.dimensions[1]
         while not self._cover_stop.wait(self._cover_interval):
             try:
                 shares = [

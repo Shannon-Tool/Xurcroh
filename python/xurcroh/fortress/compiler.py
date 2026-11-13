@@ -84,9 +84,9 @@ def compile_operation(
         weight = inner_transform(weight)
     quantized = symmetric_quantize(weight, bits=4)
     if seed is None:
-        grid = split_secret(quantized.values, count=share_count, modulus=FIELD_MODULUS)
+        grid = split_secret(quantized.require_values(), count=share_count, modulus=FIELD_MODULUS)
     else:
-        grid = seeded_split_secret(quantized.values, seed=seed, count=share_count)
+        grid = seeded_split_secret(quantized.require_values(), seed=seed, count=share_count)
     shares: dict[int, WeightShare] = {}
     storage: dict[int, StoredWeightShare] = {}
     for index, matrix in enumerate(grid.shares):
@@ -135,11 +135,12 @@ def materialize_weight_shares(operation: CompiledOperation) -> list[torch.Tensor
         if share.matrix is not None:
             matrix = share.matrix
         elif share.seed is not None:
-            matrix = _seeded_uniform(share.seed, tuple(operation.quantized.values.shape))
+            matrix = _seeded_uniform(share.seed, tuple(operation.quantized.require_values().shape))
         elif index == len(operation.shares) - 1:
             total = torch.sum(torch.stack(matrices), dim=0)
             matrix = (
-                operation.quantized.values.to(torch.int64).remainder(FIELD_MODULUS) - total
+                operation.quantized.require_values().to(torch.int64).remainder(FIELD_MODULUS)
+                - total
             ).remainder(FIELD_MODULUS)
         else:
             raise ValueError("non-final weight share has neither a matrix nor a seed")
