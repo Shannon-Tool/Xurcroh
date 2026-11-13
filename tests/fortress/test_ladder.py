@@ -171,3 +171,22 @@ def test_ladder_execution_rejects_failed_teardown() -> None:
             execute=execute,
             teardown=lambda: {"all_destroyed": False, "remaining_instance_ids": [1]},
         )
+
+
+def test_ladder_teardown_replaces_preliminary_cost() -> None:
+    rung = LadderRung.from_mapping(manifest_mapping())
+
+    def execute(_rung: LadderRung) -> dict:
+        report = evidence_mapping()
+        del report["destruction"]
+        return report
+
+    report = run_ladder_rung(
+        rung,
+        execute=execute,
+        teardown=lambda: {
+            "destruction": {"all_destroyed": True, "remaining_instance_ids": []},
+            "cost_usd": 3.5,
+        },
+    )
+    assert report["cost_usd"] == 3.5
