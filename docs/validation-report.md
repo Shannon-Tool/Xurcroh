@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Validated implementation revision: `400c0885d43afb66cb8b182f4fcf408a3b6bd258`
+- Validated implementation revision: `4fd352061ef4290d8852ec251e97c306e99e2067`
 - Local implementation and CI: **passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -15,7 +15,7 @@ The earlier “PRE-GPU IMPLEMENTATION COMPLETE” declaration remains withdrawn.
 
 ## Local and CI evidence
 
-The following local checks and GitHub Actions run [43398680549](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43398680549) cover implementation revision `400c0885d43afb66cb8b182f4fcf408a3b6bd258`:
+The following local checks and GitHub Actions run [43405981467](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43405981467) cover implementation revision `4fd352061ef4290d8852ec251e97c306e99e2067`:
 
 | Check | Actual result |
 |---|---|
@@ -27,12 +27,12 @@ The following local checks and GitHub Actions run [43398680549](https://github.c
 | Rust formatting, Clippy, RustSec | Passed; no known advisories |
 | Frontend interaction tests | **32 passed** |
 | Frontend typecheck, lint, production build, content validation | Passed; 22 sections, equations, links, and Mermaid syntax validated |
-| ProVerif model and protocol fuzzing | Passed in GitHub Actions run [43398680549](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43398680549) |
-| Clean reproducible wheel builds | **Passed locally**; independent clean directories produced matching SHA-256 hashes for both wheels |
+| ProVerif model and protocol fuzzing | Passed in GitHub Actions run [43405981467](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43405981467) |
+| Clean reproducible wheel builds | **Passed on the development machine and a GitHub-hosted runner**; both wheel hashes match across hosts |
 | `pip-audit` | No known vulnerabilities in audited dependencies |
 | `npm audit` | 0 vulnerabilities |
 
-`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The wheel comparison preserves Maturin's CycloneDX dependency inventory while normalizing checkout paths and regenerating `RECORD`; this is same-machine evidence, not second-party reproducibility.
+`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The wheel comparison preserves Maturin's CycloneDX dependency inventory while normalizing checkout paths, compiler paths, file modes, ZIP encoding, and `RECORD`. Matching cross-host SHA-256 values are `57a3e9c309ac80ed575eeedee09ea64d8cf13d2ff6b3f6ca3d3feb3a335cbaa0` for `xurcroh-0.1.0-py3-none-any.whl` and `113652e94e084a89c0908a3dedc8a09ce843edd29258ce0c90eb85c93232b6c2` for `xurcroh_quic-0.1.0-cp312-cp312-manylinux_2_38_x86_64.whl`. This is automated cross-machine evidence, not second-party attestation.
 
 Primary commands:
 
@@ -57,7 +57,7 @@ cd apps/web-manual && npm run check && npm audit
 - Public SDK: dense/MoE text grids pass locally and over four real mutual-TLS role workers; real `DDPMPipeline` image generation and `TextToVideoSDPipeline` video generation pass, including public `images.generate` and `videos.generate` calls.
 - VLM boundary: local image/audio projections feed the Fortress decoder without entering worker operations.
 - Protocol: ProVerif and bounded frame/AEAD/HPKE fuzzing pass in CI. Noncanonical unused shape slots are rejected.
-- Local wheel reproducibility passes. Second-party reproducibility, a live public transparency log, external audits, physical multi-GPU execution, independent attestation, external cryptography review, and production acceptance remain open and are not claimed.
+- Local and GitHub-hosted wheel builds are byte-identical across hosts. Second-party reproducibility, a live public transparency log, external audits, physical multi-GPU execution, independent attestation, external cryptography review, and production acceptance remain open and are not claimed.
 
 ## Physical hardware and checkpoint
 
