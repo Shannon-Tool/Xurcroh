@@ -37,7 +37,9 @@ class FortressLinear(torch.nn.Module):
 
     def forward(self, hidden: torch.Tensor) -> torch.Tensor:
         operation = self.operation
-        transformed = apply_input_basis(operation, hidden)
+        original_shape = hidden.shape
+        flattened = hidden.reshape(-1, hidden.shape[-1])
+        transformed = apply_input_basis(operation, flattened)
         activation = quantize_activations(transformed, bits=self.activation_bits)
         shares = split_secret(activation.values, count=2).shares
         product = (
@@ -47,10 +49,10 @@ class FortressLinear(torch.nn.Module):
         )
         scales = activation.scales.unsqueeze(-1) if hidden.ndim == 2 else activation.scales
         result = signed_ring(product).to(torch.float64) * scales * operation.quantized.scale
-        result = apply_output_basis(operation, result)
+        result = apply_output_basis(operation, result).to(hidden.dtype)
         if self.bias is not None:
             result = result + self.bias.to(result.dtype)
-        return result
+        return result.reshape(*original_shape[:-1], result.shape[-1])
 
     def reference(self, hidden: torch.Tensor) -> torch.Tensor:
         reference = FortressLinear(
