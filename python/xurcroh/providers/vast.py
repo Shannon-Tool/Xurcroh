@@ -183,8 +183,69 @@ def sanitize_offer(document: dict[str, Any]) -> dict[str, Any]:
         "reliability",
         "geolocation",
         "verification",
+        "cpu_vendor",
     )
     return {field: document.get(field) for field in fields if field in document}
+
+
+def select_diverse_offers(
+    offers: list[dict[str, Any]],
+    *,
+    count: int,
+    guard: BudgetGuard,
+    planned_hours: float,
+    disk_gb: float,
+    max_country_fraction: float = 0.5,
+    max_cpu_vendor_fraction: float = 0.5,
+) -> tuple[list[dict[str, Any]], float]:
+    if count < 1 or not 0 < max_country_fraction <= 1 or not 0 < max_cpu_vendor_fraction <= 1:
+        raise ValueError("invalid host count or diversity fraction")
+    country_limit = max(1, int(count * max_country_fraction))
+    vendor_limit = max(1, int(count * max_cpu_vendor_fraction))
+    selected: list[dict[str, Any]] = []
+    machines: set[int] = set()
+    countries: dict[str, int] = {}
+    vendors: dict[str, int] = {}
+    forecast = 0.0
+    for _ in range(count):
+        candidates = []
+        for offer in offers:
+            machine = int(offer["machine_id"])
+            country = str(offer.get("geolocation") or "unknown")
+            vendor = str(offer.get("cpu_vendor") or "unknown")
+            if (
+                machine in machines
+                or countries.get(country, 0) >= country_limit
+                or vendors.get(vendor, 0) >= vendor_limit
+            ):
+                continue
+            cost = guard.forecast(offer, planned_hours, disk_gb)
+            candidates.append(
+                (
+                    -int(countries.get(country, 0) == 0),
+                    -int(vendors.get(vendor, 0) == 0),
+                    float(offer["dph_total"]),
+                    int(offer["id"]),
+                    offer,
+                    cost,
+                )
+            )
+        if not candidates:
+            raise ProviderError(
+                "not enough distinct eligible GPU hosts within the diversity policy"
+            )
+        _, _, _, _, chosen, cost = min(candidates, key=lambda item: item[:4])
+        selected.append(chosen)
+        machines.add(int(chosen["machine_id"]))
+        country = str(chosen.get("geolocation") or "unknown")
+        vendor = str(chosen.get("cpu_vendor") or "unknown")
+        countries[country] = countries.get(country, 0) + 1
+        vendors[vendor] = vendors.get(vendor, 0) + 1
+        forecast += cost
+    if count > 1 and (len(countries) < 2 or len(vendors) < 2):
+        raise ProviderError("selected GPU hosts do not satisfy country and CPU-vendor diversity")
+    guard.require_capacity(forecast)
+    return selected, forecast
 
 
 class VastClient:
