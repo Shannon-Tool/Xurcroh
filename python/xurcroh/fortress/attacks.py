@@ -46,3 +46,50 @@ def evaluate_share_reconstruction(
         missing_weight_share_search_bits=weight.numel() * 32,
         missing_activation_share_search_bits=activation.numel() * 32,
     )
+
+
+@dataclass(frozen=True)
+class TimingClassifierReport:
+    real_samples: int
+    cover_samples: int
+    leave_one_out_accuracy: float
+    leave_one_out_balanced_accuracy: float
+    majority_baseline: float
+    balanced_baseline: float = 0.5
+    interpretation: str = (
+        "Local leave-one-out nearest-mean timing result, not a general side-channel proof. "
+        "Fixed-size frames and constant-rate cover do not eliminate scheduling, network, "
+        "cache, power, or Whisper-Leak-class leakage."
+    )
+
+
+def measure_timing_classifier(observations: list[tuple[float, bool]]) -> TimingClassifierReport:
+    if not observations or any(duration < 0 for duration, _ in observations):
+        raise ValueError("timing observations must be nonempty and nonnegative")
+    real_count = sum(not cover for _, cover in observations)
+    cover_count = len(observations) - real_count
+    if not real_count or not cover_count:
+        raise ValueError("timing classification requires real and cover observations")
+    correct = 0
+    correct_real = 0
+    correct_cover = 0
+    for index, (duration, cover) in enumerate(observations):
+        remaining = observations[:index] + observations[index + 1 :]
+        real_mean = sum(value for value, label in remaining if not label) / sum(
+            not label for _, label in remaining
+        )
+        cover_mean = sum(value for value, label in remaining if label) / sum(
+            label for _, label in remaining
+        )
+        predicted_cover = abs(duration - cover_mean) < abs(duration - real_mean)
+        correct += predicted_cover == cover
+        correct_real += not cover and not predicted_cover
+        correct_cover += cover and predicted_cover
+    return TimingClassifierReport(
+        real_samples=real_count,
+        cover_samples=cover_count,
+        leave_one_out_accuracy=correct / len(observations),
+        leave_one_out_balanced_accuracy=(correct_real / real_count + correct_cover / cover_count)
+        / 2,
+        majority_baseline=max(real_count, cover_count) / len(observations),
+    )
