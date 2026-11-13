@@ -14,8 +14,9 @@ pytestmark = pytest.mark.hardware
 def require_cuda() -> None:
     if shutil.which("nvcc") is None or shutil.which("nvidia-smi") is None:
         pytest.skip("CUDA compiler and GPU are required for Fortress CUDA validation")
-    result = subprocess.run(
-        ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"],
+    executable = shutil.which("nvidia-smi")
+    result = subprocess.run(  # noqa: S603
+        [executable, "--query-gpu=count", "--format=csv,noheader"],
         capture_output=True,
         text=True,
         check=False,
@@ -27,10 +28,10 @@ def require_cuda() -> None:
 def test_integer_matvec_and_chacha_expansion() -> None:
     require_cuda()
     root = Path(__file__).parents[2]
-    subprocess.run([str(root / "scripts/build-native.sh")], check=True)
+    subprocess.run([str(root / "scripts/build-native.sh")], check=True)  # noqa: S603
     controller = FortressNativeController(root / "native/build/xurcroh_burn_alloc.so")
 
-    assert controller.matvec([[1, 2], [3, 4]], [5, 7]) == [26, 38]
+    assert controller.matvec([[1, 2], [3, 4]], [5, 7]) == [19, 43]
     first = controller.chacha_words(list(range(8)), bytes(12), 32)
     second = controller.chacha_words(list(range(8)), bytes(12), 32)
     assert first == second

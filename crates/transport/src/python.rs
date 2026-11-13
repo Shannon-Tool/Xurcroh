@@ -320,8 +320,8 @@ fn seal_onion(
             })
         })
         .collect::<PyResult<Vec<_>>>()?;
-    let packet = xurcroh_crypto::seal_onion(&hops, return_key, reply_id, payload)
-        .map_err(crypto_error)?;
+    let packet =
+        xurcroh_crypto::seal_onion(&hops, return_key, reply_id, payload).map_err(crypto_error)?;
     Python::attach(|py| {
         packet
             .layers
