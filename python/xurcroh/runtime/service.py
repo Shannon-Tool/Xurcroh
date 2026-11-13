@@ -15,6 +15,7 @@ from xurcroh.errors import (
     RequestCancelledError,
     RequestTimeoutError,
 )
+from xurcroh.fortress.engine import FortressEngine
 from xurcroh.provisioning import provision_cluster_sync
 from xurcroh.requests import CompletionRequest, ImageGenerationRequest, VideoGenerationRequest
 from xurcroh.runtime.diffusion import LocalDiffusionEngine
@@ -61,7 +62,8 @@ class RuntimeService:
             | DenseStageEngine
             | LocalVisionLanguageEngine
             | RemoteMediaEngine
-            | RemoteProtectedMediaEngine,
+            | RemoteProtectedMediaEngine
+            | FortressEngine,
         ] = {}
         self._requests: dict[str, RequestHandle] = {}
         self._lock = threading.RLock()
@@ -77,7 +79,8 @@ class RuntimeService:
                 controller=cluster.controller_endpoint,
             )
         stage_workers = any(
-            definition.manifest_path is not None for _, definition in models.items()
+            definition.manifest_path is not None or definition.engine == "fortress"
+            for _, definition in models.items()
         )
         for worker in cluster.workers:
             if worker.endpoint != "local://cpu":
@@ -106,6 +109,7 @@ class RuntimeService:
         | LocalVisionLanguageEngine
         | RemoteMediaEngine
         | RemoteProtectedMediaEngine
+        | FortressEngine
     ):
         definition = self.models.get(name)
         workers = self._workers_for_model(name)
@@ -113,7 +117,9 @@ class RuntimeService:
             self._ensure_open()
             engine = self._engines.get(name)
             if engine is None:
-                if definition.manifest_path is not None and definition.modality in {
+                if definition.engine == "fortress":
+                    engine = FortressEngine(name, definition, workers)
+                elif definition.manifest_path is not None and definition.modality in {
                     "image",
                     "video",
                 }:

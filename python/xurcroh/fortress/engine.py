@@ -1,0 +1,220 @@
+from __future__ import annotations
+
+import threading
+import time
+import uuid
+from collections.abc import Iterator
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
+
+from xurcroh.config import ModelDefinition, WorkerConfig
+from xurcroh.errors import CapabilityError, ConfigurationError, ModelLoadError
+from xurcroh.fortress.combiner import FortressCombiner
+from xurcroh.fortress.model_compiler import FortressCheckpoint, compile_fortress_checkpoint
+
+if TYPE_CHECKING:
+    from xurcroh.fortress.transport import FortressRoleClient, MutualTLSIdentity, RoleEndpoint
+from xurcroh.requests import CompletionRequest
+from xurcroh.runtime.generation import (
+    GenerationEvent,
+    GenerationSummary,
+    check_request_health,
+    sample_next_token,
+    stopping_strings,
+)
+
+
+class FortressEngine:
+    def __init__(self, name: str, definition: ModelDefinition, workers: list[WorkerConfig]) -> None:
+        self.name = name
+        self.definition = definition
+        self.workers = workers
+        self.worker_id = workers[0].name
+        self.worker_ids = [worker.name for worker in workers]
+        self.engine_name = (
+            "fortress-local" if workers[0].endpoint == "local://cpu" else "fortress-grid"
+        )
+        self._tokenizer: Any = None
+        self._compiled: FortressCheckpoint | None = None
+        self._combiner: FortressCombiner | None = None
+        self._clients: dict[str, FortressRoleClient] = {}
+        self._load_lock = threading.Lock()
+        self._inference_lock = threading.Lock()
+        self._closed = False
+
+    def require_modality(self, expected: str) -> None:
+        if expected != "text":
+            raise CapabilityError("Fortress text engine supports only text completions")
+
+    def _identity(self) -> MutualTLSIdentity:
+        from xurcroh.fortress.transport import MutualTLSIdentity
+
+        labels = self.workers[0].labels
+        try:
+            client_certificate = Path(labels["client_certificate_path"]).read_bytes()
+            client_key = Path(labels["client_key_path"]).read_bytes()
+            ca = Path(labels["ca_path"]).read_bytes()
+        except (KeyError, OSError) as error:
+            raise ConfigurationError(
+                "Fortress workers require client_certificate_path, client_key_path, and ca_path"
+            ) from error
+        return MutualTLSIdentity(
+            certificates=(client_certificate, ca),
+            private_key=client_key,
+            pinned_ca=ca,
+            server_name=labels.get("server_name", "localhost"),
+        )
+
+    def _roles(self) -> list[RoleEndpoint]:
+        from xurcroh.fortress.transport import RoleEndpoint
+
+        roles = []
+        for worker in self.workers:
+            try:
+                activation_index = int(worker.labels["activation_index"])
+                weight_index = int(worker.labels["weight_index"])
+                recipient_public = bytes.fromhex(worker.labels["recipient_public"])
+                address = (worker.endpoint or "").removeprefix("quic://")
+            except (KeyError, ValueError) as error:
+                raise ConfigurationError(
+                    f"worker {worker.name} lacks Fortress role indexes or recipient public key"
+                ) from error
+            if not address:
+                raise ConfigurationError(f"worker {worker.name} requires a QUIC endpoint")
+            roles.append(
+                RoleEndpoint(
+                    activation_index=activation_index,
+                    weight_index=weight_index,
+                    address=address,
+                    recipient_public=recipient_public,
+                    provider_id=worker.name,
+                )
+            )
+        return roles
+
+    def _load(self) -> None:
+        if self._closed:
+            raise ModelLoadError(f"model {self.name!r} Fortress engine is closed")
+        if self._combiner is not None:
+            return
+        with self._load_lock:
+            if self._combiner is not None:
+                return
+            try:
+                from transformers import AutoTokenizer
+
+                options = {
+                    "local_files_only": not self.definition.allow_download,
+                    "trust_remote_code": False,
+                    "revision": self.definition.revision,
+                }
+                self._tokenizer = AutoTokenizer.from_pretrained(self.definition.path, **options)
+                self._compiled = compile_fortress_checkpoint(
+                    self.definition.path, seed=self.definition.fortress_seed
+                )
+                compiled = self._compiled
+                clients: dict[str, FortressRoleClient] = {}
+                if self.engine_name == "fortress-grid":
+                    from xurcroh.fortress.transport import FortressRoleClient
+
+                    identity = self._identity()
+                    roles = self._roles()
+                    frame_bytes = int(self.workers[0].labels.get("frame_bytes", 16_384))
+                    cover_interval = float(self.workers[0].labels.get("cover_interval", 1.0))
+                    clients = {
+                        name: FortressRoleClient(
+                            operation,
+                            roles,
+                            identity,
+                            operation_name=name,
+                            frame_bytes=frame_bytes,
+                            cover_interval=cover_interval,
+                        )
+                        for name, operation in compiled.operations.items()
+                    }
+                self._clients = clients
+                self._combiner = FortressCombiner(
+                    layers=list(compiled.layers),
+                    operations=compiled.operations,
+                    query_heads=compiled.query_heads,
+                    kv_heads=compiled.kv_heads,
+                    final_norm=compiled.final_norm,
+                    lm_head=compiled.lm_head,
+                    rope_theta=compiled.rope_theta,
+                    activation_bits=compiled.activation_bits,
+                    grid_clients=clients or None,
+                )
+            except Exception:
+                self.close()
+                raise
+
+    def generate(
+        self,
+        request: CompletionRequest,
+        *,
+        cancelled: threading.Event,
+        timeout: float,
+    ) -> Iterator[GenerationEvent]:
+        self._load()
+        assert self._combiner is not None
+        compiled = self._compiled
+        assert compiled is not None
+        started = time.monotonic()
+        with self._inference_lock:
+            prompt = "\n".join(
+                f"{message.role}: {message.plain_text()}" for message in request.messages
+            )
+            inputs = self._tokenizer(prompt, return_tensors="pt")
+            input_ids = inputs["input_ids"]
+            prompt_tokens = input_ids.shape[-1]
+            if prompt_tokens == 0:
+                raise ConfigurationError("Fortress tokenizer produced an empty prompt")
+            vocabulary = compiled.embedding.shape[0]
+            if int(input_ids.max()) >= vocabulary:
+                raise ModelLoadError("tokenizer emits IDs outside the model vocabulary")
+            state_key = f"{self.name}:{uuid.uuid4().hex}"
+            hidden = compiled.embedding[input_ids[0]]
+            completion_ids: list[int] = []
+            text = ""
+            finish_reason: Literal["stop", "length"] = "length"
+            stops = stopping_strings(request)
+            try:
+                hidden = self._combiner.run_cached(state_key, hidden)
+                for _ in range(request.max_tokens):
+                    check_request_health(cancelled, started, timeout)
+                    next_token = sample_next_token(self._combiner.logits(hidden[-1:]), request)
+                    token_id = int(next_token.item())
+                    completion_ids.append(token_id)
+                    updated_text = self._tokenizer.decode(completion_ids, skip_special_tokens=True)
+                    delta = updated_text[len(text) :]
+                    text = updated_text
+                    yield GenerationEvent(delta=delta)
+                    if token_id == self._tokenizer.eos_token_id:
+                        finish_reason = "stop"
+                        break
+                    if stops and any(text.endswith(stop) for stop in stops):
+                        finish_reason = "stop"
+                        break
+                    hidden = self._combiner.run_cached(state_key, compiled.embedding[next_token[0]])
+                duration_ms = (time.monotonic() - started) * 1000
+                yield GenerationEvent(
+                    delta="",
+                    summary=GenerationSummary(
+                        text=text,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=len(completion_ids),
+                        finish_reason=finish_reason,
+                        duration_ms=duration_ms,
+                    ),
+                )
+            finally:
+                self._combiner.drop_request(state_key)
+
+    def close(self) -> None:
+        self._closed = True
+        for client in self._clients.values():
+            client.close()
+        self._clients.clear()
+        self._combiner = None
+        self._compiled = None
+        self._tokenizer = None

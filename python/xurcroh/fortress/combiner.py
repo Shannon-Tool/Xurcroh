@@ -219,9 +219,12 @@ class FortressCombiner:
             self._caches[request_id] = current
             return hidden
 
-    def sample(self, hidden: torch.Tensor) -> torch.Tensor:
+    def logits(self, hidden: torch.Tensor) -> torch.Tensor:
         normalized = unit_rms_norm(hidden) * self.final_norm
-        return torch.argmax(normalized @ self.lm_head.to(hidden.dtype).T, dim=-1)
+        return normalized @ self.lm_head.to(hidden.dtype).T
+
+    def sample(self, hidden: torch.Tensor) -> torch.Tensor:
+        return torch.argmax(self.logits(hidden), dim=-1)
 
     def _reference_linear(self, name: str, hidden: torch.Tensor) -> torch.Tensor:
         operation = self.operations[name]

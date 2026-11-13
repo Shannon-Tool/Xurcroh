@@ -45,6 +45,7 @@ def compile_operation(
     slice_count: int,
     inner_transform: Callable[[torch.Tensor], torch.Tensor] | None = None,
     seed: bytes | None = None,
+    challenge_seed: int | None = None,
     input_basis: BasisTransform | None = None,
     output_basis: BasisTransform | None = None,
 ) -> CompiledOperation:
@@ -87,8 +88,15 @@ def compile_operation(
     shares: dict[int, WeightShare] = {}
     storage: dict[int, StoredWeightShare] = {}
     for index, matrix in enumerate(grid.shares):
-        challenge_values = [secrets.randbelow(PRIME_MODULUS) for _ in range(matrix.shape[0])]
-        challenge = freivalds_challenge(matrix, r=torch.tensor(challenge_values, dtype=torch.int64))
+        if challenge_seed is None:
+            challenge_values = [secrets.randbelow(PRIME_MODULUS) for _ in range(matrix.shape[0])]
+            challenge_vector = torch.tensor(challenge_values, dtype=torch.int64)
+        else:
+            generator = torch.Generator().manual_seed(challenge_seed + index)
+            challenge_vector = torch.randint(
+                0, PRIME_MODULUS, (matrix.shape[0],), generator=generator, dtype=torch.int64
+            )
+        challenge = freivalds_challenge(matrix, r=challenge_vector)
         shares[index] = WeightShare(
             weight_index=index,
             matrix=matrix,
