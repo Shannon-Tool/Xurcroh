@@ -11,8 +11,28 @@ if ! command -v cargo >/dev/null; then
     | sh -s -- -y --profile minimal --default-toolchain 1.99.1
   export PATH="$HOME/.cargo/bin:$PATH"
 fi
-"$PYTHON" -m venv "$VENV"
-"$VENV/bin/pip" install --retries 10 --timeout 120 --no-cache-dir -r requirements-cuda.lock maturin==1.16.0
+IMAGE_PACKAGES=0
+if "$PYTHON" - <<'PY'
+import importlib.metadata
+expected = {"torch": "2.9.1", "torchvision": "0.24.1", "vllm": "0.15.0", "transformers": "4.57.6"}
+for name, version in expected.items():
+    installed = importlib.metadata.version(name).split("+", 1)[0]
+    if installed != version:
+        raise SystemExit(1)
+PY
+then
+  IMAGE_PACKAGES=1
+fi
+VENV_ARGS=()
+if [[ "$IMAGE_PACKAGES" == "1" ]]; then
+  VENV_ARGS=(--system-site-packages)
+fi
+"$PYTHON" -m venv "${VENV_ARGS[@]}" "$VENV"
+if [[ "$IMAGE_PACKAGES" == "1" ]]; then
+  "$VENV/bin/pip" install --retries 10 --timeout 120 --no-cache-dir pytest==9.2.0 pytest-asyncio==1.4.1.post1 maturin==1.16.0
+else
+  "$VENV/bin/pip" install --retries 10 --timeout 120 --no-cache-dir -r requirements-cuda.lock maturin==1.16.0
+fi
 "$VENV/bin/pip" install --retries 10 --timeout 120 --no-cache-dir --no-deps -e .
 VIRTUAL_ENV="$VENV" "$VENV/bin/maturin" develop --release --manifest-path crates/transport/Cargo.toml --features python
 "$ROOT/scripts/build-native.sh"
