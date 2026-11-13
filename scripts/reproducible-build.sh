@@ -12,8 +12,10 @@ cp -a "$first/." "$second/"
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1700000000}"
 export CARGO_INCREMENTAL=0
 if [[ -z "${CARGO_BIN:-}" ]]; then
-  if [[ -x "${CARGO_HOME:-$HOME/.cargo}/bin/cargo" ]]; then
-    CARGO_BIN="${CARGO_HOME:-$HOME/.cargo}/bin/cargo"
+  home="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}"
+  cargo_home="${CARGO_HOME:-$home/.cargo}"
+  if [[ -x "$cargo_home/bin/cargo" ]]; then
+    CARGO_BIN="$cargo_home/bin/cargo"
   else
     CARGO_BIN="$(command -v cargo)"
   fi

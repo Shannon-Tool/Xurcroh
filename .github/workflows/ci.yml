@@ -12,6 +12,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.99.1"
+          components: rustfmt, clippy
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
