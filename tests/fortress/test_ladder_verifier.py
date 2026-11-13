@@ -66,6 +66,9 @@ def test_ladder_verifier_compares_remote_tensors_and_public_sdk(
         assert report["sdk"]["response"]["execution"]["engine"] == "fortress-grid"
         assert report["bytes_sent"] > 0
         assert report["bytes_received"] > 0
+        assert report["attack_results"]["full_weight_collusion_exact"] is True
+        assert report["canary_tripped"] is True
+        assert report["freivalds_failures"] == 0
     finally:
         for worker in workers:
             worker.close()
