@@ -83,3 +83,12 @@ def test_worker_shutdown_collects_actual_exit_status(monkeypatch: pytest.MonkeyP
     }
     assert module.stop_workers([worker], "a" * 40) == [0]
     assert any("role.exit" in argument for command in commands for argument in command)
+
+
+def test_hardware_validation_requires_a_reported_gpu_per_worker() -> None:
+    module = load_module()
+    reports = [{"gpus": [{"name": "RTX 4090"}]} for _ in range(4)]
+    assert module.hardware_validated(reports, 4) is True
+    reports[2]["gpus"] = []
+    with pytest.raises(ValueError, match="hardware"):
+        module.hardware_validated(reports, 4)
