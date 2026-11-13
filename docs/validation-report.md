@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Validated implementation revision: `c597b95675f0eb0d9ac2be9368ea4a3b9cc1e5b5`
+- Validated implementation revision: `ee3cc2a8aba05f5a720866394e3e8deb03831bee`
 - Local implementation: **passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -16,20 +16,20 @@ The earlier “PRE-GPU IMPLEMENTATION COMPLETE” declaration remains withdrawn.
 
 ## Local and CI evidence
 
-The latest complete local suite reports **326 passed, 14 hardware-deselected, 82.66% coverage**. Strict mypy covers 124 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
+The latest local suite reports **346 passed, 15 deselected, 82.34% coverage**, excluding only the long video-ladder test that passed separately in 2,209.98 seconds. Strict mypy covers 122 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **326 passed, 14 hardware-deselected** |
-| Python branch coverage | **82.66%**, above the 80% requirement |
+| Python unit/integration/security tests | **346 passed, 15 deselected**; full video ladder passed separately |
+| Python branch coverage | **82.34%**, above the 80% requirement |
 | Ruff format and lint | Passed |
-| Strict mypy, 124 source files | Passed |
+| Strict mypy, 122 source files | Passed |
 | Rust tests | **29 passed** |
 | Rust formatting, Clippy, RustSec | Passed; no known advisories |
 | Frontend interaction tests | **32 passed** |
 | Frontend typecheck, lint, production build, content validation | Passed; 22 sections, equations, links, and Mermaid syntax validated |
 | ProVerif model and protocol fuzzing | Passed in the hosted run above; newer runs are blocked before startup |
-| Clean reproducible wheel builds | Prior cross-host evidence at `4fd352061ef4290d8852ec251e97c306e99e2067`; current hosted rebuild is billing-blocked |
+| Clean reproducible wheel builds | Matched at `a2f5847887cb9954a037d58575d30158e1d878dd`; current hosted rebuild is billing-blocked |
 | `pip-audit` | No known vulnerabilities in audited dependencies |
 | `npm audit` | 0 vulnerabilities |
 
