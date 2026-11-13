@@ -3,36 +3,37 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Validated implementation revision: `87ba81b707c16ed597e2224f65ccc53ac737b0c2`
-- Local implementation and CI: **passed**
+- Validated implementation revision: `c597b95675f0eb0d9ac2be9368ea4a3b9cc1e5b5`
+- Local implementation: **passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
 - MoE, VLM, image, and video hardware execution: **not validated**
 - Production security, performance, and operational acceptance: **not established**
+- Current GitHub Actions execution: **blocked before startup by account billing/payment settings**
 - `production_accepted`: **false**
 
 The earlier “PRE-GPU IMPLEMENTATION COMPLETE” declaration remains withdrawn. This report distinguishes physical evidence from local tests and does not claim production readiness.
 
 ## Local and CI evidence
 
-The following local checks and GitHub Actions run [43408983710](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43408983710) cover implementation revision `87ba81b707c16ed597e2224f65ccc53ac737b0c2`:
+The latest complete local suite reports **326 passed, 14 hardware-deselected, 82.66% coverage**. Strict mypy covers 124 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **288 passed, 7 hardware-deselected** |
-| Python branch coverage | **82.85%**, above the 80% requirement |
+| Python unit/integration/security tests | **326 passed, 14 hardware-deselected** |
+| Python branch coverage | **82.66%**, above the 80% requirement |
 | Ruff format and lint | Passed |
-| Strict mypy, 118 source files | Passed |
+| Strict mypy, 124 source files | Passed |
 | Rust tests | **29 passed** |
 | Rust formatting, Clippy, RustSec | Passed; no known advisories |
 | Frontend interaction tests | **32 passed** |
 | Frontend typecheck, lint, production build, content validation | Passed; 22 sections, equations, links, and Mermaid syntax validated |
-| ProVerif model and protocol fuzzing | Passed in GitHub Actions run [43408983710](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43408983710) |
-| Clean reproducible wheel builds | **Passed on the development machine and a GitHub-hosted runner**; both wheel hashes match across hosts |
+| ProVerif model and protocol fuzzing | Passed in the hosted run above; newer runs are blocked before startup |
+| Clean reproducible wheel builds | Prior cross-host evidence at `4fd352061ef4290d8852ec251e97c306e99e2067`; current hosted rebuild is billing-blocked |
 | `pip-audit` | No known vulnerabilities in audited dependencies |
 | `npm audit` | 0 vulnerabilities |
 
-`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The wheel comparison preserves Maturin's CycloneDX dependency inventory while normalizing checkout paths, compiler paths, file modes, ZIP encoding, and `RECORD`. Matching cross-host SHA-256 values are `57a3e9c309ac80ed575eeedee09ea64d8cf13d2ff6b3f6ca3d3feb3a335cbaa0` for `xurcroh-0.1.0-py3-none-any.whl` and `113652e94e084a89c0908a3dedc8a09ce843edd29258ce0c90eb85c93232b6c2` for `xurcroh_quic-0.1.0-cp312-cp312-manylinux_2_38_x86_64.whl`. This is automated cross-machine evidence, not second-party attestation.
+`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The prior wheel comparison preserved Maturin's CycloneDX dependency inventory while normalizing checkout paths, compiler paths, file modes, ZIP encoding, and `RECORD`. Its cross-host SHA-256 values were `57a3e9c309ac80ed575eeedee09ea64d8cf13d2ff6b3f6ca3d3feb3a335cbaa0` for the Python wheel and `113652e94e084a89c0908a3dedc8a09ce843edd29258ce0c90eb85c93232b6c2` for the native wheel. This is automated cross-machine evidence, not second-party attestation.
 
 Primary commands:
 
@@ -163,3 +164,7 @@ No tracked billable test instance remains. This does not assert that unrelated a
 7. Complete WAN/NAT failure injection, multi-user isolation, worker recovery, and side-channel evaluation.
 
 Orthogonal transformations are computational obfuscation, not homomorphic encryption, cryptographic secret sharing, zero knowledge, or a non-reversibility proof. No production certification is issued by this report.
+
+## Physical harness retry evidence
+
+The first new Fortress CUDA baseline attempt (`60505214`) reached neither bootstrap nor a CUDA test because SSH refused the connection during initialization. The second (`60506413`) encountered host-key verification failures and reached its bounded SSH timeout. Both failures occurred before any hardware test result could be claimed. Provider teardown verified `remaining_instance_ids: []` in both cases; conservative recorded costs were **$0.062153** and **$0.106403** respectively. These failures motivated the bounded transport-readiness and per-worker host-key-pinning regressions in `scripts/fortress/deploy_ladder.py` and `tests/fortress/test_ladder_ssh.py`.
