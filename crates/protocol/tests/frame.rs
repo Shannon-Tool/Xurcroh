@@ -40,6 +40,13 @@ fn malformed_frames_fail_without_panicking() {
 }
 
 #[test]
+fn nonzero_unused_shape_slots_are_rejected() {
+    let mut encoded = frame().encode().unwrap();
+    encoded[42..46].copy_from_slice(&1u32.to_le_bytes());
+    assert!(TensorFrame::decode(&encoded).is_err());
+}
+
+#[test]
 fn control_frames_cannot_carry_tensor_payloads() {
     let result = TensorFrame::new([0; 16], 0, 0, FrameKind::Cancel, None, vec![], vec![1]);
     assert!(result.is_err());
