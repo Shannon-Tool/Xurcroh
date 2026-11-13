@@ -26,6 +26,7 @@ class Library:
         self.xurcroh_get_scrubbed_bytes = lambda: 4096
         self.xurcroh_get_scrub_calls = lambda: 3
         self.xurcroh_launch_shared_scrub = NativeFunction(self)
+        self.xurcroh_run_leftover_probe = NativeFunction(self)
         self.xurcroh_mask_words = NativeFunction(self)
         self.xurcroh_uniform_page_touch = NativeFunction(self)
 
@@ -89,16 +90,24 @@ def test_native_controller_telemetry_and_cuda_calls(
     )
     synchronized = []
     monkeypatch.setattr(torch.cuda, "synchronize", lambda device: synchronized.append(device))
+    original_empty = torch.empty
+    monkeypatch.setattr(
+        torch,
+        "empty",
+        lambda *args, **kwargs: original_empty(*args, **{**kwargs, "device": "cpu"}),
+    )
     controller = NativeMemoryController(path)
     assert controller.telemetry() == {"scrubbed_bytes": 4096, "scrub_calls": 3}
     controller.scrub_shared_memory()
-    assert synchronized == [0]
+    probe = controller.probe_shared_memory()
+    assert probe.shape == (8, (48 * 1024) // 4)
+    assert synchronized == [0, 0]
     tensor = CudaTensor(torch.uint16, 16)
     key = CudaTensor(torch.uint32, 8)
     nonce = CudaTensor(torch.uint8, 12)
     controller.mask_words(tensor, key, nonce, unmask=True)
     controller.uniform_page_touch(tensor, stride=128)
-    assert len(library.calls) == 3
+    assert len(library.calls) == 4
     library.status = 9
     with pytest.raises(CompatibilityError, match="CUDA status 9"):
         controller.scrub_shared_memory()
