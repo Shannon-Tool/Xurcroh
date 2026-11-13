@@ -24,6 +24,7 @@ def test_cuda_package_is_pinned_and_isolated() -> None:
     assert 'VIRTUAL_ENV="$VENV" "$VENV/bin/maturin" develop' in bootstrap
     assert "export LD_LIBRARY_PATH=" in bootstrap
     assert "/usr/local/nvidia/lib64" in bootstrap
+    assert "--retry-all-errors" in bootstrap
     compose = yaml.safe_load((ROOT / "deploy/cuda/compose.yaml").read_text())
     for index, name in enumerate(("worker-a", "worker-b")):
         worker = compose["services"][name]
