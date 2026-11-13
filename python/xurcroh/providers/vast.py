@@ -330,6 +330,7 @@ class VastClient:
         query: dict[str, Any] = {
             "verified": {"eq": True},
             "rentable": {"eq": True},
+            "reliability": {"gte": 0.99},
             "num_gpus": {"eq": 1},
             "direct_port_count": {"gte": 1},
             "type": "ondemand",

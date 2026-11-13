@@ -138,6 +138,7 @@ def test_offers_create_and_instance_responses_are_sanitized() -> None:
     query = json.loads(requests[0].content)
     assert query["verified"] == {"eq": True}
     assert query["num_gpus"] == {"eq": 1}
+    assert query["reliability"] == {"gte": 0.99}
 
 
 def test_wait_running_handles_terminal_states_and_timeout(
