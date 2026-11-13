@@ -64,6 +64,32 @@ fn execute_fortress_role(
 }
 
 #[pyfunction]
+fn fortress_challenge_values(
+    rows: usize,
+    cols: usize,
+    data: &[u8],
+    r: Vec<i64>,
+    prime: i128,
+) -> PyResult<Vec<i64>> {
+    let elements = rows
+        .checked_mul(cols)
+        .ok_or_else(|| value_error("matrix dimensions overflow"))?;
+    let expected = elements
+        .checked_mul(8)
+        .ok_or_else(|| value_error("matrix byte length overflow"))?;
+    if data.len() != expected || prime <= 1 {
+        return Err(value_error("invalid packed matrix or prime modulus"));
+    }
+    let values = data
+        .chunks_exact(8)
+        .map(|chunk| i64::from_le_bytes(chunk.try_into().expect("eight-byte chunk")))
+        .collect::<Vec<_>>();
+    Matrix::new(rows, cols, values)
+        .and_then(|matrix| matrix.matvec(&r, prime))
+        .map_err(value_error)
+}
+
+#[pyfunction]
 fn verify_fortress_product(
     activation: Vec<i64>,
     product: Vec<i64>,
@@ -79,6 +105,7 @@ pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<FortressWeightShare>()?;
     module.add_function(wrap_pyfunction!(execute_fortress_grid, module)?)?;
     module.add_function(wrap_pyfunction!(execute_fortress_role, module)?)?;
+    module.add_function(wrap_pyfunction!(fortress_challenge_values, module)?)?;
     module.add_function(wrap_pyfunction!(verify_fortress_product, module)?)?;
     Ok(())
 }
