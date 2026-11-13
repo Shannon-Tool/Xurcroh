@@ -29,6 +29,32 @@ def test_role_packages_match_manifest_and_exclude_client_boundaries(
         assert "lm_head.weight" not in artifacts
 
 
+def test_streaming_role_packaging_discards_worker_matrices(
+    tiny_llama_path: Path, tmp_path: Path
+) -> None:
+    from xurcroh.fortress.ladder_deployment import write_operation_role_artifacts
+
+    rung = LadderRung.from_mapping(manifest_mapping())
+    root = tmp_path / "roles"
+    compiled = compile_fortress_checkpoint(
+        tiny_llama_path,
+        seed=731,
+        load_model=False,
+        operation_sink=lambda name, operation: write_operation_role_artifacts(
+            name, operation, rung, root
+        ),
+    )
+    assert all(
+        share.matrix is None
+        for operation in compiled.operations.values()
+        for share in operation.shares.values()
+    )
+    assert all(not operation.storage for operation in compiled.operations.values())
+    for worker in rung.workers:
+        artifacts = load_role_artifacts(root / worker.name)
+        assert set(artifacts) == set(compiled.operations)
+
+
 def test_ladder_sdk_configuration_uses_real_roles_and_client_identity(tmp_path: Path) -> None:
     rung = LadderRung.from_mapping(manifest_mapping())
     configuration = sdk_configuration(

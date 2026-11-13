@@ -112,7 +112,7 @@ def compile_operation(
                 else None
             ),
         )
-        if materialize_shares:
+        if materialize_shares and shares[index].seed is None:
             payload = matrix.detach().cpu().numpy().tobytes()
             storage[index] = StoredWeightShare(
                 shape=tuple(matrix.shape),
