@@ -49,7 +49,7 @@ def generate(output: Path, services: dict[str, list[str]]) -> None:
     )
     write_private(output / "ca.key", private_bytes(ca_key))
     (output / "ca.crt").write_bytes(public_bytes(ca))
-    for name, addresses in services.items():
+    for name, addresses in {**services, "client": ["localhost"]}.items():
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         alternative_names = []
         for address in addresses:
