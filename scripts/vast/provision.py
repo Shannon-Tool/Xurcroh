@@ -72,6 +72,10 @@ def provision(args: argparse.Namespace) -> None:
             for offer in offers
             if float(offer.get("gpu_ram", 0)) >= args.min_gpu_ram_gb * 1024
             and float(offer.get("cpu_ram", 0)) >= args.min_host_ram_gb * 1024
+            and (
+                getattr(args, "driver_version", None) is None
+                or str(offer.get("driver_version")) == args.driver_version
+            )
             and float(offer["dph_total"]) <= args.max_hourly_usd
         ]
         selected, forecasts = select_diverse_offers(
@@ -134,6 +138,10 @@ def provision(args: argparse.Namespace) -> None:
                     for offer in offers
                     if float(offer.get("gpu_ram", 0)) >= args.min_gpu_ram_gb * 1024
                     and float(offer.get("cpu_ram", 0)) >= args.min_host_ram_gb * 1024
+                    and (
+                        getattr(args, "driver_version", None) is None
+                        or str(offer.get("driver_version")) == args.driver_version
+                    )
                     and float(offer["dph_total"]) <= args.max_hourly_usd
                 ]
                 selected, forecasts = select_diverse_offers(
@@ -201,6 +209,7 @@ def main() -> None:
     parser.add_argument("--max-cpu-vendor-fraction", type=float, default=0.5)
     parser.add_argument("--max-provider-fraction", type=float, default=0.5)
     parser.add_argument("--gpu-name")
+    parser.add_argument("--driver-version")
     parser.add_argument("--min-gpu-ram-gb", type=float, default=12)
     parser.add_argument("--min-host-ram-gb", type=float, default=0)
     parser.add_argument("--offer-limit", type=int, default=200)
