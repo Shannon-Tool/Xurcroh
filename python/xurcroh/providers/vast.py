@@ -198,9 +198,21 @@ def sanitize_offer(document: dict[str, Any]) -> dict[str, Any]:
         "geolocation",
         "verification",
         "cpu_vendor",
+        "cpu_name",
+        "cpu_ram",
+        "host_id",
         "provider_id",
     )
-    return {field: document.get(field) for field in fields if field in document}
+    result = {field: document.get(field) for field in fields if field in document}
+    cpu_name = str(result.get("cpu_name") or "").lower()
+    if not result.get("cpu_vendor"):
+        result["cpu_vendor"] = (
+            "AMD" if "amd" in cpu_name else "Intel" if "intel" in cpu_name else "unknown"
+        )
+    host_id = result.get("host_id")
+    if not result.get("provider_id") and host_id is not None:
+        result["provider_id"] = f"vast-host-{int(host_id)}"
+    return result
 
 
 def select_diverse_offers(
