@@ -49,6 +49,7 @@ def compile_operation(
     challenge_seed: int | None = None,
     input_basis: BasisTransform | None = None,
     output_basis: BasisTransform | None = None,
+    materialize_shares: bool = True,
 ) -> CompiledOperation:
     if inner_transform is not None and (input_basis is not None or output_basis is not None):
         raise ValueError("inner_transform cannot be combined with client bases")
@@ -100,15 +101,16 @@ def compile_operation(
         challenge = freivalds_challenge(matrix, r=challenge_vector)
         shares[index] = WeightShare(
             weight_index=index,
-            matrix=matrix,
+            matrix=matrix if materialize_shares else None,
             challenge=challenge,
             provider_id=f"weight-share-{index}",
         )
-        payload = matrix.detach().cpu().numpy().tobytes()
-        storage[index] = StoredWeightShare(
-            shape=tuple(matrix.shape),
-            bundle=disperse_shard(payload, threshold=threshold, slice_count=slice_count),
-        )
+        if materialize_shares:
+            payload = matrix.detach().cpu().numpy().tobytes()
+            storage[index] = StoredWeightShare(
+                shape=tuple(matrix.shape),
+                bundle=disperse_shard(payload, threshold=threshold, slice_count=slice_count),
+            )
     return CompiledOperation(
         quantized=quantized,
         shares=shares,

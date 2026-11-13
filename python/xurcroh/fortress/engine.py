@@ -113,6 +113,7 @@ class FortressEngine:
                     self.definition.path,
                     seed=self.definition.fortress_seed,
                     share_count=self.definition.fortress_shares,
+                    materialize_shares=self.engine_name == "fortress-local",
                 )
                 compiled = self._compiled
                 clients: dict[str, FortressRoleClient] = {}

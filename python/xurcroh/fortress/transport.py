@@ -180,6 +180,8 @@ def native_role_matrix(artifact: RoleArtifact) -> Any:
 def native_compiled_weight_share(weight: WeightShare) -> Any:
     import xurcroh_quic
 
+    if weight.matrix is None:
+        raise ValueError("local execution requires materialized weight shares")
     return xurcroh_quic.FortressWeightShare(
         weight.weight_index,
         weight.matrix.shape[0],
