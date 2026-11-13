@@ -20,5 +20,5 @@ mkdir -p "$OUT"
 "$PYTHON" -m maturin build --release \
   --manifest-path crates/transport/Cargo.toml --features python --out "$OUT"
 "$PYTHON" "$ROOT/scripts/normalize-wheel-sbom.py" \
-  --project-root "$ROOT" "$OUT"/xurcroh_quic-*.whl
+  --project-root "$ROOT" "$OUT"/*.whl
 printf '%s\n' "$OUT"
