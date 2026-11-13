@@ -21,13 +21,20 @@ TERMINAL_FAILURE_STATES = {"exited", "unknown", "offline"}
 
 @dataclass(frozen=True)
 class BudgetPolicy:
-    target_usd: float = 25.0
-    hard_limit_usd: float = 30.0
+    target_usd: float | None = 25.0
+    hard_limit_usd: float | None = 30.0
     bandwidth_reserve_gb: float = 2.0
     bandwidth_usd_per_gb: float = 0.05
 
+    @classmethod
+    def uncapped(cls) -> BudgetPolicy:
+        return cls(target_usd=None, hard_limit_usd=None)
+
     def __post_init__(self) -> None:
-        if not 0 < self.target_usd <= self.hard_limit_usd <= 30:
+        if self.target_usd is None or self.hard_limit_usd is None:
+            if self.target_usd is not None or self.hard_limit_usd is not None:
+                raise ValueError("uncapped budgets must omit both target and hard limit")
+        elif not 0 < self.target_usd <= self.hard_limit_usd <= 30:
             raise ValueError("budget must satisfy 0 < target <= hard limit <= $30")
         if self.bandwidth_reserve_gb < 0 or self.bandwidth_usd_per_gb < 0:
             raise ValueError("bandwidth allowance cannot be negative")
@@ -132,6 +139,8 @@ class BudgetGuard:
     def require_capacity(self, additional_usd: float) -> None:
         if additional_usd < 0 or not math.isfinite(additional_usd):
             raise ValueError("forecast must be a finite non-negative cost")
+        if self.policy.target_usd is None:
+            return
         projected = self.total() + additional_usd
         if projected > self.policy.target_usd:
             raise BudgetExceededError(
@@ -139,6 +148,8 @@ class BudgetGuard:
             )
 
     def require_below_limit(self) -> None:
+        if self.policy.target_usd is None:
+            return
         current = self.total()
         if current >= self.policy.target_usd:
             raise BudgetExceededError(
