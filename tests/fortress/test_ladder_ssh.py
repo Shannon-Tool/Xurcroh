@@ -113,3 +113,17 @@ def test_ssh_rejects_authentication_failure(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: result)
     with pytest.raises(RuntimeError, match="authentication"):
         module.wait_for_ssh({"ssh_user": "root", "host": "192.0.2.1"}, timeout=60)
+
+
+def test_host_key_is_pinned_per_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_module()
+    result = type(
+        "Result",
+        (),
+        {"returncode": 0, "stdout": "[192.0.2.1]:22 ssh-ed25519 public-key\n", "stderr": ""},
+    )()
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: result)
+    worker = {"host": "192.0.2.1", "ssh_port": 22}
+    module.pin_host_key(worker, tmp_path / "known_hosts")
+    assert worker["known_hosts"] == str(tmp_path / "known_hosts")
+    assert "public-key" in (tmp_path / "known_hosts").read_text()
