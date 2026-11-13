@@ -238,6 +238,12 @@ impl TensorFrame {
                     .map_err(|_| FrameError::Truncated)?,
             ));
         }
+        if (rank..8).any(|index| {
+            let start = 38 + index * 4;
+            u32::from_le_bytes(input[start..start + 4].try_into().unwrap_or([0; 4])) != 0
+        }) {
+            return Err(FrameError::InvalidShape);
+        }
         let payload_length = u64::from_le_bytes(
             input[70..78]
                 .try_into()
