@@ -7,6 +7,13 @@ PYTHON="${PYTHON:-$ROOT/.venv-cuda/bin/python}"
 ./scripts/build-native.sh
 "$PYTHON" -m pytest tests/hardware -q --runxfail
 if ! command -v compute-sanitizer >/dev/null 2>&1; then
+  if [[ "$(id -u)" == "0" ]] && command -v apt-get >/dev/null 2>&1; then
+    CUDA_VERSION="$(nvcc --version | awk '/release/{print $5}' | cut -d, -f1)"
+    apt-get update
+    apt-get install -y --no-install-recommends "cuda-sanitizer-${CUDA_VERSION//./-}"
+  fi
+fi
+if ! command -v compute-sanitizer >/dev/null 2>&1; then
   echo "compute-sanitizer is required for the forensic gate" >&2
   exit 2
 fi
