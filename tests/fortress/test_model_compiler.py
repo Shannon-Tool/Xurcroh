@@ -15,6 +15,9 @@ def test_real_checkpoint_compiles_without_retaining_full_client_weights(
     compiled = compile_fortress_checkpoint(tiny_llama_path)
     assert len(compiled.layers) == 2
     assert len(compiled.operations) == 14
+    assert all(
+        operation.quantized.values.dtype == torch.int8 for operation in compiled.operations.values()
+    )
     assert all(isinstance(layer, FortressLayerMetadata) for layer in compiled.layers)
     combiner = compiled.combiner()
     hidden = torch.tensor(
@@ -51,6 +54,19 @@ def test_remote_client_compilation_discards_worker_weight_matrices(
         for index, share in operation.shares.items():
             assert torch.equal(share.challenge.r, reference.shares[index].challenge.r)
             assert torch.equal(share.challenge.v, reference.shares[index].challenge.v)
+
+
+def test_remote_model_uses_fp32_and_shares_boundary_storage(tiny_llama_path: Path) -> None:
+    compiled = compile_fortress_checkpoint(
+        tiny_llama_path,
+        seed=731,
+        materialize_shares=False,
+        model_dtype=torch.float32,
+    )
+    assert compiled.model is not None
+    assert compiled.embedding.dtype == torch.float32
+    assert compiled.model.get_input_embeddings().weight.data_ptr() == compiled.embedding.data_ptr()
+    assert compiled.model.get_output_embeddings().weight.data_ptr() == compiled.lm_head.data_ptr()
 
 
 def test_checkpoint_compiles_and_executes_three_way_shares(tiny_llama_path: Path) -> None:

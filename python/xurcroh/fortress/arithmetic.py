@@ -20,8 +20,8 @@ class QuantizedTensor:
     zero_point: int
 
     def __post_init__(self) -> None:
-        if self.values.dtype != torch.int64:
-            raise ValueError("quantized values must use int64")
+        if self.values.dtype not in {torch.int8, torch.int16, torch.int32, torch.int64}:
+            raise ValueError("quantized values must use a signed integer dtype")
         if self.values.ndim != 2:
             raise ValueError("quantized tensors must be matrices")
         if self.scale <= 0:
@@ -97,8 +97,8 @@ def quantize_activations(values: torch.Tensor, *, bits: int) -> ActivationQuanti
 def quantized_matmul(left: QuantizedTensor, right: QuantizedTensor) -> QuantizedProduct:
     if left.values.shape[1] != right.values.shape[0]:
         raise ValueError("matrix dimensions do not match")
-    left_values = left.values - left.zero_point
-    right_values = right.values - right.zero_point
+    left_values = left.values.to(torch.int64) - left.zero_point
+    right_values = right.values.to(torch.int64) - right.zero_point
     inner = left_values.shape[1]
     left_bound = int(left_values.abs().max().item()) if left_values.numel() else 0
     right_bound = int(right_values.abs().max().item()) if right_values.numel() else 0
