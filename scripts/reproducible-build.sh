@@ -11,6 +11,7 @@ git -C "$root" archive HEAD | tar -x -C "$first"
 cp -a "$first/." "$second/"
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1700000000}"
 export CARGO_INCREMENTAL=0
+export CARGO_BIN="${CARGO_BIN:-$(command -v cargo)}"
 "$first/scripts/bootstrap-python.sh"
 ln -s "$first/.venv" "$second/.venv"
 "$first/scripts/build-wheels.sh"
