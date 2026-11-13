@@ -195,6 +195,7 @@ def sanitize_offer(document: dict[str, Any]) -> dict[str, Any]:
         "storage_cost",
         "disk_space",
         "reliability",
+        "driver_version",
         "geolocation",
         "verification",
         "cpu_vendor",

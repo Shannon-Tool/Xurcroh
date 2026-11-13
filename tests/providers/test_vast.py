@@ -105,12 +105,14 @@ def test_offer_sanitizer_preserves_operator_and_capacity_metadata() -> None:
             "host_id": 483833,
             "cpu_name": "AMD EPYC 7542 32-Core Processor",
             "cpu_ram": 36822,
+            "driver_version": "570.195.03",
             "secret": "excluded",
         }
     )
     assert result["provider_id"] == "vast-host-483833"
     assert result["cpu_vendor"] == "AMD"
     assert result["cpu_ram"] == 36822
+    assert result["driver_version"] == "570.195.03"
     assert "secret" not in result
 
 
