@@ -79,6 +79,13 @@ def test_ladder_manifest_rejects_duplicate_machines() -> None:
         LadderRung.from_mapping(document)
 
 
+def test_hardware_ladder_rejects_unverified_cpu_vendor_metadata() -> None:
+    document = manifest_mapping()
+    document["workers"][0]["cpu_vendor"] = "unknown"
+    with pytest.raises(LadderEvidenceError, match="unknown"):
+        LadderRung.from_mapping(document)
+
+
 def test_hardware_evidence_requires_exact_results_and_teardown() -> None:
     rung = LadderRung.from_mapping(manifest_mapping())
     evidence = evidence_mapping()
