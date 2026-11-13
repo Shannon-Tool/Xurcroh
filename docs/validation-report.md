@@ -16,11 +16,11 @@ The earlier “PRE-GPU IMPLEMENTATION COMPLETE” declaration remains withdrawn.
 
 ## Local and CI evidence
 
-The latest local suite at `e3c0ef979911d46a462f3efe1ca74b50c05b38d9` reports **366 passed, 23 deselected, 82.11% coverage**, excluding hardware tests and the long video-ladder test that passed separately in 2,209.98 seconds. Strict mypy covers 127 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
+The latest local suite at `9b848e0` reports **367 passed, 23 deselected, 82.11% coverage**, excluding hardware tests and the long video-ladder test that passed separately in 2,209.98 seconds. Strict mypy covers 127 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **366 passed, 23 deselected**; full video ladder passed separately |
+| Python unit/integration/security tests | **367 passed, 23 deselected**; full video ladder passed separately |
 | Python branch coverage | **82.11%**, above the 80% requirement |
 | Ruff format and lint | Passed |
 | Strict mypy, 127 source files | Passed |
