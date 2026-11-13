@@ -18,6 +18,8 @@ pub enum ArithmeticError {
     Dimension,
     #[error("checked arithmetic overflow")]
     Overflow,
+    #[error("non-canonical field element")]
+    NonCanonical,
     #[error("invalid share count")]
     ShareCount,
 }
@@ -273,6 +275,34 @@ pub fn verify_freivalds(
     let left = modular_dot(activation, &challenge.v, challenge.prime)?;
     let right = modular_dot(product, &challenge.r, challenge.prime)?;
     Ok(left == right)
+}
+
+pub fn combine_field_products(
+    products: &[Vec<i64>],
+    modulus: i128,
+) -> Result<Vec<i64>, ArithmeticError> {
+    if products.is_empty() || modulus <= 1 {
+        return Err(ArithmeticError::Dimension);
+    }
+    let width = products[0].len();
+    if products.iter().any(|product| product.len() != width) {
+        return Err(ArithmeticError::Dimension);
+    }
+    (0..width)
+        .map(|column| {
+            let mut sum = 0i128;
+            for product in products {
+                let value = product[column];
+                if value < 0 || i128::from(value) >= modulus {
+                    return Err(ArithmeticError::NonCanonical);
+                }
+                sum = sum
+                    .checked_add(i128::from(value))
+                    .ok_or(ArithmeticError::Overflow)?;
+            }
+            Ok(sum.rem_euclid(modulus) as i64)
+        })
+        .collect()
 }
 
 pub fn execute_grid(

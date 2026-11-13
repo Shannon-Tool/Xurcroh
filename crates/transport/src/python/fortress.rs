@@ -90,6 +90,11 @@ fn fortress_challenge_values(
 }
 
 #[pyfunction]
+fn combine_field_products(products: Vec<Vec<i64>>, modulus: i128) -> PyResult<Vec<i64>> {
+    xurcroh_fortress::combine_field_products(&products, modulus).map_err(value_error)
+}
+
+#[pyfunction]
 fn verify_fortress_product(
     activation: Vec<i64>,
     product: Vec<i64>,
@@ -106,6 +111,7 @@ pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(execute_fortress_grid, module)?)?;
     module.add_function(wrap_pyfunction!(execute_fortress_role, module)?)?;
     module.add_function(wrap_pyfunction!(fortress_challenge_values, module)?)?;
+    module.add_function(wrap_pyfunction!(combine_field_products, module)?)?;
     module.add_function(wrap_pyfunction!(verify_fortress_product, module)?)?;
     Ok(())
 }
