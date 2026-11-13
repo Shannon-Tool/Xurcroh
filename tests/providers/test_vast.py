@@ -461,7 +461,13 @@ def test_provision_preserves_offer_diversity_metadata(
             return [selected_offer]
 
         def create(self, offer, **kwargs):
+            self.create_attempts = getattr(self, "create_attempts", 0) + 1
+            if self.create_attempts == 1:
+                raise ProviderError("Vast API returned HTTP 400")
             return 123
+
+        def destroy_tracked(self, store, guard):
+            return {"all_destroyed": True}
 
         def wait_running(self, instance_id, timeout, guard):
             return {

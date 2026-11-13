@@ -84,45 +84,68 @@ def provision(args: argparse.Namespace) -> None:
             max_cpu_vendor_fraction=args.max_cpu_vendor_fraction,
             max_provider_fraction=args.max_provider_fraction,
         )
-        created = []
-        try:
-            for index, offer in enumerate(selected):
-                instance_id = client.create(
-                    offer,
-                    image=args.image,
+        for attempt in range(3):
+            created = []
+            try:
+                for index, offer in enumerate(selected):
+                    instance_id = client.create(
+                        offer,
+                        image=args.image,
+                        disk_gb=args.disk_gb,
+                        label=f"xurcroh-validation-{index}-{int(time.time())}",
+                    )
+                    store.add_instance(
+                        {
+                            "id": instance_id,
+                            "offer_id": offer["id"],
+                            "machine_id": offer["machine_id"],
+                            "gpu_name": offer.get("gpu_name"),
+                            "host_ram_mb": offer.get("cpu_ram"),
+                            "provider_id": offer.get("provider_id", "vast"),
+                            "geolocation": offer.get("geolocation", "unknown"),
+                            "cpu_vendor": offer.get("cpu_vendor", "unknown"),
+                            "created_at": time.time(),
+                            "compute_hourly_usd": float(offer["dph_total"]),
+                            "storage_hourly_usd": float(offer.get("storage_total_cost", 0.0)),
+                            "disk_gb": args.disk_gb,
+                            "bandwidth_usd": 0.0,
+                            "ssh_key_path": (
+                                str(args.ssh_key) if getattr(args, "ssh_key", None) else None
+                            ),
+                            "planned_cost_usd": guard.forecast(
+                                offer, args.planned_hours, args.disk_gb
+                            ),
+                        }
+                    )
+                    created.append(instance_id)
+                instances = [
+                    client.wait_running(instance_id, args.boot_timeout, guard)
+                    for instance_id in created
+                ]
+                store.update("instances_ready", instance_ids=created)
+                break
+            except Exception as error:
+                client.destroy_tracked(store, guard)
+                if attempt == 2 or not isinstance(error, ProviderError):
+                    raise
+                offers = client.offers(args.gpu_name)
+                eligible = [
+                    offer
+                    for offer in offers
+                    if float(offer.get("gpu_ram", 0)) >= args.min_gpu_ram_gb * 1024
+                    and float(offer.get("cpu_ram", 0)) >= args.min_host_ram_gb * 1024
+                    and float(offer["dph_total"]) <= args.max_hourly_usd
+                ]
+                selected, forecasts = select_diverse_offers(
+                    eligible,
+                    count=args.count,
+                    guard=guard,
+                    planned_hours=args.planned_hours,
                     disk_gb=args.disk_gb,
-                    label=f"xurcroh-validation-{index}-{int(time.time())}",
+                    max_country_fraction=args.max_country_fraction,
+                    max_cpu_vendor_fraction=args.max_cpu_vendor_fraction,
+                    max_provider_fraction=args.max_provider_fraction,
                 )
-                store.add_instance(
-                    {
-                        "id": instance_id,
-                        "offer_id": offer["id"],
-                        "machine_id": offer["machine_id"],
-                        "gpu_name": offer.get("gpu_name"),
-                        "host_ram_mb": offer.get("cpu_ram"),
-                        "provider_id": offer.get("provider_id", "vast"),
-                        "geolocation": offer.get("geolocation", "unknown"),
-                        "cpu_vendor": offer.get("cpu_vendor", "unknown"),
-                        "created_at": time.time(),
-                        "compute_hourly_usd": float(offer["dph_total"]),
-                        "storage_hourly_usd": float(offer.get("storage_total_cost", 0.0)),
-                        "disk_gb": args.disk_gb,
-                        "bandwidth_usd": 0.0,
-                        "ssh_key_path": (
-                            str(args.ssh_key) if getattr(args, "ssh_key", None) else None
-                        ),
-                        "planned_cost_usd": guard.forecast(offer, args.planned_hours, args.disk_gb),
-                    }
-                )
-                created.append(instance_id)
-            instances = [
-                client.wait_running(instance_id, args.boot_timeout, guard)
-                for instance_id in created
-            ]
-            store.update("instances_ready", instance_ids=created)
-        except Exception:
-            client.destroy_tracked(store, guard)
-            raise
         git = shutil.which("git")
         if git is None:
             raise ProviderError("Git is required to record the deployment revision")
