@@ -16,14 +16,14 @@ The earlier “PRE-GPU IMPLEMENTATION COMPLETE” declaration remains withdrawn.
 
 ## Local and CI evidence
 
-The latest local suite reports **346 passed, 15 deselected, 82.34% coverage**, excluding only the long video-ladder test that passed separately in 2,209.98 seconds. Strict mypy covers 122 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
+The latest local suite at `10a12c675b1ede97d46990a467a079c7d6f60691` reports **364 passed, 23 deselected, 81.99% coverage**, excluding hardware tests and the long video-ladder test that passed separately in 2,209.98 seconds. Strict mypy covers 127 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **346 passed, 15 deselected**; full video ladder passed separately |
-| Python branch coverage | **82.34%**, above the 80% requirement |
+| Python unit/integration/security tests | **364 passed, 23 deselected**; full video ladder passed separately |
+| Python branch coverage | **81.99%**, above the 80% requirement |
 | Ruff format and lint | Passed |
-| Strict mypy, 122 source files | Passed |
+| Strict mypy, 127 source files | Passed |
 | Rust tests | **29 passed** |
 | Rust formatting, Clippy, RustSec | Passed; no known advisories |
 | Frontend interaction tests | **32 passed** |
@@ -176,3 +176,9 @@ The research review exposed a ring/prime mismatch and a low-32-bit CUDA/verifier
 An official Qwen3-0.6B client compile with neither worker matrices nor quantized weight values retained completed in **108.79 seconds** with **3,011,548 KiB maximum RSS**. The earlier FP32 metadata-only compile peaked at 3,333,512 KiB; an FP64-boundary attempt was killed at 3,768,088 KiB. These are process-level measurements on the small development host, not thin-client guarantees.
 
 The CUDA loader diagnostic identified the vLLM image's compatibility library as the immediate failure. On RTX 4090 host driver `615.71.09`, the default process mapped `/usr/local/cuda-12.9/compat/libcuda.so.575.57.08` and returned `cuInit=803`. With the host-library override it mapped `/usr/lib/x86_64-linux-gnu/libcuda.so.615.71.09`, returned `cuInit=0`, found one device, and passed a torch CUDA allocation. The native worker now rejects compat-library or driver-mismatch startup, and the forensic script selects the host library explicitly. The diagnostic instance was destroyed with no remaining instances.
+
+### Native field parity and pending sanitizer
+
+The `10a12c6` physical run replaced 64-bit division with exact pseudo-Mersenne reduction but still failed the observed product regression. The root cause was then isolated to the Python boundary: signed `int32` conversion followed by remainder modulo `2^32-5` shifts values above `2^31-1` by five. Unsigned 32-bit canonicalization must precede field reduction. The largest-product torch oracle was also corrected because signed int64 multiplication overflows; Python arbitrary-precision arithmetic now supplies the exact expected value, with torch retained as a same-device control for non-overflowing products.
+
+At `87311fe`, the physical RTX 4090 hardware suite reported **20 passed, 2 skipped**, including all native field products, irregular matrix shapes, ChaCha expansion, vLLM execution, and memory lifecycle tests. The overall command still failed because the vLLM image did not contain `compute-sanitizer`; therefore the complete forensic gate is not claimed. Instance `60555361` was destroyed with `remaining_instance_ids: []`. Revision `9936ca9` additionally applies canonicalization to the actual CUDA worker response path and adds a CPU regression for that path.
