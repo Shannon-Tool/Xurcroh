@@ -40,7 +40,7 @@ jobs:
   reproducibility:
     runs-on: ubuntu-24.04
     env:
-      XURCROH_REPRODUCIBLE_DIST: ${{ runner.temp }}/reproducible-wheels
+      XURCROH_REPRODUCIBLE_DIST: /tmp/xurcroh-reproducible-wheels
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -56,7 +56,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: reproducible-wheels
-          path: ${{ runner.temp }}/reproducible-wheels/*.whl
+          path: /tmp/xurcroh-reproducible-wheels/*.whl
           retention-days: 1
 
   rust:
