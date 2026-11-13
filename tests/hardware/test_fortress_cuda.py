@@ -94,11 +94,14 @@ def test_field_kernel_matches_torch_single_product(weight: int, activation: int)
     require_cuda()
     root = Path(__file__).parents[2]
     controller = FortressNativeController(root / "native/build/xurcroh_burn_alloc.so")
-    torch_result = (
-        torch.tensor(weight, dtype=torch.int64, device="cuda")
-        * torch.tensor(activation, dtype=torch.int64, device="cuda")
-    ).remainder(FIELD_MODULUS)
-    expected = int(torch_result.cpu().item())
+    product = weight * activation
+    expected = product % FIELD_MODULUS
+    if product <= torch.iinfo(torch.int64).max:
+        torch_result = (
+            torch.tensor(weight, dtype=torch.int64, device="cuda")
+            * torch.tensor(activation, dtype=torch.int64, device="cuda")
+        ).remainder(FIELD_MODULUS)
+        assert int(torch_result.cpu().item()) == expected
     assert controller.matvec([[weight]], [activation]) == [expected]
 
 

@@ -85,7 +85,7 @@ class FortressNativeController:
         output = torch.empty(cols, dtype=torch.int32, device="cuda")
         try:
             self.matvec_device(weight_device, activation_device, output)
-            return output.cpu().to(torch.int64).remainder(FIELD_MODULUS).tolist()
+            return output.cpu().to(torch.int64).remainder(2**32).remainder(FIELD_MODULUS).tolist()
         finally:
             weight_device.zero_()
             activation_device.zero_()
