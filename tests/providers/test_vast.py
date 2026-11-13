@@ -330,6 +330,7 @@ def test_diverse_offer_selection_supports_four_hosts_and_cost_guards(tmp_path: P
             "dph_total": 0.2,
             "geolocation": "de" if index % 2 else "us",
             "cpu_vendor": "amd" if index % 3 else "intel",
+            "provider_id": "vast" if index % 2 else "other",
         }
         for index in range(6)
     ]
@@ -342,6 +343,7 @@ def test_diverse_offer_selection_supports_four_hosts_and_cost_guards(tmp_path: P
     assert len({offer["machine_id"] for offer in selected}) == 4
     assert len({offer["geolocation"] for offer in selected}) == 2
     assert len({offer["cpu_vendor"] for offer in selected}) == 2
+    assert len({offer["provider_id"] for offer in selected}) == 2
     assert forecast == pytest.approx(1.2)
     with pytest.raises(ProviderError, match="diversity"):
         select_diverse_offers(

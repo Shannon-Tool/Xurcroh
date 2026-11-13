@@ -75,6 +75,7 @@ def provision(args: argparse.Namespace) -> None:
             disk_gb=args.disk_gb,
             max_country_fraction=args.max_country_fraction,
             max_cpu_vendor_fraction=args.max_cpu_vendor_fraction,
+            max_provider_fraction=args.max_provider_fraction,
         )
         created = []
         try:
@@ -160,6 +161,7 @@ def main() -> None:
     parser.add_argument("--count", type=int, default=1)
     parser.add_argument("--max-country-fraction", type=float, default=0.5)
     parser.add_argument("--max-cpu-vendor-fraction", type=float, default=0.5)
+    parser.add_argument("--max-provider-fraction", type=float, default=0.5)
     parser.add_argument("--gpu-name")
     parser.add_argument("--min-gpu-ram-gb", type=float, default=12)
     parser.add_argument("--max-hourly-usd", type=float, default=0.75)
