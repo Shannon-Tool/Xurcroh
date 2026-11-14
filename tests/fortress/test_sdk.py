@@ -100,6 +100,16 @@ def test_public_sdk_executes_remote_fortress_grid(
                 temperature=0,
                 max_tokens=1,
             )
+            engine = client._runtime._engines["tiny"]
+            grid = engine._grid_runtime
+            assert grid is not None and len(grid.connections) == 4
+            operation_clients = list(engine._clients.values())
+            shared_clients = {
+                id(transport.client)
+                for operation in operation_clients
+                for transport in operation._transports.values()
+            }
+            assert len(shared_clients) == 4
         assert response.usage.completion_tokens == 1
         assert response.execution.engine == "fortress-grid"
         assert len(response.execution.worker_ids) == 4

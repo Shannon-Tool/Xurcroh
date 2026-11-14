@@ -16,5 +16,4 @@ def render_chat_prompt(tokenizer: Any, messages: list[InputMessage]) -> str:
         if not isinstance(rendered, str):
             raise TypeError("tokenizer chat template must return text when tokenize=False")
         return rendered
-    prompt = "\n".join(f"{message.role}: {message.plain_text()}" for message in messages)
-    return f"{prompt}\nassistant:"
+    return "\n".join(f"{message.role}: {message.plain_text()}" for message in messages)

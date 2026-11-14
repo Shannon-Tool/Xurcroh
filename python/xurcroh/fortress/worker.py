@@ -71,6 +71,8 @@ class FortressRoleWorker:
         self.weight_index = weight_indices.pop()
         private = X25519PrivateKey.from_private_bytes(recipient_private_key)
         self.sessions = StageSessionStore(private, self.weight_index, capacity=session_capacity)
+        self._session_completed: dict[str, int] = {}
+        self._active_sessions: set[str] = set()
         self._native_weights = (
             {}
             if device == "cuda"
@@ -186,7 +188,6 @@ class FortressRoleWorker:
             output.zero_()
 
     def _execute(self, connection: Any) -> None:
-        completed = 0
         try:
             while not self._closed.is_set():
                 request_id, _, _, kind, dtype, shape, packet = connection.receive()
@@ -195,10 +196,15 @@ class FortressRoleWorker:
                     self.sessions.authorize(session_id, packet)
                     with self._lock:
                         self._requests.pop(session_id, None)
+                        self._session_completed.pop(session_id, None)
+                        self._active_sessions.discard(session_id)
+                        remaining = bool(self._active_sessions)
                     self.sessions.remove(session_id)
                     connection.send(request_id, self.weight_index, 0, "complete", "", [], b"")
-                    connection.close()
-                    return
+                    if not remaining:
+                        connection.close()
+                        return
+                    continue
                 if kind == "tensor" and self._onion_private_key is not None:
                     next_hop, _, _, packet = self._quic.unwrap_onion(
                         self._onion_private_key, packet
@@ -225,6 +231,7 @@ class FortressRoleWorker:
                 )
                 state_key = f"{session_id}:{request_id.hex()}"
                 with self._lock:
+                    self._active_sessions.add(session_id)
                     self._requests.setdefault(session_id, set()).add(state_key)
                 activation = torch.empty(0, dtype=torch.int64)
                 exact_payload = bytearray()
@@ -254,7 +261,9 @@ class FortressRoleWorker:
                         [len(response)],
                         response,
                     )
-                    completed += 1
+                    with self._lock:
+                        completed = self._session_completed.get(session_id, 0) + 1
+                        self._session_completed[session_id] = completed
                     if completed % self._rotation_interval == 0:
                         self.sessions.rotate(session_id, completed // self._rotation_interval)
                 finally:
@@ -283,6 +292,8 @@ class FortressRoleWorker:
         with self._lock:
             threads = list(self._threads)
             self._requests.clear()
+            self._session_completed.clear()
+            self._active_sessions.clear()
         for thread in threads:
             thread.join(timeout=10)
         self.sessions.close()
