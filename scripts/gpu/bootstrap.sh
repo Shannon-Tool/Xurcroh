@@ -4,6 +4,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 PYTHON="${PYTHON:-python3.12}"
+FORTRESS_ONLY="${XURCROH_FORTRESS_ONLY:-0}"
+export FORTRESS_ONLY
 VENV="${XURCROH_CUDA_VENV:-$ROOT/.venv-cuda}"
 command -v nvidia-smi >/dev/null || { echo "nvidia-smi is required" >&2; exit 2; }
 export CARGO_HOME="${XURCROH_CARGO_HOME:-$ROOT/.cargo}"
@@ -27,7 +29,10 @@ export RUSTUP_TOOLCHAIN="1.99.1"
 IMAGE_PACKAGES=0
 if "$PYTHON" - <<'PY'
 import importlib.metadata
-expected = {"torch": "2.9.1", "torchvision": "0.24.1", "vllm": "0.15.0", "transformers": "4.57.6"}
+import os
+expected = {"torch": "2.9.1"}
+if os.environ.get("FORTRESS_ONLY") != "1":
+    expected.update({"torchvision": "0.24.1", "vllm": "0.15.0", "transformers": "4.57.6"})
 for name, version in expected.items():
     installed = importlib.metadata.version(name).split("+", 1)[0]
     if installed != version:
@@ -41,7 +46,12 @@ if [[ "$IMAGE_PACKAGES" == "1" ]]; then
   VENV_ARGS=(--system-site-packages)
 fi
 "$PYTHON" -m venv "${VENV_ARGS[@]}" "$VENV"
-if [[ "$IMAGE_PACKAGES" == "1" ]]; then
+if [[ "$FORTRESS_ONLY" == "1" ]]; then
+  "$VENV/bin/pip" install --retries 10 --timeout 120 --no-cache-dir maturin==1.16.0
+  if [[ "$IMAGE_PACKAGES" != "1" ]]; then
+    "$VENV/bin/pip" install --retries 10 --timeout 120 --no-cache-dir -r requirements-fortress-cuda.lock
+  fi
+elif [[ "$IMAGE_PACKAGES" == "1" ]]; then
   "$VENV/bin/pip" install --retries 10 --timeout 120 --no-cache-dir pytest==9.2.0 pytest-asyncio==1.4.1.post1 maturin==1.16.0
 else
   "$VENV/bin/pip" install --retries 10 --timeout 120 --no-cache-dir -r requirements-cuda.lock maturin==1.16.0
@@ -66,10 +76,14 @@ for line in Path("/proc/cpuinfo").read_text().splitlines():
 
 if not torch.cuda.is_available():
     raise SystemExit("PyTorch cannot access a CUDA device")
+try:
+    vllm_version = importlib.metadata.version("vllm")
+except importlib.metadata.PackageNotFoundError:
+    vllm_version = None
 report = {
     "cpu_vendor": cpu_vendor,
     "torch": torch.__version__,
-    "vllm": importlib.metadata.version("vllm"),
+    "vllm": vllm_version,
     "cuda_runtime": torch.version.cuda,
     "gpus": [
         {

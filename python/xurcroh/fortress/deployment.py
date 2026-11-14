@@ -323,7 +323,9 @@ class FortressDeployment:
         root = shlex.quote(self._remote_root)
         self._executor.run(worker, f"mkdir -p {root}/tls")
         self._executor.run(worker, f"tar -xzf - -C {root}", input_data=archive)
-        self._executor.run(worker, f"cd {root} && ./scripts/gpu/bootstrap.sh")
+        self._executor.run(
+            worker, f"cd {root} && XURCROH_FORTRESS_ONLY=1 ./scripts/gpu/bootstrap.sh"
+        )
 
     def _prepare_role(self, role: RoleDeployment) -> None:
         assert self._executor is not None

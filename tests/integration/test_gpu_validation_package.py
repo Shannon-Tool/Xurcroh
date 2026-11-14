@@ -129,3 +129,15 @@ def test_report_preserves_failed_validation_and_destruction_state(tmp_path: Path
     assert report["production_accepted"] is False
     assert report["spending"]["total_cost_usd"] == 1.25
     assert report["destruction"]["all_destroyed"] is False
+
+
+def test_fortress_bootstrap_has_minimal_pinned_role_environment() -> None:
+    lock = (ROOT / "requirements-fortress-cuda.lock").read_text().splitlines()
+    assert "torch==2.9.1" in lock
+    assert "cryptography==50.0.2" in lock
+    assert "safetensors==0.8.0" in lock
+    assert not any(line.startswith(("vllm==", "transformers==", "pytest==")) for line in lock)
+    bootstrap = (ROOT / "scripts/gpu/bootstrap.sh").read_text()
+    assert 'FORTRESS_ONLY="${XURCROH_FORTRESS_ONLY:-0}"' in bootstrap
+    assert "requirements-fortress-cuda.lock" in bootstrap
+    assert "PackageNotFoundError" in bootstrap
