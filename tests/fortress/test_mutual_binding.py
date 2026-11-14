@@ -38,3 +38,33 @@ def test_python_binding_exposes_mutual_tls(mtls_identities: MutualTLSIdentities)
     server.close()
     assert response[-1] == b"test"
     assert received == [b"test"]
+
+
+def test_generated_der_identities_complete_real_mutual_tls(tmp_path) -> None:
+    from scripts.gpu.generate_tls import generate
+
+    generate(tmp_path / "tls", {"worker-a": ["localhost"]})
+    identity = tmp_path / "tls"
+    server = xurcroh_quic.TensorServer.bind_mutual(
+        "127.0.0.1:0",
+        [(identity / "worker-a.crt").read_bytes(), (identity / "ca.crt").read_bytes()],
+        (identity / "worker-a.key").read_bytes(),
+        (identity / "ca.crt").read_bytes(),
+    )
+
+    def accept() -> None:
+        server.accept().close()
+
+    thread = threading.Thread(target=accept, daemon=True)
+    thread.start()
+    client = xurcroh_quic.TensorClient.connect_mutual(
+        server.local_addr(),
+        "localhost",
+        (identity / "ca.crt").read_bytes(),
+        [(identity / "client.crt").read_bytes(), (identity / "ca.crt").read_bytes()],
+        (identity / "client.key").read_bytes(),
+    )
+    client.close()
+    thread.join(timeout=5)
+    server.close()
+    assert not thread.is_alive()
