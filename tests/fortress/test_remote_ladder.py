@@ -21,3 +21,6 @@ def test_remote_ladder_command_preserves_revision_and_persistent_log() -> None:
     download = remote_command("/srv/gateway", "a" * 40, download_checkpoint=True)
     assert "scripts/fortress/prepare_checkpoint.py" in download
     assert "--allow-download" in download
+    smoke = remote_command("/srv/gateway", "a" * 40, smoke=True)
+    assert "scripts/fortress/grid_smoke.py" in smoke
+    assert "scripts/fortress/run_ladder.py" not in smoke
