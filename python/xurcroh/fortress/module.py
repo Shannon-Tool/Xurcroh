@@ -173,7 +173,11 @@ def replace_linear_layers(
 ) -> torch.nn.Module:
     for name, child in module.named_children():
         qualified = f"{prefix}{name}"
-        if type(child).__name__ in {"Qwen3MoeExperts", "Gemma4TextExperts"}:
+        if type(child).__name__ in {
+            "DeepseekV3Experts",
+            "Qwen3MoeExperts",
+            "Gemma4TextExperts",
+        }:
             setattr(
                 module,
                 name,
