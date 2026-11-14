@@ -105,9 +105,14 @@ def preflight_checkpoint(
         config = reader.config
         layout_digest = reader.fingerprint
         text = {**config, **config.get("text_config", {})}
-        for field in ("hidden_size", "num_attention_heads", "num_hidden_layers"):
+        aliases = {
+            "hidden_size": "n_embd",
+            "num_attention_heads": "n_head",
+            "num_hidden_layers": "n_layer",
+        }
+        for field, alias in aliases.items():
             try:
-                valid = int(text.get(field, 0)) > 0
+                valid = int(text.get(field, text.get(alias, 0))) > 0
             except (TypeError, ValueError):
                 valid = False
             if not valid:

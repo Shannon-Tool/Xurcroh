@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Any, cast
 
 from Xurcroh._client import Xurcroh
+from xurcroh.errors import ClientClosedError
 from xurcroh.preflight import CheckpointPreflight
 from xurcroh.types import ChatCompletion, ChatCompletionChunk
 
@@ -16,7 +17,8 @@ class AsyncChatCompletions:
     async def create(
         self, **parameters: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        result = await asyncio.to_thread(self._client._sync.chat.completions.create, **parameters)
+        sync = await self._client._get_sync()
+        result = await asyncio.to_thread(sync.chat.completions.create, **parameters)
         if isinstance(result, ChatCompletion):
             return result
 
@@ -47,10 +49,12 @@ class AsyncImages:
         self._client = client
 
     async def generate(self, **parameters: Any) -> Any:
-        return await asyncio.to_thread(self._client._sync.images.generate, **parameters)
+        sync = await self._client._get_sync()
+        return await asyncio.to_thread(sync.images.generate, **parameters)
 
     async def edit(self, **parameters: Any) -> Any:
-        return await asyncio.to_thread(self._client._sync.images.edit, **parameters)
+        sync = await self._client._get_sync()
+        return await asyncio.to_thread(sync.images.edit, **parameters)
 
 
 class AsyncVideos:
@@ -58,29 +62,55 @@ class AsyncVideos:
         self._client = client
 
     async def generate(self, **parameters: Any) -> Any:
-        return await asyncio.to_thread(self._client._sync.videos.generate, **parameters)
+        sync = await self._client._get_sync()
+        return await asyncio.to_thread(sync.videos.generate, **parameters)
 
 
 class AsyncXurcroh:
     def __init__(self, **parameters: Any) -> None:
-        self._sync = Xurcroh(**parameters)
+        self._parameters = parameters
+        self._sync: Xurcroh | None = None
+        self._init_lock = asyncio.Lock()
+        self._closed = False
         self.chat = AsyncChat(self)
         self.images = AsyncImages(self)
         self.videos = AsyncVideos(self)
 
+    async def _get_sync(self) -> Xurcroh:
+        if self._closed:
+            raise ClientClosedError("Xurcroh client is closed")
+        if self._sync is not None:
+            return self._sync
+        async with self._init_lock:
+            if self._sync is None:
+                if self._closed:
+                    raise ClientClosedError("Xurcroh client is closed")
+                self._sync = await asyncio.to_thread(Xurcroh, **self._parameters)
+            return self._sync
+
     async def cancel(self, request_id: str) -> bool:
-        return await asyncio.to_thread(self._sync.cancel, request_id)
+        sync = await self._get_sync()
+        return await asyncio.to_thread(sync.cancel, request_id)
 
     async def metrics(self) -> dict[str, int | float]:
-        return await asyncio.to_thread(self._sync.metrics)
+        sync = await self._get_sync()
+        return await asyncio.to_thread(sync.metrics)
 
     async def preflight(self, model: str | None = None) -> dict[str, CheckpointPreflight]:
-        return await asyncio.to_thread(self._sync.preflight, model)
+        sync = await self._get_sync()
+        return await asyncio.to_thread(sync.preflight, model)
 
     async def close(self) -> None:
-        await asyncio.to_thread(self._sync.close)
+        async with self._init_lock:
+            if self._closed:
+                return
+            self._closed = True
+            sync = self._sync
+        if sync is not None:
+            await asyncio.to_thread(sync.close)
 
     async def __aenter__(self) -> AsyncXurcroh:
+        await self._get_sync()
         return self
 
     async def __aexit__(self, *_: object) -> None:
