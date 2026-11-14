@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Latest implementation revision: `4d3e93a`; latest full local suite baseline: `0ed8878`
+- Latest implementation revision: `f6675af`; latest full local suite baseline: `0ed8878`
 - Local implementation: **passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -16,11 +16,11 @@ The earlier “PRE-GPU IMPLEMENTATION COMPLETE” declaration remains withdrawn.
 
 ## Local and CI evidence
 
-The latest full local suite at `0ed8878` reports **388 passed, 23 deselected, 80.96% coverage**, excluding hardware tests and the long video-ladder test that passed separately in 2,209.98 seconds. At `4d3e93a`, 11 focused transport/remote-grid tests pass after per-role session sharing, including 65 calls across the key-rotation boundary. Strict mypy covers 134 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
+The latest full local suite at `0ed8878` reports **388 passed, 23 deselected, 80.96% coverage**, excluding hardware tests and the long video-ladder test that passed separately in 2,209.98 seconds. At `f6675af`, 14 focused transport/module/remote-grid tests pass for seeded per-role session execution, including multi-token prefill and 65 calls across the key-rotation boundary. Strict mypy covers 134 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **388 passed, 23 deselected** at `0ed8878`; **11 focused transport tests** at `4d3e93a`; full video ladder passed separately |
+| Python unit/integration/security tests | **388 passed, 23 deselected** at `0ed8878`; **14 focused transport tests** at `f6675af`; full video ladder passed separately |
 | Python branch coverage | **80.96%**, above the 80% requirement |
 | Ruff format and lint | Passed |
 | Strict mypy, 134 source files | Passed |

@@ -117,7 +117,7 @@ requirements:
   - {id: CI-01, source: corrective-order, requirement: public requirements matrix without private specifications, status: implemented, evidence: [docs/requirements-matrix.yaml, tests/test_foundation.py]}
   - {id: CI-02, source: corrective-order, requirement: meaningful test coverage above configured threshold, status: implemented, evidence: [tests/security, tests/adapters, tests/transport, pyproject.toml]}
   - {id: CI-03, source: corrective-order, requirement: PyO3 RustSec advisories resolved, status: implemented, evidence: [crates/transport/Cargo.toml, crates/transport/src/python.rs, Cargo.lock]}
-  - {id: CI-04, source: corrective-order, requirement: all GitHub Actions jobs pass on exact final SHA, status: implemented, evidence: [.github/workflows/ci.yml, docs/validation-report.md]}
+  - {id: CI-04, source: corrective-order, requirement: all GitHub Actions jobs pass on exact final SHA, status: external_pending, evidence: [.github/workflows/ci.yml, docs/validation-report.md]}
   - {id: CI-05, source: corrective-order, requirement: newly implemented security and GPU execution tests, status: implemented, evidence: [tests/security, tests/adapters, tests/hardware]}
   - {id: CI-06, source: corrective-order, requirement: accurate documentation and handoff statements, status: implemented, evidence: [docs/security.md, docs/deployment.md, docs/models.md, docs/validation-report.md]}
   - {id: VAL-01, source: phase-2, requirement: reproducible CUDA environment, status: hardware_validated, evidence: [Dockerfile, docs/hardware-validation.md, docs/validation-report.md]}
@@ -135,7 +135,7 @@ requirements:
   - {id: VAL-13, source: phase-3, requirement: memory cleanup cancellation recovery and latency measurements, status: hardware_pending, evidence: [python/xurcroh/benchmarking.py, tests/integration/test_native_stage.py]}
   - {id: VAL-14, source: phase-4, requirement: final branch and commit SHA, status: implemented, evidence: [docs/validation-report.md]}
   - {id: VAL-15, source: phase-4, requirement: all engineering fixes and associated tests, status: implemented, evidence: [tests]}
-  - {id: VAL-16, source: phase-4, requirement: passing GitHub CI evidence, status: implemented, evidence: [.github/workflows/ci.yml, docs/validation-report.md]}
+  - {id: VAL-16, source: phase-4, requirement: passing GitHub CI evidence, status: external_pending, evidence: [.github/workflows/ci.yml, docs/validation-report.md]}
   - {id: VAL-17, source: phase-4, requirement: actual GPU hardware configurations, status: hardware_validated, evidence: [scripts/vast, docs/validation-report.md]}
   - {id: VAL-18, source: phase-4, requirement: successful and unsuccessful physical test results, status: hardware_validated, evidence: [docs/validation-report.md]}
   - {id: VAL-19, source: phase-4, requirement: numerical equivalence measurements, status: hardware_validated, evidence: [docs/experiments/numerical-equivalence.md, docs/validation-report.md]}
