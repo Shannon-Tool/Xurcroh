@@ -1,6 +1,6 @@
 # Fortress local ladder evidence
 
-These JSON files are emitted by `tests/fortress/test_f0.py` and `tests/fortress/test_m0.py` when `XURCROH_FORTRESS_EVIDENCE_DIR` is set. They record real local CPU execution over Rust QUIC with mutual TLS, four independently spawned worker processes, exact signed 128-bit role products, client-side reduction, and client-side Freivalds verification.
+These JSON files are emitted by `tests/fortress/test_f0.py` and `tests/fortress/test_m0.py` when `XURCROH_FORTRESS_EVIDENCE_DIR` is set. They record real local CPU execution over Rust QUIC with mutual TLS, four independently spawned worker processes, exact 32-bit words and modular products in the field `2^32-5`, client-side reduction, and client-side Freivalds verification.
 
 Reproduce with:
 
