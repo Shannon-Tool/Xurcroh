@@ -111,7 +111,7 @@ def _run(args: argparse.Namespace) -> Path:
         gateway,
         f"cd {root} && ./scripts/gpu/bootstrap.sh && "
         ".venv-cuda/bin/pip install --retries 10 --timeout 120 --no-cache-dir --no-deps "
-        "transformers==5.22.2 huggingface-hub==2.4.0 tokenizers==0.23.1 && "
+        "transformers==5.22.2 huggingface-hub==2.4.0 tokenizers==0.23.1 httpx2==2.16.0 && "
         ".venv-cuda/bin/python -c "
         "'from transformers import AutoModelForMultimodalLM'",
     )
