@@ -96,6 +96,9 @@ class AsyncSSHExecutor:
         return asyncio.run(self._run(worker, command, input_data))
 
     def discover(self, worker: WorkerConfig) -> None:
+        if worker.labels.get("device") == "cpu":
+            worker.gpu = None
+            return
         output = self.run(
             worker,
             "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits",
@@ -221,7 +224,7 @@ class FortressDeployment:
             raise ConfigurationError("git is required for reproducible Fortress provisioning")
         root = Path(__file__).resolve().parents[3]
         status = subprocess.run(  # noqa: S603
-            [GIT, "status", "--porcelain"],
+            [GIT, "status", "--porcelain", "--untracked-files=no"],
             cwd=root,
             check=True,
             capture_output=True,
@@ -323,9 +326,10 @@ class FortressDeployment:
         root = shlex.quote(self._remote_root)
         self._executor.run(worker, f"mkdir -p {root}/tls")
         self._executor.run(worker, f"tar -xzf - -C {root}", input_data=archive)
-        self._executor.run(
-            worker, f"cd {root} && XURCROH_FORTRESS_ONLY=1 ./scripts/gpu/bootstrap.sh"
-        )
+        if worker.labels.get("bootstrap", "true").lower() not in {"0", "false", "no"}:
+            self._executor.run(
+                worker, f"cd {root} && XURCROH_FORTRESS_ONLY=1 ./scripts/gpu/bootstrap.sh"
+            )
 
     def _prepare_role(self, role: RoleDeployment) -> None:
         assert self._executor is not None
@@ -356,14 +360,18 @@ class FortressDeployment:
         remote = shlex.quote(str(role_root))
         service = shlex.quote(role.service_name)
         ready = role_root / "ready"
+        python = shlex.quote(role.worker.labels.get("python_path", ".venv-cuda/bin/python"))
+        device = role.worker.labels.get("device", "cuda")
+        if device not in {"cpu", "cuda"}:
+            raise ConfigurationError(f"unsupported Fortress worker device: {device}")
         command = (
             f"cd {shlex.quote(self._remote_root)} && setsid env HF_HUB_OFFLINE=1 "
             "TRANSFORMERS_OFFLINE=1 "
             "LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:"
-            "/usr/local/cuda/lib64 .venv-cuda/bin/python -m xurcroh.fortress.worker_cli "
+            f"/usr/local/cuda/lib64 {python} -m xurcroh.fortress.worker_cli "
             f"--artifact-dir {remote}/artifacts --recipient-key {remote}/recipient.key "
             f"--certificate {remote}/tls/{service}.crt --private-key {remote}/tls/{service}.key "
-            f"--ca {remote}/tls/ca.crt --host 0.0.0.0 --port {role.port} --device cuda "
+            f"--ca {remote}/tls/ca.crt --host 0.0.0.0 --port {role.port} --device {device} "
             f"--ready-file {shlex.quote(str(ready))} --exit-status-file {remote}/role.exit "
             f"</dev/null >{remote}/role.log 2>&1 & echo $! >{remote}/role.pid"
         )
