@@ -78,7 +78,7 @@ def hardware_validated(reports: list[dict[str, Any]], worker_count: int) -> bool
 def start_command(remote_root: str, name: str, device: str = "cpu") -> str:
     root = shlex.quote(remote_root)
     return (
-        f"cd {root} && nohup env HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 "
+        f"cd {root} && setsid env HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 "
         f"LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/cuda/lib64 "
         f".venv-cuda/bin/python -m xurcroh.fortress.worker_cli "
         f"--artifact-dir {root}/role-artifacts --recipient-key {root}/recipient.key "
