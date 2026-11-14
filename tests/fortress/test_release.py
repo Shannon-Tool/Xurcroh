@@ -147,3 +147,16 @@ def test_native_wheel_build_normalizes_sbom_paths() -> None:
     assert '"$OUT"/*.whl' in script
     assert "--remap-path-prefix=${cargo_home}=/cargo" in script
     assert "--remap-path-prefix=${ROOT}=/workspace" in script
+
+
+def test_release_verification_cli_executes() -> None:
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "scripts/verify_release.py", "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
