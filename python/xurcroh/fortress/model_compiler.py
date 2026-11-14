@@ -163,6 +163,7 @@ def compile_fortress_checkpoint(
     retain_quantized: bool = True,
     model_dtype: torch.dtype | None = None,
     load_model: bool = True,
+    load_full_multimodal: bool = False,
     operation_sink: Callable[[str, CompiledOperation], None] | None = None,
 ) -> FortressCheckpoint:
     if operation_sink is not None and not materialize_shares:
@@ -329,7 +330,17 @@ def compile_fortress_checkpoint(
 
     model = None
     if load_model and reader.config.get("model_type") in CONFIG_MAPPING:
-        if reader.config.get("model_type") in {"gemma4", "qwen3_5"}:
+        if load_full_multimodal:
+            if reader.config.get("model_type") not in {"gemma4", "qwen3_5"}:
+                raise ConfigurationError(
+                    "full Fortress VLM loading supports Gemma 4 and Qwen 3.5 checkpoints only"
+                )
+            from xurcroh.fortress.vlm_loader import load_multimodal_decoder
+
+            model, model_operations = load_multimodal_decoder(
+                str(checkpoint), operations, boundary_dtype
+            )
+        elif reader.config.get("model_type") in {"gemma4", "qwen3_5"}:
             from xurcroh.fortress.text_loader import load_text_decoder
 
             model, model_operations = load_text_decoder(reader, operations, boundary_dtype)
@@ -344,7 +355,10 @@ def compile_fortress_checkpoint(
         from xurcroh.fortress.module import replace_linear_layers
         from xurcroh.fortress.text_loader import CLIENT_ONLY
 
-        if reader.config.get("model_type") not in {"gemma4", "qwen3_5"}:
+        if not load_full_multimodal and reader.config.get("model_type") not in {
+            "gemma4",
+            "qwen3_5",
+        }:
             replace_linear_layers(model, model_operations, client_only=CLIENT_ONLY)
         model.get_input_embeddings().weight = torch.nn.Parameter(embedding, requires_grad=False)
         output_embeddings = model.get_output_embeddings()

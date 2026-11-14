@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 import uuid
@@ -40,6 +41,7 @@ class FortressEngine:
             "fortress-local" if workers[0].endpoint == "local://cpu" else "fortress-grid"
         )
         self._tokenizer: Any = None
+        self._processor: Any = None
         self._stop_token_ids: set[int] = set()
         self._compiled: FortressCheckpoint | None = None
         self._combiner: FortressCombiner | None = None
@@ -134,6 +136,18 @@ class FortressEngine:
                     for value in (eos_ids if isinstance(eos_ids, list) else [eos_ids])
                     if value is not None
                 }
+                checkpoint_config = json.loads(
+                    (Path(self.definition.path) / "config.json").read_text()
+                )
+                official_vlm = self.definition.modality == "vlm" and checkpoint_config.get(
+                    "model_type"
+                ) in {"gemma4", "qwen3_5"}
+                if official_vlm:
+                    from transformers import AutoProcessor
+
+                    self._processor = AutoProcessor.from_pretrained(  # type: ignore[no-untyped-call]
+                        self.definition.path, tokenizer=self._tokenizer, **options
+                    )
                 self._compiled = compile_fortress_checkpoint(
                     self.definition.path,
                     seed=self.definition.fortress_seed,
@@ -143,6 +157,7 @@ class FortressEngine:
                     model_dtype=(
                         torch.float32 if self.engine_name == "fortress-grid" else torch.float64
                     ),
+                    load_full_multimodal=official_vlm,
                 )
                 compiled = self._compiled
                 clients: dict[str, FortressRoleClient] = {}
@@ -322,6 +337,125 @@ class FortressEngine:
                 ),
             )
 
+    def _generate_official_vlm(
+        self,
+        request: CompletionRequest,
+        *,
+        cancelled: threading.Event,
+        timeout: float,
+    ) -> Iterator[GenerationEvent]:
+        from xurcroh.runtime.generation import (
+            GenerationEvent,
+            GenerationSummary,
+            check_request_health,
+            stopping_strings,
+        )
+        from xurcroh.runtime.vlm import _decode_audio, _decode_image
+
+        compiled = self._compiled
+        assert compiled is not None and compiled.model is not None and self._processor is not None
+        started = time.monotonic()
+        with self._inference_lock:
+            images = []
+            audio = []
+            sample_rates = []
+            template_messages = []
+            for message in request.messages:
+                parts = (
+                    [TextContentPart(type="text", text=message.content)]
+                    if isinstance(message.content, str)
+                    else message.content
+                )
+                template_parts = []
+                for part in parts:
+                    if isinstance(part, TextContentPart):
+                        template_parts.append({"type": "text", "text": part.text})
+                    elif isinstance(part, ImageContentPart):
+                        images.append(_decode_image(part.image_url.url))
+                        template_parts.append(
+                            {"type": "image_url", "image_url": part.image_url.url}
+                        )
+                    elif isinstance(part, AudioContentPart):
+                        waveform, rate = _decode_audio(part)
+                        audio.append(waveform)
+                        sample_rates.append(rate)
+                        template_parts.append(part.model_dump(mode="json"))
+                template_messages.append({"role": message.role, "content": template_parts})
+            if self._processor.chat_template is None:
+                raise CapabilityError("official VLM processor has no chat template")
+            prompt = self._processor.apply_chat_template(
+                template_messages, tokenize=False, add_generation_prompt=True
+            )
+            parameters: dict[str, Any] = {"text": prompt, "return_tensors": "pt"}
+            if images:
+                parameters["images"] = images
+            if audio:
+                if len(set(sample_rates)) != 1:
+                    raise ConfigurationError("audio inputs must share one sample rate")
+                parameters["audios"] = audio
+                parameters["sampling_rate"] = sample_rates[0]
+            inputs = self._processor(**parameters)
+            prompt_tokens = int(inputs["input_ids"].shape[-1])
+            check_request_health(cancelled, started, timeout)
+            generation: dict[str, Any] = {
+                **inputs,
+                "max_new_tokens": request.max_tokens,
+                "do_sample": request.temperature > 0,
+            }
+            if request.temperature > 0:
+                generation.update(
+                    temperature=request.temperature,
+                    top_p=request.top_p,
+                    top_k=request.top_k,
+                )
+            if request.seed is not None:
+                torch.manual_seed(request.seed)
+            from transformers import StoppingCriteria, StoppingCriteriaList
+
+            class RequestStop(StoppingCriteria):
+                def __call__(
+                    self, input_ids: torch.Tensor, scores: torch.Tensor, **kwargs: Any
+                ) -> bool:
+                    del input_ids, scores, kwargs
+                    try:
+                        check_request_health(cancelled, started, timeout)
+                    except Exception:
+                        return True
+                    return False
+
+            generation["stopping_criteria"] = StoppingCriteriaList([RequestStop()])
+            with torch.inference_mode():
+                output = compiled.model.generate(**generation)
+            check_request_health(cancelled, started, timeout)
+            completion_ids = output[0][prompt_tokens:].tolist()
+            text = self._processor.decode(completion_ids, skip_special_tokens=True)
+            stops = stopping_strings(request)
+            stop_positions = [text.find(stop) for stop in stops if stop in text]
+            stopped_on_text = bool(stop_positions)
+            if stopped_on_text:
+                text = text[: min(stop_positions)]
+            finish_reason: Literal["stop", "length"] = (
+                "stop"
+                if stopped_on_text
+                or (
+                    completion_ids
+                    and completion_ids[-1] in self._stop_token_ids
+                    and len(completion_ids) < request.max_tokens
+                )
+                else "length"
+            )
+            yield GenerationEvent(delta=text)
+            yield GenerationEvent(
+                delta="",
+                summary=GenerationSummary(
+                    text=text,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=len(completion_ids),
+                    finish_reason=finish_reason,
+                    duration_ms=(time.monotonic() - started) * 1000,
+                ),
+            )
+
     def generate(
         self,
         request: CompletionRequest,
@@ -345,6 +479,9 @@ class FortressEngine:
             isinstance(message.content, str) for message in request.messages
         ):
             yield from self._generate_official_model(request, cancelled=cancelled, timeout=timeout)
+            return
+        if compiled.model is not None and self._processor is not None:
+            yield from self._generate_official_vlm(request, cancelled=cancelled, timeout=timeout)
             return
         started = time.monotonic()
         with self._inference_lock:
@@ -410,4 +547,5 @@ class FortressEngine:
         self._combiner = None
         self._compiled = None
         self._tokenizer = None
+        self._processor = None
         self._stop_token_ids.clear()
