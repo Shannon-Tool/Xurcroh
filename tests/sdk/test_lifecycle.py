@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -96,3 +98,32 @@ def test_close_does_not_deadlock_with_abandoned_stream(tiny_model_path: Path) ->
     client.close()
     with pytest.raises(RequestCancelledError):
         list(stream)
+
+
+def test_close_waits_for_inflight_real_engine_cancellation(
+    tiny_model_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = Xurcroh(cluster={"endpoint": "local://cpu"}, model_path={"tiny": tiny_model_path})
+    engine = client._runtime._engine("tiny")
+    original = engine.generate
+    entered = threading.Event()
+
+    def controlled(*args, **kwargs):
+        for event in original(*args, **kwargs):
+            entered.set()
+            time.sleep(0.02)
+            yield event
+
+    monkeypatch.setattr(engine, "generate", controlled)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            client.chat.completions.create,
+            model="tiny",
+            messages=[{"role": "user", "content": "hello"}],
+            max_tokens=16,
+        )
+        assert entered.wait(timeout=5)
+        client.close()
+        with pytest.raises(RequestCancelledError):
+            future.result(timeout=5)
+    assert client.metrics()["requests_cancelled"] == 1

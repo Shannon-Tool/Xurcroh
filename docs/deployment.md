@@ -98,7 +98,7 @@ Use `benchmarks/cluster.example.yaml` as a schema example. Set the worker creden
 
 ## Shutdown and failure behavior
 
-Clients should be context managers. Closing cancels active work and releases model resources. Workers close their runtime at FastAPI lifespan shutdown. Registration expiry removes unhealthy workers from controller topology. Request admission is bounded per model. These local lifecycle tests do not prove recovery from physical host failure or WAN partition.
+Clients should be context managers. Closing cancels active work, waits for in-flight engine calls to finish cancellation cleanup, and then releases model and transport resources. Idle open streams do not block shutdown. A bounded shutdown timeout leaves resources available for a `close()` retry rather than tearing them down underneath active execution. Workers close their runtime at FastAPI lifespan shutdown. Registration expiry removes unhealthy workers from controller topology. Request admission is bounded per model. These local lifecycle tests do not prove recovery from physical host failure or WAN partition.
 
 ## Release and transparency verification
 
