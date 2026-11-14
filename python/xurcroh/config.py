@@ -103,6 +103,7 @@ class ClusterConfig(StrictModel):
     expert_parallel: int = Field(default=1, ge=1)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     provision_workers: bool = False
+    datagram_tunnel: bool = False
     controller_endpoint: str | None = None
     request_timeout_seconds: float = Field(default=60, gt=0)
 
@@ -149,6 +150,7 @@ class ClusterConfig(StrictModel):
                     "expert_parallel",
                     "security",
                     "provision_workers",
+                    "datagram_tunnel",
                     "controller_endpoint",
                     "request_timeout_seconds",
                 )

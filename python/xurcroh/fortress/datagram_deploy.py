@@ -14,6 +14,8 @@ from typing import Any
 
 from scripts.gpu.deploy_two_node import options
 
+from xurcroh.config import WorkerConfig
+
 SSH = shutil.which("ssh")
 if SSH is None:
     raise RuntimeError("ssh is required for datagram tunnel deployment")
@@ -90,20 +92,27 @@ def start_datagram_tunnels(
     remote_root: str,
     sdk: dict[str, Any],
     output: Path,
+    *,
+    target_port: int = 9444,
+    tunnel_name: str = "relay",
 ) -> None:
+    if not 1 <= target_port <= 65535 or not tunnel_name or "/" in tunnel_name:
+        raise ValueError("datagram tunnel requires a valid port and simple name")
     output.mkdir(parents=True, exist_ok=True)
     started: list[dict[str, Any]] = []
     try:
         for index, worker in enumerate(workers):
             root = shlex.quote(remote_root)
-            address = Path(remote_root) / "relay.address"
+            address = Path(remote_root) / f"{tunnel_name}.address"
+            pid_path = Path(remote_root) / f"{tunnel_name}.pid"
             start_detached(
                 worker,
                 f"cd {root} && setsid env .venv-cuda/bin/python -m "
                 "xurcroh.fortress.datagram_tunnel server --listen-host 127.0.0.1 "
-                "--listen-port 0 --target-host 127.0.0.1 --target-port 9444 "
+                f"--listen-port 0 --target-host 127.0.0.1 --target-port {target_port} "
                 f"--address-file {shlex.quote(str(address))} </dev/null "
-                f">{root}/relay.log 2>&1 & echo $! >{root}/relay.pid",
+                f">{root}/{shlex.quote(tunnel_name)}.log 2>&1 & "
+                f"echo $! >{shlex.quote(str(pid_path))}",
             )
             remote_port = wait_remote_port(worker, address)
             forward_port = free_tcp_port()
@@ -153,8 +162,14 @@ def start_datagram_tunnels(
                 "ssh_forward_pid": forward.pid,
                 "local_relay_pid": local.pid,
                 "local_endpoint": f"127.0.0.1:{local_port}",
+                "remote_pid_path": str(pid_path),
             }
-            sdk["cluster"][index]["endpoint"] = f"quic://127.0.0.1:{local_port}"
+            configured = sdk["cluster"][index]
+            endpoint = f"quic://127.0.0.1:{local_port}"
+            if isinstance(configured, WorkerConfig):
+                configured.endpoint = endpoint
+            else:
+                configured["endpoint"] = endpoint
             started.append(worker)
     except Exception:
         close_datagram_tunnels(started)
