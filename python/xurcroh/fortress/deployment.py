@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shlex
 import shutil
@@ -40,7 +41,12 @@ class RemoteExecutor(Protocol):
     def discover(self, worker: WorkerConfig) -> None: ...
 
     def run(
-        self, worker: WorkerConfig, command: str, *, input_data: bytes | None = None
+        self,
+        worker: WorkerConfig,
+        command: str,
+        *,
+        input_data: bytes | None = None,
+        timeout: float | None = 120,
     ) -> str: ...
 
     def upload(
@@ -80,11 +86,20 @@ class AsyncSSHExecutor:
             options["known_hosts"] = None
         return options
 
-    async def _run(self, worker: WorkerConfig, command: str, input_data: bytes | None) -> str:
+    async def _run(
+        self,
+        worker: WorkerConfig,
+        command: str,
+        input_data: bytes | None,
+        timeout: float | None,
+    ) -> str:
         import asyncssh
 
         async with asyncssh.connect(**self._options(worker)) as connection:
-            result = await connection.run(command, input=input_data, check=False, encoding=None)
+            operation = connection.run(command, input=input_data, check=False, encoding=None)
+            result = (
+                await operation if timeout is None else await asyncio.wait_for(operation, timeout)
+            )
         if result.exit_status not in (0, None):
             raise ClusterUnavailableError(
                 f"remote command on {worker.name!r} failed with status {result.exit_status}"
@@ -92,8 +107,15 @@ class AsyncSSHExecutor:
         output = result.stdout or ""
         return output.decode() if isinstance(output, bytes) else output
 
-    def run(self, worker: WorkerConfig, command: str, *, input_data: bytes | None = None) -> str:
-        return asyncio.run(self._run(worker, command, input_data))
+    def run(
+        self,
+        worker: WorkerConfig,
+        command: str,
+        *,
+        input_data: bytes | None = None,
+        timeout: float | None = 120,
+    ) -> str:
+        return asyncio.run(self._run(worker, command, input_data, timeout))
 
     def discover(self, worker: WorkerConfig) -> None:
         if worker.labels.get("device") == "cpu":
@@ -328,7 +350,9 @@ class FortressDeployment:
         self._executor.run(worker, f"tar -xzf - -C {root}", input_data=archive)
         if worker.labels.get("bootstrap", "true").lower() not in {"0", "false", "no"}:
             self._executor.run(
-                worker, f"cd {root} && XURCROH_FORTRESS_ONLY=1 ./scripts/gpu/bootstrap.sh"
+                worker,
+                f"cd {root} && XURCROH_FORTRESS_ONLY=1 ./scripts/gpu/bootstrap.sh",
+                timeout=3600,
             )
 
     def _prepare_role(self, role: RoleDeployment) -> None:
@@ -375,7 +399,8 @@ class FortressDeployment:
             f"--ready-file {shlex.quote(str(ready))} --exit-status-file {remote}/role.exit "
             f"</dev/null >{remote}/role.log 2>&1 & echo $! >{remote}/role.pid"
         )
-        self._executor.run(role.worker, command)
+        logging.getLogger(__name__).info("Starting Fortress role %s", role.service_name)
+        self._executor.run(role.worker, command, timeout=30)
         deadline = time.monotonic() + 120
         exit_file = shlex.quote(str(role_root / "role.exit"))
         while True:

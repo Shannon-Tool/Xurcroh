@@ -20,8 +20,15 @@ class RecordingExecutor:
     def discover(self, worker: WorkerConfig) -> None:
         worker.gpu = {"model": "test-gpu", "memory_gb": 80}
 
-    def run(self, worker: WorkerConfig, command: str, *, input_data: bytes | None = None) -> str:
-        del input_data
+    def run(
+        self,
+        worker: WorkerConfig,
+        command: str,
+        *,
+        input_data: bytes | None = None,
+        timeout: float | None = 120,
+    ) -> str:
+        del input_data, timeout
         self.commands.append((worker.name, command))
         if self.fail_cleanup and "rm -rf" in command:
             raise ClusterUnavailableError("SSH connection lost")
