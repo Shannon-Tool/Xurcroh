@@ -233,6 +233,9 @@ class _SharedRoleConnection:
         self.role = role
         self.identity = identity
         self.client: Any = None
+        self.session = ClientStageSession(role.weight_index, role.recipient_public)
+        self.completed = 0
+        self.used = False
         self.call_lock = threading.Lock()
         self.connect()
 
@@ -251,9 +254,19 @@ class _SharedRoleConnection:
         )
 
     def close(self) -> None:
-        if self.client is not None:
-            self.client.close()
-            self.client = None
+        with self.call_lock:
+            if self.client is None:
+                return
+            try:
+                if self.used:
+                    session_id = bytes.fromhex(self.session.session_id)
+                    self.client.send(session_id, 0, 0, "cancel", "", [], self.session.token_bytes)
+                    response_id, _, _, kind, _, _, _ = self.client.receive()
+                    if response_id != session_id or kind != "complete":
+                        raise ProtocolError("role cancellation was not acknowledged")
+            finally:
+                self.client.close()
+                self.client = None
 
 
 class _RoleTransport:
@@ -273,7 +286,11 @@ class _RoleTransport:
         self._operation_name = operation_name.encode("ascii")
         if not self._operation_name or len(self._operation_name) > 1024:
             raise ValueError("operation name must contain 1-1024 ASCII bytes")
-        self.session = ClientStageSession(role.weight_index, role.recipient_public)
+        self.session = (
+            connection.session
+            if connection is not None
+            else ClientStageSession(role.weight_index, role.recipient_public)
+        )
         self._identity = identity
         self._connection = connection
         self.client: Any = None
@@ -370,6 +387,8 @@ class _RoleTransport:
         self.client.send(request_hash, 0, sequence, "tensor", "u8", [len(packet)], packet)
         self._frame_sizes.add(len(packet))
         self._used = True
+        if self._connection is not None:
+            self._connection.used = True
         response_id, _, _, kind, dtype, shape, response = self.client.receive()
         received = len(
             self._quic.encode_frame(response_id, 0, sequence, kind, dtype or "", shape, response)
@@ -394,12 +413,19 @@ class _RoleTransport:
             int.from_bytes(payload[offset : offset + 4], "little", signed=False)
             for offset in range(0, len(payload), 4)
         ]
-        self._completed += 1
-        if self._completed % self._rotation_interval == 0:
-            self.session.rotate(self._completed // self._rotation_interval)
+        if self._connection is not None:
+            self._connection.completed += 1
+            completed = self._connection.completed
+        else:
+            self._completed += 1
+            completed = self._completed
+        if completed % self._rotation_interval == 0:
+            self.session.rotate(completed // self._rotation_interval)
         return result, sent, received
 
     def close(self) -> None:
+        if self._connection is not None:
+            return
         with self._execution_lock:
             try:
                 if self._used:
