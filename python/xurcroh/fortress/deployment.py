@@ -84,7 +84,7 @@ class AsyncSSHExecutor:
         import asyncssh
 
         async with asyncssh.connect(**self._options(worker)) as connection:
-            result = await connection.run(command, input=input_data, check=False)
+            result = await connection.run(command, input=input_data, check=False, encoding=None)
         if result.exit_status not in (0, None):
             raise ClusterUnavailableError(
                 f"remote command on {worker.name!r} failed with status {result.exit_status}"
@@ -508,9 +508,9 @@ class FortressDeployment:
         while True:
             status = self._executor.run(
                 role.worker,
-                f"if test -f {exit_file}; then echo exited; "
-                f"elif test -f {pid} && ! kill -0 $(cat {pid}) 2>/dev/null; "
-                "then echo exited; fi",
+                f"if ! test -f {pid}; then echo exited; "
+                f"elif test -f {exit_file}; then echo exited; "
+                f"elif ! kill -0 $(cat {pid}) 2>/dev/null; then echo exited; fi",
             ).strip()
             if status == "exited":
                 return
