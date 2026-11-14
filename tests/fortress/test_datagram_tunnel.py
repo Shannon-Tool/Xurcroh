@@ -52,3 +52,24 @@ def test_datagram_relays_carry_real_mutual_tls_quic(
         assert not thread.is_alive()
 
     asyncio.run(exercise())
+
+
+def test_tcp_relay_treats_clean_disconnect_as_normal() -> None:
+    from xurcroh.fortress.datagram_tunnel import TcpDatagramRelay
+
+    class Writer:
+        def close(self) -> None:
+            pass
+
+        async def wait_closed(self) -> None:
+            pass
+
+    async def exercise() -> None:
+        relay = TcpDatagramRelay.__new__(TcpDatagramRelay)
+        relay.target_host = "127.0.0.1"
+        relay.target_port = 9
+        reader = asyncio.StreamReader()
+        reader.feed_eof()
+        await relay.handle(reader, Writer())  # type: ignore[arg-type]
+
+    asyncio.run(exercise())

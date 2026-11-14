@@ -51,15 +51,16 @@ class ClientConnection:
             self.relay.target_host, self.relay.target_port
         )
         try:
-            sender = asyncio.create_task(self.send(writer))
-            receiver = asyncio.create_task(self.receive(reader))
-            done, pending = await asyncio.wait(
-                {sender, receiver}, return_when=asyncio.FIRST_COMPLETED
-            )
-            for task in done:
-                task.result()
-            for task in pending:
-                task.cancel()
+            with contextlib.suppress(asyncio.IncompleteReadError, ConnectionError):
+                sender = asyncio.create_task(self.send(writer))
+                receiver = asyncio.create_task(self.receive(reader))
+                done, pending = await asyncio.wait(
+                    {sender, receiver}, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in done:
+                    task.result()
+                for task in pending:
+                    task.cancel()
         finally:
             writer.close()
             await writer.wait_closed()
@@ -110,9 +111,10 @@ class TcpDatagramRelay:
         )
         forwarding = asyncio.create_task(self.forward(queue, writer))
         try:
-            while True:
-                payload = await read_frame(reader)
-                transport.sendto(payload)
+            with contextlib.suppress(asyncio.IncompleteReadError, ConnectionError):
+                while True:
+                    payload = await read_frame(reader)
+                    transport.sendto(payload)
         finally:
             transport.close()
             forwarding.cancel()
