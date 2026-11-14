@@ -13,6 +13,7 @@ if [[ ! -x "$CARGO_HOME/bin/cargo" ]]; then
   curl --proto '=https' --tlsv1.2 --retry 3 --retry-delay 5 --retry-all-errors -sSf https://sh.rustup.rs \
     | sh -s -- -y --profile minimal --default-toolchain 1.99.1
 fi
+export RUSTUP_TOOLCHAIN="1.99.1"
 IMAGE_PACKAGES=0
 if "$PYTHON" - <<'PY'
 import importlib.metadata
