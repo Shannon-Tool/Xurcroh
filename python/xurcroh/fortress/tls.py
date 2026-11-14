@@ -43,7 +43,6 @@ def generate_mutual_tls(output: Path, services: dict[str, list[str]]) -> None:
         .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
         .sign(ca_key, hashes.SHA256())
     )
-    _write_private(output / "ca.key", _private_bytes(ca_key))
     (output / "ca.crt").write_bytes(ca.public_bytes(serialization.Encoding.DER))
     for name, addresses in {**services, "client": ["localhost"]}.items():
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)

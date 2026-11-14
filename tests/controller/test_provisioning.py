@@ -85,6 +85,9 @@ def test_fortress_provisioning_deploys_encrypted_roles_and_cleans_up(
         "1",
     ]
     workspace = deployment.workspace
+    assert not (workspace / "tls" / "ca.key").exists()
+    assert (workspace / "tls" / "client.key").is_file()
+    assert all(not role.recipient_key.exists() for role in deployment._roles)
     deployment.close()
     deployment.close()
     commands = [command for _, command in executor.commands]

@@ -344,6 +344,7 @@ class FortressDeployment:
             role.worker,
             f"chmod 600 {remote}/recipient.key {remote}/tls/{shlex.quote(role.service_name)}.key",
         )
+        role.recipient_key.unlink()
 
     def _start_role(self, role: RoleDeployment) -> None:
         assert self._executor is not None
