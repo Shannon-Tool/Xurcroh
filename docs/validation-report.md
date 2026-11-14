@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Validated implementation revision: `ee3cc2a8aba05f5a720866394e3e8deb03831bee`
+- Latest implementation revision: `4d3e93a`; latest full local suite baseline: `0ed8878`
 - Local implementation: **passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -16,14 +16,14 @@ The earlier “PRE-GPU IMPLEMENTATION COMPLETE” declaration remains withdrawn.
 
 ## Local and CI evidence
 
-The latest complete local suite at `e9b64ca` reports **378 passed, 23 deselected, 81.59% coverage**, excluding hardware tests and the long video-ladder test that passed separately in 2,209.98 seconds. Strict mypy covers 129 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
+The latest full local suite at `0ed8878` reports **388 passed, 23 deselected, 80.96% coverage**, excluding hardware tests and the long video-ladder test that passed separately in 2,209.98 seconds. At `4d3e93a`, 11 focused transport/remote-grid tests pass after per-role session sharing, including 65 calls across the key-rotation boundary. Strict mypy covers 134 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **378 passed, 23 deselected**; full video ladder passed separately |
-| Python branch coverage | **81.59%**, above the 80% requirement |
+| Python unit/integration/security tests | **388 passed, 23 deselected** at `0ed8878`; **11 focused transport tests** at `4d3e93a`; full video ladder passed separately |
+| Python branch coverage | **80.96%**, above the 80% requirement |
 | Ruff format and lint | Passed |
-| Strict mypy, 129 source files | Passed |
+| Strict mypy, 134 source files | Passed |
 | Rust tests | **29 passed** |
 | Rust formatting, Clippy, RustSec | Passed; no known advisories |
 | Frontend interaction tests | **32 passed** |
