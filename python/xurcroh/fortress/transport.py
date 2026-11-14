@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import json
 import secrets
@@ -244,13 +245,9 @@ class _RoleTransport:
         if not self._operation_name or len(self._operation_name) > 1024:
             raise ValueError("operation name must contain 1-1024 ASCII bytes")
         self.session = ClientStageSession(role.weight_index, role.recipient_public)
-        self.client = xurcroh_quic.TensorClient.connect_mutual(
-            role.relay.relay_address if role.relay is not None else role.address,
-            identity.server_name,
-            identity.pinned_ca,
-            list(identity.certificates),
-            identity.private_key,
-        )
+        self._identity = identity
+        self.client: Any = None
+        self._connect()
         self._used = False
         self._rotation_interval = rotation_interval
         self._completed = 0
@@ -258,6 +255,19 @@ class _RoleTransport:
         self._call_lock = threading.Lock()
         self._frame_sizes: set[int] = set()
         self.observations: list[tuple[float, bool]] = []
+
+    def _connect(self) -> None:
+        identity = self._identity
+        if self.client is not None:
+            with contextlib.suppress(ValueError):
+                self.client.close()
+        self.client = self._quic.TensorClient.connect_mutual(
+            self.role.relay.relay_address if self.role.relay is not None else self.role.address,
+            identity.server_name,
+            identity.pinned_ca,
+            list(identity.certificates),
+            identity.private_key,
+        )
 
     def execute(
         self,
@@ -269,7 +279,15 @@ class _RoleTransport:
     ) -> tuple[list[int], int, int]:
         started = time.perf_counter()
         with self._call_lock:
-            result = self._execute(activation, request_id, sequence)
+            try:
+                result = self._execute(activation, request_id, sequence)
+            except ValueError as error:
+                if not any(
+                    marker in str(error).lower() for marker in ("timed out", "connection", "closed")
+                ):
+                    raise
+                self._connect()
+                result = self._execute(activation, request_id, sequence)
         self.observations.append((time.perf_counter() - started, cover))
         return result
 

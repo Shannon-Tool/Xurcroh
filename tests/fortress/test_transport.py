@@ -358,3 +358,27 @@ def test_cuda_worker_canonicalizes_signed_field_output(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(torch, "empty", empty_without_device)
     assert worker._execute_activation("op", torch.tensor([1])) == [FIELD_MODULUS - 1]
+
+
+def test_role_transport_reconnects_once_after_timeout() -> None:
+    import threading
+
+    from xurcroh.fortress.transport import _RoleTransport
+
+    transport = _RoleTransport.__new__(_RoleTransport)
+    transport._call_lock = threading.Lock()
+    transport.observations = []
+    calls = []
+    reconnects = []
+
+    def execute(activation, request_id, sequence):
+        calls.append(sequence)
+        if len(calls) == 1:
+            raise ValueError("QUIC connection failed: timed out")
+        return [7], 10, 20
+
+    transport._execute = execute
+    transport._connect = lambda: reconnects.append(True)
+    assert transport.execute(torch.tensor([1]), "request", 3) == ([7], 10, 20)
+    assert calls == [3, 3]
+    assert reconnects == [True]
