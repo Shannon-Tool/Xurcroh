@@ -40,6 +40,10 @@ client = Xurcroh(
 )
 ```
 
+## Checkpoint preflight
+
+`client.preflight()` reads local checkpoint metadata and safetensors storage without loading model weights or starting inference. Pass a registered model name to check only that model. Each report includes the checkpoint layout digest, measured checkpoint bytes, conservative client and per-role memory estimates, and actionable issues. Fortress requests run this check before engine creation. Remote Fortress models require a 40-character immutable revision and known worker memory from `gpu.memory_gb`, `resources.max_gpu_memory_gb`, or SSH discovery; insufficient or unknown capacity is rejected rather than guessed.
+
 ## Cluster configuration
 
 A cluster can be an endpoint string, one worker dictionary, a worker list, or an advanced mapping with `workers`, `pipeline_parallel`, `tensor_parallel`, `expert_parallel`, `security`, and `provision_workers`. An empty configuration creates one explicit `local://cpu` worker. Remote endpoints require initialized Xurcroh workers; the SDK does not claim remote execution when none is available.

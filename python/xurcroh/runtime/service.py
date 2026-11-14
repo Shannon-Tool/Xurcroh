@@ -17,6 +17,7 @@ from xurcroh.errors import (
 )
 from xurcroh.fortress.diffusion_engine import FortressDiffusionEngine
 from xurcroh.fortress.engine import FortressEngine
+from xurcroh.preflight import CheckpointPreflight, preflight_checkpoint
 from xurcroh.provisioning import provision_cluster_sync
 from xurcroh.requests import CompletionRequest, ImageGenerationRequest, VideoGenerationRequest
 from xurcroh.runtime.diffusion import LocalDiffusionEngine
@@ -101,6 +102,22 @@ class RuntimeService:
             raise ClusterUnavailableError(f"no configured worker advertises model {name!r}")
         return workers
 
+    def preflight(self, model: str | None = None) -> dict[str, CheckpointPreflight]:
+        self._ensure_open()
+        names = (model,) if model is not None else self.models.names()
+        reports = {
+            name: preflight_checkpoint(name, self.models.get(name), self._workers_for_model(name))
+            for name in names
+        }
+        return reports
+
+    def _require_preflight(self, name: str) -> None:
+        report = self.preflight(name)[name]
+        if not report.supported:
+            raise ConfigurationError(
+                f"model {name!r} preflight failed: " + "; ".join(report.issues)
+            )
+
     def _engine(
         self, name: str
     ) -> (
@@ -117,6 +134,8 @@ class RuntimeService:
     ):
         definition = self.models.get(name)
         workers = self._workers_for_model(name)
+        if definition.engine == "fortress":
+            self._require_preflight(name)
         with self._lock:
             self._ensure_open()
             engine = self._engines.get(name)
