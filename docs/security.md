@@ -24,7 +24,7 @@ The AMD adapter invokes `snpguest verify attestation`. Intel uses the `sgx_dcap_
 
 ## Local evidence
 
-CPU tests cover cache/request cleanup, sealed memfds, nonce/binding failures, finite-field and floating-point checks, Procrustes recovery, norm leakage, and real model equivalence. CUDA tests are executable but skipped without CUDA. Full physical multi-GPU, TEE, side-channel, and performance claims remain Stage Two validation.
+CPU tests cover cache/request cleanup, sealed memfds, nonce/binding failures, finite-field and floating-point checks, Procrustes recovery, norm leakage, and real model equivalence. CUDA tests are executable and skip cleanly without CUDA. At `a42b552`, one RTX 4090 passed 20 native/hardware tests and 18 `compute-sanitizer` tests with zero reported errors; this is scoped native-path evidence, not complete physical-memory erasure or independent multi-host acceptance. Full distributed-model, TEE, side-channel, and performance claims remain hardware-validation work.
 
 
 ## Fortress prompt armour and canaries
@@ -42,3 +42,7 @@ Interactive stage and protected-media sessions use RFC 9180 HPKE (`X25519HkdfSha
 ## Oblivious relay and traffic analysis
 
 `xurcroh.fortress.relay` forwards mutually authenticated QUIC calls through an allowlisted oblivious relay. Onion layers reveal only the current hop's authorized next address; HPKE and directional AEAD remain end-to-end between client and worker. The relay observes the client's network address, and each worker observes the relay's network address. A global observer can still correlate timing and volume, so this is not Tor/I2P-level anonymity or proof against intersection attacks. Fixed-size frames and constant-rate verified cover calls reduce direct size/workload signals but do not remove scheduling or microarchitectural leakage. The current local leave-one-out nearest-mean timing result is recorded in `docs/evidence/fortress/transport.json` (balanced accuracy 0.572 versus a 0.5 baseline for that run), not presented as general classifier resistance.
+
+## SSH datagram relay fallback
+
+The optional `datagram_tunnel` deployment path forwards framed UDP datagrams through SSH local port forwarding when provider UDP is unusable. Its TCP and UDP listeners bind to loopback, each client source receives an isolated relay connection, and worker/relay PIDs are included in teardown. QUIC mutual TLS, application session authentication, and payload encryption remain end-to-end; SSH is an additional transport layer, not a replacement for either. The relay does not provide anonymity against SSH hosts, providers, global observers, or traffic analysis. Local tests demonstrate a real QUIC round trip, while the physical relay run did not complete its numerical/SDK gate and is not claimed as validated.
