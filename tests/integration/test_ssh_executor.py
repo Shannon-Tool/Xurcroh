@@ -4,6 +4,8 @@ import shutil
 import socket
 import subprocess
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -18,7 +20,8 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def test_production_ssh_executor_executes_and_uploads_over_real_sshd(tmp_path: Path) -> None:
+@contextmanager
+def ssh_testbed(tmp_path: Path) -> Iterator[WorkerConfig]:
     sshd = shutil.which("sshd")
     ssh_keygen = shutil.which("ssh-keygen")
     ssh_keyscan = shutil.which("ssh-keyscan")
@@ -68,7 +71,7 @@ def test_production_ssh_executor_executes_and_uploads_over_real_sshd(tmp_path: P
             check=True,
         )
         known_hosts.write_text(scan.stdout)
-        worker = WorkerConfig(
+        yield WorkerConfig(
             name="loopback",
             host="127.0.0.1",
             ssh={
@@ -78,6 +81,13 @@ def test_production_ssh_executor_executes_and_uploads_over_real_sshd(tmp_path: P
                 "known_hosts_path": str(known_hosts),
             },
         )
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
+
+
+def test_production_ssh_executor_executes_and_uploads_over_real_sshd(tmp_path: Path) -> None:
+    with ssh_testbed(tmp_path) as worker:
         executor = AsyncSSHExecutor()
         remote = tmp_path / "remote"
         executor.run(worker, f"mkdir -p {remote}")
@@ -85,6 +95,3 @@ def test_production_ssh_executor_executes_and_uploads_over_real_sshd(tmp_path: P
         source.write_bytes(b"real-ssh-artifact")
         executor.upload(worker, [source], str(remote / "artifact.bin"))
         assert executor.run(worker, f"cat {remote}/artifact.bin") == "real-ssh-artifact"
-    finally:
-        process.terminate()
-        process.wait(timeout=10)
