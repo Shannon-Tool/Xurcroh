@@ -421,6 +421,7 @@ class FortressDeployment:
                         definition,
                         list(self.cluster.workers),
                         require_known_memory=True,
+                        validate_roles=False,
                     )
                     if not report.supported:
                         raise ConfigurationError(

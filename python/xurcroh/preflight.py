@@ -105,6 +105,7 @@ def preflight_checkpoint(
     workers: list[WorkerConfig],
     *,
     require_known_memory: bool = False,
+    validate_roles: bool = True,
 ) -> CheckpointPreflight:
     checkpoint = ensure_checkpoint(name, definition)
     detect_modality(definition)
@@ -165,6 +166,41 @@ def preflight_checkpoint(
                 f"worker {worker.name} has insufficient known memory: "
                 f"requires approximately {role_worker_bytes / 1024**3:.2f} GiB per weight role"
             )
+    if remote and validate_roles and definition.engine == "fortress":
+        expected = {
+            (activation, weight)
+            for activation in range(definition.fortress_shares)
+            for weight in range(definition.fortress_shares)
+        }
+        actual: list[tuple[int, int]] = []
+        recipients: list[str] = []
+        for worker in workers:
+            try:
+                actual.append(
+                    (
+                        int(worker.labels["activation_index"]),
+                        int(worker.labels["weight_index"]),
+                    )
+                )
+                recipient = worker.labels["recipient_public"]
+                if len(bytes.fromhex(recipient)) != 32:
+                    raise ValueError("recipient key must contain 32 bytes")
+                recipients.append(recipient)
+            except (KeyError, ValueError) as error:
+                issues.append(f"worker {worker.name} has invalid Fortress role metadata: {error}")
+            if worker.endpoint is None or not worker.endpoint.startswith("quic://"):
+                issues.append(f"worker {worker.name} requires a quic:// Fortress endpoint")
+            for label in ("client_certificate_path", "client_key_path", "ca_path"):
+                value = worker.labels.get(label)
+                if value is None or not Path(value).expanduser().is_file():
+                    issues.append(f"worker {worker.name} lacks a readable {label}")
+        if len(actual) != len(expected) or set(actual) != expected:
+            issues.append(
+                f"Fortress roles must form one complete {definition.fortress_shares}-by-"
+                f"{definition.fortress_shares} grid without duplicates"
+            )
+        if len(recipients) != len(set(recipients)):
+            issues.append("Fortress recipient public keys must be unique per role")
     return CheckpointPreflight(
         model=name,
         checkpoint=str(checkpoint),
