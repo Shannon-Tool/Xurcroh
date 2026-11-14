@@ -13,7 +13,7 @@ import torch
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from xurcroh.errors import ProtocolError
-from xurcroh.fortress.arithmetic import FIELD_MODULUS
+from xurcroh.fortress.arithmetic import FIELD_MODULUS, _seeded_uniform
 from xurcroh.fortress.native import canonical_field_words
 from xurcroh.fortress.transport import (
     DEFAULT_FRAME_BYTES,
@@ -142,26 +142,32 @@ class FortressRoleWorker:
             thread.start()
 
     def _decode_activation(self, payload: bytes) -> tuple[str, torch.Tensor]:
-        if len(payload) < 2:
+        seeded = payload.startswith(b"XF2\x01")
+        header = 4 if seeded else 0
+        if len(payload) < header + 2:
             raise ProtocolError("Fortress operation header is truncated")
-        name_length = int.from_bytes(payload[:2], "little")
+        name_length = int.from_bytes(payload[header : header + 2], "little")
         if name_length == 0 or name_length > MAX_OPERATION_NAME_BYTES:
             raise ProtocolError("Fortress operation name is invalid")
-        name_end = 2 + name_length
+        name_start = header + 2
+        name_end = name_start + name_length
         if name_end > len(payload):
             raise ProtocolError("Fortress operation name is truncated")
         try:
-            name = payload[2:name_end].decode("ascii")
+            name = payload[name_start:name_end].decode("ascii")
         except UnicodeDecodeError as error:
             raise ProtocolError("Fortress operation name is not ASCII") from error
         if name not in self.artifacts:
             raise ProtocolError("Fortress operation is not assigned to this role")
         input_features = self.artifacts[name].matrix.shape[1]
         activation_payload = payload[name_end:]
-        if (
-            input_features > MAX_ACTIVATION_ELEMENTS
-            or len(activation_payload) != input_features * 4
-        ):
+        if input_features > MAX_ACTIVATION_ELEMENTS:
+            raise ProtocolError("Fortress activation dimensions are invalid")
+        if seeded:
+            if len(activation_payload) != 32:
+                raise ProtocolError("seeded Fortress activation requires a 32-byte seed")
+            return name, _seeded_uniform(activation_payload, (input_features,))
+        if len(activation_payload) != input_features * 4:
             raise ProtocolError("Fortress activation dimensions are invalid")
         activation = torch.from_numpy(
             np.frombuffer(activation_payload, dtype=np.uint32).astype(np.int64)

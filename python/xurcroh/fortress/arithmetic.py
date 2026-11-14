@@ -214,6 +214,17 @@ def seeded_share_seed(seed: bytes, index: int) -> bytes:
     ).derive(seed)
 
 
+def activation_row_seed(seed: bytes, row: int) -> bytes:
+    if len(seed) != 32 or row < 0:
+        raise ValueError("activation row seeds require a 32-byte seed and nonnegative row")
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b"xurcroh-fortress-v1",
+        info=b"activation-row:" + row.to_bytes(8, "big"),
+    ).derive(seed)
+
+
 def seeded_split_secret(secret: torch.Tensor, *, seed: bytes, count: int) -> ShareGrid:
     if count < 2:
         raise ValueError("additive sharing requires at least two roles")

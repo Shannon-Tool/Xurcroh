@@ -15,7 +15,12 @@ from typing import Any
 import torch
 
 from xurcroh.errors import ProtocolError
-from xurcroh.fortress.arithmetic import FIELD_MODULUS, PRIME_MODULUS
+from xurcroh.fortress.arithmetic import (
+    FIELD_MODULUS,
+    PRIME_MODULUS,
+    activation_row_seed,
+    seeded_share_seed,
+)
 from xurcroh.fortress.compiler import CompiledOperation
 from xurcroh.fortress.grid import RoleExecutionError, WeightShare
 from xurcroh.fortress.storage import DispersedShard, reconstruct_shard
@@ -328,25 +333,30 @@ class _RoleTransport:
         sequence: int,
         *,
         cover: bool = False,
+        activation_seed: bytes | None = None,
     ) -> tuple[list[int], int, int]:
         started = time.perf_counter()
         with self._execution_lock:
             if self._connection is not None:
                 self.client = self._connection.client
             try:
-                result = self._execute(activation, request_id, sequence)
+                result = self._execute(activation, request_id, sequence, activation_seed)
             except ValueError as error:
                 if not any(
                     marker in str(error).lower() for marker in ("timed out", "connection", "closed")
                 ):
                     raise
                 self._connect()
-                result = self._execute(activation, request_id, sequence)
+                result = self._execute(activation, request_id, sequence, activation_seed)
         self.observations.append((time.perf_counter() - started, cover))
         return result
 
     def _execute(
-        self, activation: torch.Tensor, request_id: str, sequence: int
+        self,
+        activation: torch.Tensor,
+        request_id: str,
+        sequence: int,
+        activation_seed: bytes | None = None,
     ) -> tuple[list[int], int, int]:
         request_hash = hashlib.sha256(request_id.encode()).digest()[:16]
         canonical = (
@@ -357,11 +367,21 @@ class _RoleTransport:
             .to(torch.int32)
             .contiguous()
         )
-        operation_payload = (
-            len(self._operation_name).to_bytes(2, "little")
-            + self._operation_name
-            + canonical.numpy().tobytes()
-        )
+        if activation_seed is not None:
+            if len(activation_seed) != 32:
+                raise ValueError("seeded activation transport requires a 32-byte seed")
+            operation_payload = (
+                b"XF2\x01"
+                + len(self._operation_name).to_bytes(2, "little")
+                + self._operation_name
+                + activation_seed
+            )
+        else:
+            operation_payload = (
+                len(self._operation_name).to_bytes(2, "little")
+                + self._operation_name
+                + canonical.numpy().tobytes()
+            )
         sealed = self.session.sender.seal(
             request_id, "u8", [len(operation_payload)], operation_payload
         )
@@ -523,6 +543,7 @@ class FortressGridRuntime:
         rotation_interval: int = 64,
         frame_bytes: int = DEFAULT_FRAME_BYTES,
         cover_interval: float = 1.0,
+        seeded_activations: bool = True,
     ) -> None:
         if not roles or cover_interval <= 0:
             raise ValueError("a Fortress grid requires roles and a positive cover interval")
@@ -534,6 +555,7 @@ class FortressGridRuntime:
         self.rotation_interval = rotation_interval
         self.frame_bytes = frame_bytes
         self.cover_interval = cover_interval
+        self.seeded_activations = seeded_activations
         self._clients: list[FortressRoleClient] = []
         self._lock = threading.Lock()
         self._closed = False
@@ -641,6 +663,7 @@ class FortressRoleClient:
             raise ValueError("each Fortress grid role requires exactly one endpoint")
         self._providers = {key: role.provider_id for key, role in self.roles.items()}
         self._runtime = runtime
+        self.seeded_activations = runtime.seeded_activations if runtime is not None else False
         self._executor = (
             runtime.executor if runtime is not None else ThreadPoolExecutor(max_workers=len(roles))
         )
@@ -695,6 +718,7 @@ class FortressRoleClient:
         sequence: int,
         *,
         cover: bool = False,
+        activation_seed: bytes | None = None,
     ) -> torch.Tensor:
         futures = {
             key: self._executor.submit(
@@ -703,6 +727,11 @@ class FortressRoleClient:
                 request_id,
                 sequence,
                 cover=cover,
+                activation_seed=(
+                    seeded_share_seed(activation_seed, key[0])
+                    if activation_seed is not None and key[0] < len(activation_shares) - 1
+                    else None
+                ),
             )
             for key in self._transports
         }
@@ -742,8 +771,16 @@ class FortressRoleClient:
                 return
 
     def execute(
-        self, activation_shares: list[torch.Tensor], *, request_id: str | None = None
+        self,
+        activation_shares: list[torch.Tensor],
+        *,
+        request_id: str | None = None,
+        activation_seed: bytes | None = None,
     ) -> torch.Tensor:
+        if activation_seed is not None and (
+            not self.seeded_activations or len(activation_seed) != 32
+        ):
+            raise ValueError("a 32-byte activation seed requires seeded grid execution")
         with self._lock:
             if self._closed:
                 raise ProtocolError("Fortress role client is closed")
@@ -766,7 +803,16 @@ class FortressRoleClient:
         if any(share.shape != rows.shape for share in rows_by_share):
             raise ValueError("activation share shapes must match")
         outputs = [
-            self._execute_token([share[row] for share in rows_by_share], correlation_id, row)
+            self._execute_token(
+                [share[row] for share in rows_by_share],
+                correlation_id,
+                row,
+                activation_seed=(
+                    activation_row_seed(activation_seed, row)
+                    if activation_seed is not None
+                    else None
+                ),
+            )
             for row in range(rows.shape[0])
         ]
         return outputs[0] if vector_input else torch.stack(outputs)
