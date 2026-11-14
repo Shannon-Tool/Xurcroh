@@ -7,7 +7,12 @@ from typing import Any, cast
 from Xurcroh._client import Xurcroh
 from xurcroh.errors import ClientClosedError
 from xurcroh.preflight import CheckpointPreflight
-from xurcroh.types import ChatCompletion, ChatCompletionChunk
+from xurcroh.types import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ImageGenerationResponse,
+    VideoGenerationResponse,
+)
 
 
 class AsyncChatCompletions:
@@ -48,11 +53,11 @@ class AsyncImages:
     def __init__(self, client: AsyncXurcroh) -> None:
         self._client = client
 
-    async def generate(self, **parameters: Any) -> Any:
+    async def generate(self, **parameters: Any) -> ImageGenerationResponse:
         sync = await self._client._get_sync()
         return await asyncio.to_thread(sync.images.generate, **parameters)
 
-    async def edit(self, **parameters: Any) -> Any:
+    async def edit(self, **parameters: Any) -> ImageGenerationResponse:
         sync = await self._client._get_sync()
         return await asyncio.to_thread(sync.images.edit, **parameters)
 
@@ -61,7 +66,7 @@ class AsyncVideos:
     def __init__(self, client: AsyncXurcroh) -> None:
         self._client = client
 
-    async def generate(self, **parameters: Any) -> Any:
+    async def generate(self, **parameters: Any) -> VideoGenerationResponse:
         sync = await self._client._get_sync()
         return await asyncio.to_thread(sync.videos.generate, **parameters)
 

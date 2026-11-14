@@ -94,11 +94,23 @@ async def test_async_completion_and_streaming(tiny_model_path: Path) -> None:
 
 
 def test_response_types_are_publicly_importable() -> None:
-    from Xurcroh import ChatCompletion, ChatCompletionChunk, CompletionUsage
+    from Xurcroh import ChatCompletion, ChatCompletionChunk, CheckpointPreflight, CompletionUsage
 
     assert ChatCompletion.__name__ == "ChatCompletion"
     assert ChatCompletionChunk.__name__ == "ChatCompletionChunk"
+    assert CheckpointPreflight.__name__ == "CheckpointPreflight"
     assert CompletionUsage.__name__ == "CompletionUsage"
+
+
+def test_async_media_methods_have_concrete_response_annotations() -> None:
+    from typing import get_type_hints
+
+    from Xurcroh._async import AsyncImages, AsyncVideos
+    from xurcroh.types import ImageGenerationResponse, VideoGenerationResponse
+
+    assert get_type_hints(AsyncImages.generate)["return"] is ImageGenerationResponse
+    assert get_type_hints(AsyncImages.edit)["return"] is ImageGenerationResponse
+    assert get_type_hints(AsyncVideos.generate)["return"] is VideoGenerationResponse
 
 
 @pytest.mark.asyncio
