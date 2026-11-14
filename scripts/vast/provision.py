@@ -28,10 +28,12 @@ def budget_policy(args: argparse.Namespace) -> BudgetPolicy:
 
 def eligible_offers(args: argparse.Namespace, offers: list[dict]) -> list[dict]:
     excluded_drivers = getattr(args, "exclude_driver_prefix", [])
+    excluded_machines = {int(value) for value in getattr(args, "exclude_machine_id", [])}
     return [
         offer
         for offer in offers
-        if float(offer.get("gpu_ram", 0)) >= args.min_gpu_ram_gb * 1024
+        if int(offer.get("machine_id", 0)) not in excluded_machines
+        and float(offer.get("gpu_ram", 0)) >= args.min_gpu_ram_gb * 1024
         and float(offer.get("cpu_ram", 0)) >= args.min_host_ram_gb * 1024
         and (
             getattr(args, "driver_version", None) is None
@@ -209,6 +211,7 @@ def main() -> None:
     parser.add_argument("--gpu-name")
     parser.add_argument("--driver-version")
     parser.add_argument("--exclude-driver-prefix", action="append", default=[])
+    parser.add_argument("--exclude-machine-id", action="append", type=int, default=[])
     parser.add_argument("--min-gpu-ram-gb", type=float, default=12)
     parser.add_argument("--min-host-ram-gb", type=float, default=0)
     parser.add_argument("--offer-limit", type=int, default=200)

@@ -128,11 +128,13 @@ def test_capacity_eligibility_excludes_selected_driver_series() -> None:
             "max_hourly_usd": 10,
             "driver_version": None,
             "exclude_driver_prefix": ["580"],
+            "exclude_machine_id": [21, 22],
         },
     )()
     compatible = {**offer(), "driver_version": "595.91.07"}
     incompatible = {**offer(11, 21), "driver_version": "580.159.03"}
-    assert eligible_offers(args, [incompatible, compatible]) == [compatible]
+    blocked_machine = {**offer(12, 22), "driver_version": "595.91.07"}
+    assert eligible_offers(args, [incompatible, blocked_machine, compatible]) == [compatible]
 
 
 def test_offers_create_and_instance_responses_are_sanitized() -> None:
