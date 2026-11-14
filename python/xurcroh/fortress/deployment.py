@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import os
 import shlex
 import shutil
@@ -357,9 +356,19 @@ class FortressDeployment:
         )
         self._executor.run(role.worker, command)
         deadline = time.monotonic() + 120
-        while not self._executor.run(
-            role.worker, f"test -f {shlex.quote(str(ready))} && echo ready"
-        ).strip():
+        exit_file = shlex.quote(str(role_root / "role.exit"))
+        while True:
+            status = self._executor.run(
+                role.worker,
+                f"if test -f {shlex.quote(str(ready))}; then echo ready; "
+                f"elif test -f {exit_file}; then echo exited; fi",
+            ).strip()
+            if status == "ready":
+                return
+            if status == "exited":
+                raise ClusterUnavailableError(
+                    f"Fortress role {role.service_name!r} exited before readiness; inspect role.log"
+                )
             if time.monotonic() >= deadline:
                 raise ClusterUnavailableError(
                     f"Fortress role {role.service_name!r} did not become ready; inspect role.log"
@@ -422,27 +431,68 @@ class FortressDeployment:
                 self._publish_workers()
                 self._started = True
                 return self
-            except BaseException:
-                self.close()
+            except BaseException as error:
+                try:
+                    self.close()
+                except Exception as cleanup_error:
+                    error.add_note(f"Fortress cleanup also failed: {cleanup_error}")
                 raise
+
+    def _stop_role(self, role: RoleDeployment, timeout: float = 30) -> None:
+        assert self._executor is not None
+        role_root = Path(self._remote_root) / f"model-{role.model_index}" / role.worker.name
+        pid = shlex.quote(str(role_root / "role.pid"))
+        exit_file = shlex.quote(str(role_root / "role.exit"))
+        self._executor.run(
+            role.worker,
+            f"if test -f {pid}; then kill $(cat {pid}) 2>/dev/null || true; fi",
+        )
+        deadline = time.monotonic() + timeout
+        while True:
+            status = self._executor.run(
+                role.worker,
+                f"if test -f {exit_file}; then echo exited; "
+                f"elif test -f {pid} && ! kill -0 $(cat {pid}) 2>/dev/null; "
+                "then echo exited; fi",
+            ).strip()
+            if status == "exited":
+                return
+            if time.monotonic() >= deadline:
+                self._executor.run(
+                    role.worker,
+                    f"if test -f {pid}; then kill -KILL $(cat {pid}) 2>/dev/null || true; fi",
+                )
+                raise ClusterUnavailableError(
+                    f"Fortress role {role.service_name!r} required forced termination"
+                )
+            time.sleep(0.2)
 
     def close(self) -> None:
         with self._lock:
-            if self._closed:
+            if self._closed and not self._workspace.exists():
                 return
             self._closed = True
             executor = self._executor
             roles = list(self._roles)
+        failures: list[str] = []
+        failed_workers: set[str] = set()
         if executor is not None:
             for role in roles:
-                role_root = Path(self._remote_root) / f"model-{role.model_index}" / role.worker.name
-                pid = shlex.quote(str(role_root / "role.pid"))
-                with contextlib.suppress(Exception):
-                    executor.run(
-                        role.worker,
-                        f"if test -f {pid}; then kill $(cat {pid}) 2>/dev/null || true; fi",
-                    )
+                try:
+                    self._stop_role(role)
+                except Exception as error:
+                    failures.append(f"{role.service_name}: {error}")
+                    failed_workers.add(role.worker.name)
             for worker in self.cluster.workers:
-                with contextlib.suppress(Exception):
+                if worker.name in failed_workers:
+                    continue
+                try:
                     executor.run(worker, f"rm -rf {shlex.quote(self._remote_root)}")
-        shutil.rmtree(self._workspace, ignore_errors=True)
+                except Exception as error:
+                    failures.append(f"{worker.name}: remote cleanup failed: {error}")
+        if failures:
+            raise ClusterUnavailableError(
+                "Fortress teardown incomplete; local recovery state retained at "
+                f"{self._workspace}: " + "; ".join(failures)
+            )
+        shutil.rmtree(self._workspace)

@@ -15,6 +15,7 @@ class RecordingExecutor:
     def __init__(self) -> None:
         self.commands: list[tuple[str, str]] = []
         self.uploads: list[tuple[str, tuple[str, ...], str]] = []
+        self.fail_cleanup = False
 
     def discover(self, worker: WorkerConfig) -> None:
         worker.gpu = {"model": "test-gpu", "memory_gb": 80}
@@ -22,6 +23,10 @@ class RecordingExecutor:
     def run(self, worker: WorkerConfig, command: str, *, input_data: bytes | None = None) -> str:
         del input_data
         self.commands.append((worker.name, command))
+        if self.fail_cleanup and "rm -rf" in command:
+            raise ClusterUnavailableError("SSH connection lost")
+        if "role.exit" in command and "ready" not in command:
+            return "exited\n"
         return "ready\n" if "test -f" in command else ""
 
     def upload(
@@ -241,3 +246,23 @@ def test_public_sdk_owns_provisioned_fortress_lifecycle(
     workspace = deployment.workspace
     client.close()
     assert not workspace.exists()
+
+
+def test_failed_remote_cleanup_retains_recovery_state_and_can_retry(
+    tiny_llama_path: Path, tmp_path: Path
+) -> None:
+    executor = RecordingExecutor()
+    deployment = FortressDeployment(
+        provisioned_cluster(),
+        (("tiny", ModelDefinition(path=str(tiny_llama_path), engine="fortress")),),
+        workspace=tmp_path / "deployment",
+        executor_factory=lambda: executor,
+    )
+    deployment._executor = executor
+    executor.fail_cleanup = True
+    with pytest.raises(ClusterUnavailableError, match="recovery state retained"):
+        deployment.close()
+    assert deployment.workspace.exists()
+    executor.fail_cleanup = False
+    deployment.close()
+    assert not deployment.workspace.exists()
