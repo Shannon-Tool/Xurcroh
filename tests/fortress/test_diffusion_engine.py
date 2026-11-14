@@ -71,7 +71,6 @@ def test_public_sdk_generates_image_with_fortress_diffusion(tmp_path: Path) -> N
             "tiny-ddpm": {
                 "path": str(tmp_path),
                 "engine": "fortress",
-                "modality": "image",
             }
         }
     ) as client:

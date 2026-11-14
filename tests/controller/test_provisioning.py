@@ -266,3 +266,36 @@ def test_failed_remote_cleanup_retains_recovery_state_and_can_retry(
     executor.fail_cleanup = False
     deployment.close()
     assert not deployment.workspace.exists()
+
+
+def test_automatic_media_provisioning_uses_diffusers_component(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    diffusers = pytest.importorskip("diffusers")
+    model = diffusers.UNet2DModel(
+        sample_size=8,
+        in_channels=3,
+        out_channels=3,
+        layers_per_block=1,
+        block_out_channels=(8,),
+        down_block_types=("DownBlock2D",),
+        up_block_types=("UpBlock2D",),
+        norm_num_groups=4,
+    )
+    checkpoint = tmp_path / "model"
+    diffusers.DDPMPipeline(model, scheduler=diffusers.DDPMScheduler()).save_pretrained(checkpoint)
+    definition = ModelDefinition(path=str(checkpoint), engine="fortress", fortress_seed=731)
+    executor = RecordingExecutor()
+    deployment = FortressDeployment(
+        provisioned_cluster(),
+        (("tiny-image", definition),),
+        workspace=tmp_path / "deployment",
+        executor_factory=lambda: executor,
+    )
+    monkeypatch.setattr(deployment, "_source_archive", lambda: b"source-archive")
+    deployment.start()
+    assert definition.modality == "image"
+    assert deployment._roles[0].package.is_dir()
+    assert any(deployment._roles[0].package.iterdir())
+    assert deployment.workers["tiny-image"][0].endpoint == "quic://10.0.0.10:9444"
+    deployment.close()

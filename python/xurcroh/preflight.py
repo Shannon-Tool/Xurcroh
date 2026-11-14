@@ -81,6 +81,24 @@ def ensure_checkpoint(name: str, definition: ModelDefinition) -> Path:
     return resolved
 
 
+def detect_modality(definition: ModelDefinition) -> str:
+    if definition.modality != "auto":
+        return definition.modality
+    index = Path(definition.path).expanduser() / "model_index.json"
+    if index.is_file():
+        try:
+            document = json.loads(index.read_text())
+        except (OSError, json.JSONDecodeError) as error:
+            raise ConfigurationError(f"cannot inspect Diffusers model index: {index}") from error
+        description = json.dumps(document).lower()
+        definition.modality = (
+            "video"
+            if any(marker in description for marker in ("video", "wan", "minimax"))
+            else "image"
+        )
+    return definition.modality
+
+
 def preflight_checkpoint(
     name: str,
     definition: ModelDefinition,
@@ -89,6 +107,7 @@ def preflight_checkpoint(
     require_known_memory: bool = False,
 ) -> CheckpointPreflight:
     checkpoint = ensure_checkpoint(name, definition)
+    detect_modality(definition)
     issues: list[str] = []
     if definition.modality in {"image", "video"}:
         index_path = checkpoint / "model_index.json"
