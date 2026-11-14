@@ -21,14 +21,14 @@ def write_private(path: Path, data: bytes) -> None:
 
 def private_bytes(key: rsa.RSAPrivateKey) -> bytes:
     return key.private_bytes(
-        serialization.Encoding.PEM,
+        serialization.Encoding.DER,
         serialization.PrivateFormat.PKCS8,
         serialization.NoEncryption(),
     )
 
 
 def public_bytes(certificate: x509.Certificate) -> bytes:
-    return certificate.public_bytes(serialization.Encoding.PEM)
+    return certificate.public_bytes(serialization.Encoding.DER)
 
 
 def generate(output: Path, services: dict[str, list[str]]) -> None:

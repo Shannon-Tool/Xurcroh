@@ -82,7 +82,7 @@ def test_tls_generator_creates_private_identities_and_san_certificates(tmp_path:
     spec.loader.exec_module(module)
     output = tmp_path / "tls"
     module.generate(output, {"worker-a": ["192.0.2.10", "worker-a"]})
-    certificate = x509.load_pem_x509_certificate((output / "worker-a.crt").read_bytes())
+    certificate = x509.load_der_x509_certificate((output / "worker-a.crt").read_bytes())
     names = certificate.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
     assert names.get_values_for_type(x509.IPAddress)
     assert "worker-a" in names.get_values_for_type(x509.DNSName)
@@ -90,7 +90,7 @@ def test_tls_generator_creates_private_identities_and_san_certificates(tmp_path:
     assert stat.S_IMODE((output / "ca.key").stat().st_mode) == 0o600
     assert (output / "client.crt").is_file()
     assert stat.S_IMODE((output / "client.key").stat().st_mode) == 0o600
-    client = x509.load_pem_x509_certificate((output / "client.crt").read_bytes())
+    client = x509.load_der_x509_certificate((output / "client.crt").read_bytes())
     assert client.extensions.get_extension_for_class(
         x509.SubjectAlternativeName
     ).value.get_values_for_type(x509.DNSName) == ["localhost"]
