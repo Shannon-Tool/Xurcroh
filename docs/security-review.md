@@ -1,11 +1,11 @@
 # Internal Security and Systems Review
 
-**Scope:** Current Fortress corrective branch through `c3bea8e`, with subsequent documentation-only updates. This is an internal engineering review, not an external audit, formal proof, or production certification.
+**Scope:** Fortress corrective branch through `ec09770`, including release-security corrections and documentation updates. This is an internal engineering review, not an external audit, formal proof, or production certification.
 
 ## Review method
 
 - Trace client, worker, provider, relay, and attestation trust boundaries in `docs/security.md` and `docs/architecture/decisions.md`.
-- Exercise the complete local suite: 374 passed, 23 deselected, 81.59% branch coverage at `c3bea8e`; the previously passed long video ladder remains separate.
+- Exercise the complete local suite: 377 passed, 23 deselected, 81.59% branch coverage at `4583a92`, plus the release CLI regression at `ec09770`; the previously passed long video ladder remains separate.
 - Review arithmetic forgery, noncanonical encoding, signed-word conversion, replay, wrong-key, cross-stage key isolation, worker-memory, and artifact-tampering regressions.
 - Verify 29 Rust tests, Clippy/formatting, RustSec, Python/npm audits, and 32 frontend interaction tests.
 - Inspect physical evidence and teardown records rather than treating executable tests as hardware results.
