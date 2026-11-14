@@ -39,6 +39,7 @@ from xurcroh.runtime.generation import (
     check_request_health,
     stopping_strings,
 )
+from xurcroh.runtime.prompting import render_chat_prompt
 from xurcroh.runtime.remote import RemoteOpenAIEngine
 from xurcroh.runtime.stage_sessions import ClientStageSession
 from xurcroh.runtime.tensor_codec import decode_stage_tensor, encode_stage_tensor
@@ -471,9 +472,7 @@ class DenseStageEngine:
         if self._closed:
             raise ModelLoadError("dense stage engine is closed")
         started = time.monotonic()
-        prompt = "\n".join(
-            f"{message.role}: {message.plain_text()}" for message in request.messages
-        )
+        prompt = render_chat_prompt(self._tokenizer, request.messages)
         inputs = self._tokenizer(prompt, return_tensors="pt")
         token_ids = inputs["input_ids"]
         prompt_tokens = token_ids.shape[-1]

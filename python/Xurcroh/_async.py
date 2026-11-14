@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Any, cast
 
 from Xurcroh._client import Xurcroh
+from xurcroh.preflight import CheckpointPreflight
 from xurcroh.types import ChatCompletion, ChatCompletionChunk
 
 
@@ -72,6 +73,9 @@ class AsyncXurcroh:
 
     async def metrics(self) -> dict[str, int | float]:
         return await asyncio.to_thread(self._sync.metrics)
+
+    async def preflight(self, model: str | None = None) -> dict[str, CheckpointPreflight]:
+        return await asyncio.to_thread(self._sync.preflight, model)
 
     async def close(self) -> None:
         await asyncio.to_thread(self._sync.close)

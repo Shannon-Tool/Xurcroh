@@ -5,6 +5,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from xurcroh.config import ClusterConfig, ModelRegistry, WorkerConfig
 from xurcroh.errors import (
@@ -43,6 +44,9 @@ from xurcroh.types import (
     VideoGenerationResponse,
 )
 
+if TYPE_CHECKING:
+    from xurcroh.fortress.deployment import FortressDeployment
+
 
 @dataclass
 class RequestHandle:
@@ -74,20 +78,23 @@ class RuntimeService:
         self._semaphores: dict[str, threading.BoundedSemaphore] = {}
         self._metrics = RuntimeMetrics()
         self._fortress_metrics: dict[str, int] = {}
+        self._deployment: FortressDeployment | None = None
+        self._provisioned_workers: dict[str, list[WorkerConfig]] = {}
         if cluster.provision_workers:
-            if cluster.controller_endpoint is None:
-                raise ConfigurationError("controller_endpoint is required for provisioning")
-            provision_cluster_sync(
+            self._deployment = provision_cluster_sync(
                 cluster,
                 models.items(),
-                controller=cluster.controller_endpoint,
+                controller=cluster.controller_endpoint or "sdk-managed",
             )
+            self._provisioned_workers = {
+                name: list(workers) for name, workers in self._deployment.workers.items()
+            }
         stage_workers = any(
             definition.manifest_path is not None or definition.engine == "fortress"
             for _, definition in models.items()
         )
         for worker in cluster.workers:
-            if worker.endpoint != "local://cpu":
+            if not cluster.provision_workers and worker.endpoint != "local://cpu":
                 RemoteOpenAIEngine.validate_worker(worker, cluster.security, stage=stage_workers)
 
     def _ensure_open(self) -> None:
@@ -95,6 +102,8 @@ class RuntimeService:
             raise ClientClosedError("Xurcroh client is closed")
 
     def _workers_for_model(self, name: str) -> list[WorkerConfig]:
+        if name in self._provisioned_workers:
+            return self._provisioned_workers[name]
         workers = [
             worker for worker in self.cluster.workers if not worker.models or name in worker.models
         ]
@@ -477,5 +486,9 @@ class RuntimeService:
                     self._fortress_metrics.update(engine.transport_metrics())
             self._engines.clear()
             self._requests.clear()
-        for engine in engines:
-            engine.close()
+        try:
+            for engine in engines:
+                engine.close()
+        finally:
+            if self._deployment is not None:
+                self._deployment.close()
