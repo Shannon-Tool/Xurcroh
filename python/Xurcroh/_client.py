@@ -76,8 +76,9 @@ class Xurcroh:
         tensor_parallel: int = 1,
         expert_parallel: int = 1,
         security: SecurityConfig | dict[str, object] | None = None,
-        provision_workers: bool = False,
+        provision_workers: bool | None = None,
     ) -> None:
+        self._models = ModelRegistry.normalize(model_path)
         self._cluster = ClusterConfig.normalize(
             cluster,
             pipeline_parallel=pipeline_parallel,
@@ -86,7 +87,20 @@ class Xurcroh:
             security=security,
             provision_workers=provision_workers,
         )
-        self._models = ModelRegistry.normalize(model_path)
+        if (
+            provision_workers is None
+            and not isinstance(cluster, ClusterConfig)
+            and "provision_workers" not in (cluster if isinstance(cluster, Mapping) else {})
+        ):
+            ssh_workers = bool(self._cluster.workers) and all(
+                worker.host is not None and worker.ssh is not None
+                for worker in self._cluster.workers
+            )
+            fortress_models = any(
+                definition.engine == "fortress" for _, definition in self._models.items()
+            )
+            if ssh_workers and fortress_models:
+                self._cluster = self._cluster.model_copy(update={"provision_workers": True})
         self._runtime = RuntimeService(self._cluster, self._models)
         self.chat = Chat(self)
         self.images = Images(self)

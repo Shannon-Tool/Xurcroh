@@ -19,6 +19,7 @@ from xurcroh.runtime.generation import (
     sample_next_token,
     stopping_strings,
 )
+from xurcroh.runtime.prompting import render_chat_prompt
 
 
 class LocalTransformersEngine:
@@ -99,9 +100,7 @@ class LocalTransformersEngine:
         self._load()
         started = time.monotonic()
         with self._inference_lock:
-            prompt = "\n".join(
-                f"{message.role}: {message.plain_text()}" for message in request.messages
-            )
+            prompt = render_chat_prompt(self._tokenizer, request.messages)
             inputs = self._tokenizer(prompt, return_tensors="pt")
             input_ids = inputs["input_ids"]
             prompt_tokens = input_ids.shape[-1]

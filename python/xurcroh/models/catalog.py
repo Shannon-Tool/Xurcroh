@@ -9,7 +9,7 @@ SUPPORTED_MODEL_IDS = (
     "meta-llama/Llama-3.1-8B-Instruct",
     "deepseek-ai/DeepSeek-V3",
     "Qwen/Qwen3-235B-A22B",
-    "google/gemma-4-12B-it",
+    "google/gemma-4-E2B-it",
     "Qwen/Qwen3.8-27B",
     "black-forest-labs/FLUX.1-dev",
     "black-forest-labs/FLUX.2-dev",

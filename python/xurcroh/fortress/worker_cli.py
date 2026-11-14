@@ -44,6 +44,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--port", type=int, default=9444)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--exit-status-file", type=Path)
+    parser.add_argument("--ready-file", type=Path)
     args = parser.parse_args(argv)
     exit_code = 0
     try:
@@ -64,6 +65,8 @@ def main(argv: list[str] | None = None) -> None:
         signal.signal(signal.SIGTERM, stop)
         signal.signal(signal.SIGINT, stop)
         worker.start()
+        if args.ready_file is not None:
+            args.ready_file.write_text(f"{worker.address}\n")
         try:
             stopped.wait()
         finally:

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from xurcroh.fortress.transport import FortressRoleClient, MutualTLSIdentity, RoleEndpoint
     from xurcroh.runtime.generation import GenerationEvent
 from xurcroh.requests import CompletionRequest
+from xurcroh.runtime.prompting import render_chat_prompt
 
 
 class FortressEngine:
@@ -178,9 +179,7 @@ class FortressEngine:
         compiled = self._compiled
         assert compiled is not None
         if all(isinstance(message.content, str) for message in request.messages):
-            prompt = "\n".join(
-                f"{message.role}: {message.plain_text()}" for message in request.messages
-            )
+            prompt = render_chat_prompt(self._tokenizer, request.messages)
             hidden = self._text_hidden(prompt)
             if hidden.shape[0] == 0:
                 raise ConfigurationError("Fortress tokenizer produced an empty prompt")
@@ -234,9 +233,7 @@ class FortressEngine:
         assert compiled is not None and compiled.model is not None
         started = time.monotonic()
         with self._inference_lock:
-            prompt = "\n".join(
-                f"{message.role}: {message.plain_text()}" for message in request.messages
-            )
+            prompt = render_chat_prompt(self._tokenizer, request.messages)
             input_ids = self._tokenizer(prompt, return_tensors="pt", add_special_tokens=False)[
                 "input_ids"
             ]

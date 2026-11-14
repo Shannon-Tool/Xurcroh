@@ -115,8 +115,6 @@ class ClusterConfig(StrictModel):
             raise ConfigurationError("worker names must be unique")
         if self.pipeline_parallel > len(self.workers):
             raise ConfigurationError("pipeline_parallel cannot exceed available workers")
-        if self.provision_workers and self.controller_endpoint is None:
-            raise ConfigurationError("provision_workers requires controller_endpoint")
         return self
 
     @classmethod
@@ -128,7 +126,7 @@ class ClusterConfig(StrictModel):
         tensor_parallel: int = 1,
         expert_parallel: int = 1,
         security: SecurityConfig | Mapping[str, object] | None = None,
-        provision_workers: bool = False,
+        provision_workers: bool | None = False,
     ) -> ClusterConfig:
         advanced: dict[str, object] = {}
         raw_workers: object
@@ -183,6 +181,9 @@ class ClusterConfig(StrictModel):
             workers.append(worker)
 
         selected_security = security or advanced.pop("security", None) or SecurityConfig()
+        selected_provisioning = advanced.pop("provision_workers", provision_workers)
+        if selected_provisioning is None:
+            selected_provisioning = False
         try:
             return cls.model_validate(
                 {
@@ -191,7 +192,7 @@ class ClusterConfig(StrictModel):
                     "tensor_parallel": advanced.pop("tensor_parallel", tensor_parallel),
                     "expert_parallel": advanced.pop("expert_parallel", expert_parallel),
                     "security": selected_security,
-                    "provision_workers": advanced.pop("provision_workers", provision_workers),
+                    "provision_workers": selected_provisioning,
                     "request_timeout_seconds": advanced.pop("request_timeout_seconds", 60),
                     **advanced,
                 }

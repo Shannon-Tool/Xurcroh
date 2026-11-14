@@ -48,16 +48,43 @@ def checkpoint_value_bytes(config: dict[str, object]) -> int:
     }.get(normalized, 4)
 
 
+def ensure_checkpoint(name: str, definition: ModelDefinition) -> Path:
+    checkpoint = Path(definition.path).expanduser()
+    if checkpoint.is_dir():
+        return checkpoint
+    if not definition.allow_download:
+        raise ConfigurationError(
+            f"model {name!r} checkpoint directory is unavailable: {checkpoint}; "
+            "provide a local safetensors checkpoint or set allow_download=true"
+        )
+    try:
+        from huggingface_hub import HfApi, snapshot_download
+
+        revision = definition.revision
+        if revision is None or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+            revision = HfApi().model_info(repo_id=definition.path, revision=definition.revision).sha
+        if revision is None or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+            raise ConfigurationError("the model hub did not return an immutable revision")
+        resolved = Path(
+            snapshot_download(repo_id=definition.path, revision=revision, local_files_only=False)
+        )
+    except Exception as error:
+        if isinstance(error, ConfigurationError):
+            raise
+        raise ConfigurationError(
+            f"cannot download model {name!r} from {definition.path!r}: {error}"
+        ) from error
+    definition.path = str(resolved)
+    definition.revision = revision
+    return resolved
+
+
 def preflight_checkpoint(
     name: str,
     definition: ModelDefinition,
     workers: list[WorkerConfig],
 ) -> CheckpointPreflight:
-    checkpoint = Path(definition.path).expanduser()
-    if not checkpoint.is_dir():
-        raise ConfigurationError(
-            f"model {name!r} checkpoint directory is unavailable: {checkpoint}"
-        )
+    checkpoint = ensure_checkpoint(name, definition)
     reader = CheckpointReader(checkpoint)
     config = reader.config
     issues: list[str] = []
@@ -81,8 +108,6 @@ def preflight_checkpoint(
     revision_pinned = bool(
         definition.revision and re.fullmatch(r"[0-9a-f]{40}", definition.revision)
     )
-    if remote and definition.engine == "fortress" and not revision_pinned:
-        issues.append("remote Fortress deployment requires an immutable 40-character revision")
     for worker in workers:
         available_gb = worker.gpu.memory_gb if worker.gpu is not None else None
         resource_limit = worker.resources.max_gpu_memory_gb
