@@ -16,14 +16,14 @@ The earlier “PRE-GPU IMPLEMENTATION COMPLETE” declaration remains withdrawn.
 
 ## Local and CI evidence
 
-The latest local suite at `9b848e0` reports **367 passed, 23 deselected, 82.11% coverage**, excluding hardware tests and the long video-ladder test that passed separately in 2,209.98 seconds. Strict mypy covers 127 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
+The latest local suite at `c3bea8e` reports **374 passed, 23 deselected, 81.59% coverage**, excluding hardware tests and the long video-ladder test that passed separately in 2,209.98 seconds. Strict mypy covers 129 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **367 passed, 23 deselected**; full video ladder passed separately |
-| Python branch coverage | **82.11%**, above the 80% requirement |
+| Python unit/integration/security tests | **374 passed, 23 deselected**; full video ladder passed separately |
+| Python branch coverage | **81.59%**, above the 80% requirement |
 | Ruff format and lint | Passed |
-| Strict mypy, 127 source files | Passed |
+| Strict mypy, 129 source files | Passed |
 | Rust tests | **29 passed** |
 | Rust formatting, Clippy, RustSec | Passed; no known advisories |
 | Frontend interaction tests | **32 passed** |
