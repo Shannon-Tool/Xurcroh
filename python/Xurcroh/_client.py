@@ -6,6 +6,7 @@ from typing import Any, Literal, overload
 
 from xurcroh.config import ClusterConfig, ModelRegistry, SecurityConfig
 from xurcroh.errors import ConfigurationError
+from xurcroh.preflight import CheckpointPreflight
 from xurcroh.requests import CompletionRequest, ImageGenerationRequest, VideoGenerationRequest
 from xurcroh.runtime import RuntimeService
 from xurcroh.types import (
@@ -96,6 +97,9 @@ class Xurcroh:
 
     def metrics(self) -> dict[str, int | float]:
         return self._runtime.metrics()
+
+    def preflight(self, model: str | None = None) -> dict[str, CheckpointPreflight]:
+        return self._runtime.preflight(model)
 
     def close(self) -> None:
         self._runtime.close()

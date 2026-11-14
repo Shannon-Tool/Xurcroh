@@ -62,6 +62,7 @@ def test_public_sdk_executes_remote_fortress_grid(
                 {
                     "name": f"fortress-{activation_index}-{weight_index}",
                     "endpoint": f"quic://{worker.address}",
+                    "gpu": {"model": "test-gpu", "memory_gb": 1},
                     "labels": {
                         "activation_index": str(activation_index),
                         "weight_index": str(weight_index),
@@ -87,6 +88,7 @@ def test_public_sdk_executes_remote_fortress_grid(
             model_path={
                 "tiny": {
                     "path": str(tiny_llama_path),
+                    "revision": "a" * 40,
                     "engine": "fortress",
                     "fortress_seed": 731,
                 }
