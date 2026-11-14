@@ -107,6 +107,7 @@ def _run(args: argparse.Namespace) -> Path:
     ).stdout
     ssh(gateway, f"rm -rf {root} && mkdir -p {root}")
     ssh(gateway, f"tar -xzf - -C {root}", input_data=archive)
+    ssh(gateway, f"cat >{root}/source.tar.gz", input_data=archive)
     ssh(
         gateway,
         f"cd {root} && ./scripts/gpu/bootstrap.sh && "

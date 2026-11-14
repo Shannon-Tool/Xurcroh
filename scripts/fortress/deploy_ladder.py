@@ -139,6 +139,21 @@ def source_revision() -> str:
     ).stdout.strip()
 
 
+def source_archive() -> bytes:
+    if os.environ.get("XURCROH_SOURCE_REVISION") is not None:
+        archived = ROOT / "source.tar.gz"
+        if not archived.is_file():
+            raise RuntimeError("archived source deployment is missing source.tar.gz")
+        return archived.read_bytes()
+    revision = source_revision()
+    return subprocess.run(  # noqa: S603
+        [GIT, "archive", "--format=tar.gz", revision],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
+
+
 def pin_host_key(worker: dict[str, Any], path: Path, timeout: float = 900) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.is_file():
@@ -337,12 +352,7 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
         ],
         check=True,
     )
-    archive = subprocess.run(  # noqa: S603
-        [GIT, "archive", "--format=tar.gz", revision],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-    ).stdout
+    archive = source_archive()
     workers = [ssh_worker(raw, worker, index) for index, worker in enumerate(rung.workers)]
     remote_root = f"/tmp/xurcroh-fortress-{revision[:12]}"  # noqa: S108
     try:
