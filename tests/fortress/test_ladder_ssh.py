@@ -50,6 +50,8 @@ def test_remote_command_executes_real_fortress_worker() -> None:
     module = load_module()
     command = module.start_command("/srv/fortress", "role-0-0")
     assert ".venv-cuda/bin/python -m xurcroh.fortress.worker_cli" in command
+    assert "setsid env" in command
+    assert "nohup" not in command
     assert "--artifact-dir /srv/fortress/role-artifacts" in command
     assert "--host 0.0.0.0 --port 9444" in command
     assert "--recipient-key /srv/fortress/recipient.key" in command
