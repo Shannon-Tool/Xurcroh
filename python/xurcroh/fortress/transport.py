@@ -228,6 +228,34 @@ def native_compiled_weight_share(weight: WeightShare) -> Any:
     )
 
 
+class _SharedRoleConnection:
+    def __init__(self, role: RoleEndpoint, identity: MutualTLSIdentity) -> None:
+        self.role = role
+        self.identity = identity
+        self.client: Any = None
+        self.call_lock = threading.Lock()
+        self.connect()
+
+    def connect(self) -> None:
+        import xurcroh_quic
+
+        if self.client is not None:
+            with contextlib.suppress(ValueError):
+                self.client.close()
+        self.client = xurcroh_quic.TensorClient.connect_mutual(
+            self.role.relay.relay_address if self.role.relay is not None else self.role.address,
+            self.identity.server_name,
+            self.identity.pinned_ca,
+            list(self.identity.certificates),
+            self.identity.private_key,
+        )
+
+    def close(self) -> None:
+        if self.client is not None:
+            self.client.close()
+            self.client = None
+
+
 class _RoleTransport:
     def __init__(
         self,
@@ -236,6 +264,7 @@ class _RoleTransport:
         operation_name: str,
         rotation_interval: int,
         frame_bytes: int,
+        connection: _SharedRoleConnection | None = None,
     ) -> None:
         import xurcroh_quic
 
@@ -246,6 +275,7 @@ class _RoleTransport:
             raise ValueError("operation name must contain 1-1024 ASCII bytes")
         self.session = ClientStageSession(role.weight_index, role.recipient_public)
         self._identity = identity
+        self._connection = connection
         self.client: Any = None
         self._connect()
         self._used = False
@@ -253,10 +283,15 @@ class _RoleTransport:
         self._completed = 0
         self._frame_bytes = frame_bytes
         self._call_lock = threading.Lock()
+        self._execution_lock = connection.call_lock if connection is not None else self._call_lock
         self._frame_sizes: set[int] = set()
         self.observations: list[tuple[float, bool]] = []
 
     def _connect(self) -> None:
+        if self._connection is not None:
+            self._connection.connect()
+            self.client = self._connection.client
+            return
         identity = self._identity
         if self.client is not None:
             with contextlib.suppress(ValueError):
@@ -278,7 +313,9 @@ class _RoleTransport:
         cover: bool = False,
     ) -> tuple[list[int], int, int]:
         started = time.perf_counter()
-        with self._call_lock:
+        with self._execution_lock:
+            if self._connection is not None:
+                self.client = self._connection.client
             try:
                 result = self._execute(activation, request_id, sequence)
             except ValueError as error:
@@ -363,15 +400,17 @@ class _RoleTransport:
         return result, sent, received
 
     def close(self) -> None:
-        try:
-            if self._used:
-                session_id = bytes.fromhex(self.session.session_id)
-                self.client.send(session_id, 0, 0, "cancel", "", [], self.session.token_bytes)
-                response_id, _, _, kind, _, _, _ = self.client.receive()
-                if response_id != session_id or kind != "complete":
-                    raise ProtocolError("role cancellation was not acknowledged")
-        finally:
-            self.client.close()
+        with self._execution_lock:
+            try:
+                if self._used:
+                    session_id = bytes.fromhex(self.session.session_id)
+                    self.client.send(session_id, 0, 0, "cancel", "", [], self.session.token_bytes)
+                    response_id, _, _, kind, _, _, _ = self.client.receive()
+                    if response_id != session_id or kind != "complete":
+                        raise ProtocolError("role cancellation was not acknowledged")
+            finally:
+                if self._connection is None:
+                    self.client.close()
 
 
 def combine_role_results(
@@ -449,6 +488,105 @@ def execute_native_grid(
     return combine_role_results(activation_shares, weight_shares, results, providers)
 
 
+class FortressGridRuntime:
+    def __init__(
+        self,
+        roles: list[RoleEndpoint],
+        identity: MutualTLSIdentity,
+        *,
+        rotation_interval: int = 64,
+        frame_bytes: int = DEFAULT_FRAME_BYTES,
+        cover_interval: float = 1.0,
+    ) -> None:
+        if not roles or cover_interval <= 0:
+            raise ValueError("a Fortress grid requires roles and a positive cover interval")
+        self.executor = ThreadPoolExecutor(max_workers=len(roles))
+        self.connections = {
+            (role.activation_index, role.weight_index): _SharedRoleConnection(role, identity)
+            for role in roles
+        }
+        self.rotation_interval = rotation_interval
+        self.frame_bytes = frame_bytes
+        self.cover_interval = cover_interval
+        self._clients: list[FortressRoleClient] = []
+        self._lock = threading.Lock()
+        self._closed = False
+        self._cover_error: Exception | None = None
+        self._cover_stop = threading.Event()
+        self._cover_thread = threading.Thread(target=self._cover_loop, daemon=True)
+        self._cover_thread.start()
+
+    def client(self, operation: CompiledOperation, operation_name: str) -> FortressRoleClient:
+        return FortressRoleClient(
+            operation,
+            list(self._roles()),
+            self._identity(),
+            operation_name=operation_name,
+            runtime=self,
+        )
+
+    def _roles(self) -> list[RoleEndpoint]:
+        return [connection.role for _, connection in sorted(self.connections.items())]
+
+    def _identity(self) -> MutualTLSIdentity:
+        connection = next(iter(self.connections.values()))
+        return connection.identity
+
+    def _register(self, client: FortressRoleClient) -> None:
+        with self._lock:
+            if self._closed:
+                raise ProtocolError("Fortress grid runtime is closed")
+            self._clients.append(client)
+
+    def _unregister(self, client: FortressRoleClient) -> None:
+        with self._lock:
+            if client in self._clients:
+                self._clients.remove(client)
+
+    def _cover_loop(self) -> None:
+        index = 0
+        while not self._cover_stop.wait(self.cover_interval):
+            with self._lock:
+                clients = list(self._clients)
+            if not clients:
+                continue
+            client = clients[index % len(clients)]
+            index += 1
+            try:
+                shares = [
+                    torch.randint(
+                        0,
+                        FIELD_MODULUS,
+                        (client.operation.quantized.dimensions[1],),
+                        dtype=torch.int64,
+                    )
+                    for _ in range(len(client.operation.shares))
+                ]
+                client._execute_token(shares, f"cover:{uuid.uuid4().hex}", 0, cover=True)
+            except Exception as error:
+                client._cover_error = error
+                self._cover_error = error
+                return
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._clients.clear()
+        self._cover_stop.set()
+        self._cover_thread.join(timeout=30)
+        self.executor.shutdown(wait=True)
+        first_error = self._cover_error
+        for connection in self.connections.values():
+            try:
+                connection.close()
+            except Exception as error:
+                first_error = first_error or error
+        if first_error is not None:
+            raise ProtocolError("Fortress grid runtime did not close cleanly") from first_error
+
+
 class FortressRoleClient:
     def __init__(
         self,
@@ -460,6 +598,7 @@ class FortressRoleClient:
         rotation_interval: int = 64,
         frame_bytes: int = DEFAULT_FRAME_BYTES,
         cover_interval: float = 1.0,
+        runtime: FortressGridRuntime | None = None,
     ) -> None:
         if rotation_interval <= 0:
             raise ValueError("rotation interval must be positive")
@@ -475,9 +614,19 @@ class FortressRoleClient:
         if len(roles) != len(self.roles) or set(self.roles) != expected:
             raise ValueError("each Fortress grid role requires exactly one endpoint")
         self._providers = {key: role.provider_id for key, role in self.roles.items()}
-        self._executor = ThreadPoolExecutor(max_workers=len(roles))
+        self._runtime = runtime
+        self._executor = (
+            runtime.executor if runtime is not None else ThreadPoolExecutor(max_workers=len(roles))
+        )
         self._transports = {
-            key: _RoleTransport(role, identity, operation_name, rotation_interval, frame_bytes)
+            key: _RoleTransport(
+                role,
+                identity,
+                operation_name,
+                runtime.rotation_interval if runtime is not None else rotation_interval,
+                runtime.frame_bytes if runtime is not None else frame_bytes,
+                runtime.connections[key] if runtime is not None else None,
+            )
             for key, role in self.roles.items()
         }
         self._lock = threading.Lock()
@@ -493,7 +642,10 @@ class FortressRoleClient:
         self._cover_error: Exception | None = None
         self._quarantined: RoleExecutionError | None = None
         self._cover_thread = threading.Thread(target=self._cover_loop, daemon=True)
-        self._cover_thread.start()
+        if runtime is None:
+            self._cover_thread.start()
+        else:
+            runtime._register(self)
 
     @property
     def frame_sizes(self) -> set[int]:
@@ -573,6 +725,10 @@ class FortressRoleClient:
                 raise ProtocolError("Fortress role client is quarantined") from self._quarantined
             if self._cover_error is not None:
                 raise ProtocolError("Fortress cover traffic failed") from self._cover_error
+            if self._runtime is not None and self._runtime._cover_error is not None:
+                raise ProtocolError(
+                    "Fortress grid cover traffic failed"
+                ) from self._runtime._cover_error
         if len(activation_shares) != len(self.operation.shares):
             raise ValueError("activation share count must match the compiled weight grid")
         correlation_id = request_id or uuid.uuid4().hex
@@ -595,8 +751,11 @@ class FortressRoleClient:
                 return
             self._closed = True
         self._cover_stop.set()
-        self._cover_thread.join(timeout=30)
-        self._executor.shutdown(wait=True)
+        if self._runtime is None:
+            self._cover_thread.join(timeout=30)
+            self._executor.shutdown(wait=True)
+        else:
+            self._runtime._unregister(self)
         first_error: Exception | None = self._cover_error
         for transport in self._transports.values():
             try:

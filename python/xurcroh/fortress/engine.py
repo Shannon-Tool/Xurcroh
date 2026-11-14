@@ -18,7 +18,12 @@ from xurcroh.models.vlm import GemmaAudioEmbedder, GemmaVisionEmbedder
 from xurcroh.requests import AudioContentPart, ImageContentPart, TextContentPart
 
 if TYPE_CHECKING:
-    from xurcroh.fortress.transport import FortressRoleClient, MutualTLSIdentity, RoleEndpoint
+    from xurcroh.fortress.transport import (
+        FortressGridRuntime,
+        FortressRoleClient,
+        MutualTLSIdentity,
+        RoleEndpoint,
+    )
     from xurcroh.runtime.generation import GenerationEvent
 from xurcroh.prompting import render_chat_prompt
 from xurcroh.requests import CompletionRequest
@@ -39,6 +44,7 @@ class FortressEngine:
         self._compiled: FortressCheckpoint | None = None
         self._combiner: FortressCombiner | None = None
         self._clients: dict[str, FortressRoleClient] = {}
+        self._grid_runtime: FortressGridRuntime | None = None
         self._load_lock = threading.Lock()
         self._inference_lock = threading.Lock()
         self._closed = False
@@ -141,21 +147,20 @@ class FortressEngine:
                 compiled = self._compiled
                 clients: dict[str, FortressRoleClient] = {}
                 if self.engine_name == "fortress-grid":
-                    from xurcroh.fortress.transport import FortressRoleClient
+                    from xurcroh.fortress.transport import FortressGridRuntime
 
                     identity = self._identity()
                     roles = self._roles()
                     frame_bytes = int(self.workers[0].labels.get("frame_bytes", 16_384))
                     cover_interval = float(self.workers[0].labels.get("cover_interval", 1.0))
+                    self._grid_runtime = FortressGridRuntime(
+                        roles,
+                        identity,
+                        frame_bytes=frame_bytes,
+                        cover_interval=cover_interval,
+                    )
                     clients = {
-                        name: FortressRoleClient(
-                            operation,
-                            roles,
-                            identity,
-                            operation_name=name,
-                            frame_bytes=frame_bytes,
-                            cover_interval=cover_interval,
-                        )
+                        name: self._grid_runtime.client(operation, name)
                         for name, operation in compiled.operations.items()
                     }
                 self._clients = clients
@@ -390,9 +395,14 @@ class FortressEngine:
 
     def close(self) -> None:
         self._closed = True
-        for client in self._clients.values():
-            client.close()
-        self._clients.clear()
+        try:
+            for client in self._clients.values():
+                client.close()
+        finally:
+            self._clients.clear()
+            if self._grid_runtime is not None:
+                self._grid_runtime.close()
+                self._grid_runtime = None
         self._combiner = None
         self._compiled = None
         self._tokenizer = None

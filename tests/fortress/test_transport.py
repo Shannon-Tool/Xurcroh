@@ -367,6 +367,8 @@ def test_role_transport_reconnects_once_after_timeout() -> None:
 
     transport = _RoleTransport.__new__(_RoleTransport)
     transport._call_lock = threading.Lock()
+    transport._execution_lock = transport._call_lock
+    transport._connection = None
     transport.observations = []
     calls = []
     reconnects = []
