@@ -20,7 +20,8 @@ class ShareReconstructionReport:
     interpretation: str = (
         "Algebraic fixture results only. Full-role collusion reconstructs the secret; "
         "single-share mismatch is not an information-theoretic proof. Search bits assume "
-        "independent uniform 2^32 shares and no additional structure or side information."
+        "independent uniform field shares modulo 2^32-5, with no additional structure "
+        "or side information."
     )
 
 
