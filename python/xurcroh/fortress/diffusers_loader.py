@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from safetensors import safe_open
@@ -18,6 +19,7 @@ def compile_diffusers_component(
     inner_bases: bool = True,
     seed: int | None = None,
     share_count: int = 2,
+    operation_sink: Callable[[str, CompiledOperation], None] | None = None,
 ) -> dict[str, CompiledOperation]:
     if not component or component in {".", ".."} or "/" in component or "\\" in component:
         raise ConfigurationError("diffusers component must be a single directory name")
@@ -47,6 +49,8 @@ def compile_diffusers_component(
                     inner_bases=inner_bases,
                     seed=seed,
                     share_count=share_count,
+                    retain_quantized=operation_sink is None,
+                    operation_sink=operation_sink,
                 )
                 tensor.zero_()
     if not operations:

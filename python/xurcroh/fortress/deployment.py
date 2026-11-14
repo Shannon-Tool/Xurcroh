@@ -25,11 +25,12 @@ from cryptography.hazmat.primitives.serialization import (
 from xurcroh.config import ClusterConfig, GPUConfig, ModelDefinition, WorkerConfig
 from xurcroh.errors import ClusterUnavailableError, ConfigurationError
 from xurcroh.fortress.compiler import CompiledOperation
+from xurcroh.fortress.diffusers_loader import compile_diffusers_component
 from xurcroh.fortress.model_compiler import compile_fortress_checkpoint
 from xurcroh.fortress.tls import generate_mutual_tls
 from xurcroh.fortress.transport import encode_role_artifact
 from xurcroh.fortress.worker_cli import artifact_file_name
-from xurcroh.preflight import ensure_checkpoint, preflight_checkpoint
+from xurcroh.preflight import detect_modality, ensure_checkpoint, preflight_checkpoint
 
 REMOTE_ROOT = "/tmp"  # noqa: S108
 GIT = shutil.which("git")
@@ -193,12 +194,8 @@ class FortressDeployment:
                     f"provision_workers supports protected Fortress models only; {name!r} uses "
                     f"{definition.engine!r}"
                 )
-            if definition.modality not in {"auto", "text", "vlm"}:
-                raise ConfigurationError(
-                    f"automatic Fortress provisioning does not support {definition.modality!r} "
-                    f"model {name!r}; deploy its diffusion roles explicitly"
-                )
             ensure_checkpoint(name, definition)
+            detect_modality(definition)
         expected = 2 * self.models[0][1].fortress_shares
         if len(self.cluster.workers) != expected:
             raise ConfigurationError(
@@ -298,13 +295,25 @@ class FortressDeployment:
                         role.package / f"{artifact_file_name(operation_name)}.json", encoded
                     )
 
-            compile_fortress_checkpoint(
-                definition.path,
-                seed=model_seed,
-                share_count=definition.fortress_shares,
-                load_model=False,
-                operation_sink=sink,
-            )
+            if definition.modality in {"image", "video"}:
+                component = (
+                    "transformer" if (Path(definition.path) / "transformer").is_dir() else "unet"
+                )
+                compile_diffusers_component(
+                    definition.path,
+                    component=component,
+                    seed=model_seed,
+                    share_count=definition.fortress_shares,
+                    operation_sink=sink,
+                )
+            else:
+                compile_fortress_checkpoint(
+                    definition.path,
+                    seed=model_seed,
+                    share_count=definition.fortress_shares,
+                    load_model=False,
+                    operation_sink=sink,
+                )
             if definition.fortress_seed is None:
                 object.__setattr__(definition, "fortress_seed", model_seed)
 
