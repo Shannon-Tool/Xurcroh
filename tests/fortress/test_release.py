@@ -160,3 +160,24 @@ def test_release_verification_cli_executes() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_release_verification_cli_checks_real_manifest(tmp_path: Path) -> None:
+    import subprocess
+    import sys
+
+    artifacts = tmp_path / "dist"
+    artifacts.mkdir()
+    artifact = artifacts / "artifact.bin"
+    artifact.write_bytes(b"artifact")
+    sbom = tmp_path / "sbom.json"
+    sbom.write_text('{"bomFormat":"CycloneDX"}\n')
+    private = Ed25519PrivateKey.generate()
+    manifest = sign_release(artifacts, sbom_path=sbom, signing_key=private)
+    public = private.public_key().public_bytes_raw().hex()
+    command = [sys.executable, "scripts/verify_release.py", str(manifest), "--public-key", public]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)  # noqa: S603
+    assert result.returncode == 0, result.stderr
+    artifact.write_bytes(b"tampered")
+    rejected = subprocess.run(command, capture_output=True, text=True, check=False)  # noqa: S603
+    assert rejected.returncode != 0
