@@ -149,6 +149,8 @@ def test_offers_create_and_instance_responses_are_sanitized() -> None:
             assert "VAST_API_KEY" not in str(body)
             assert body["runtype"] == "ssh_direct"
             assert "-p 9400:9400" in body["env"]
+            assert "-p 9444:9444/udp" in body["env"]
+            assert "-p 9444:9444" not in body["env"]
             return httpx.Response(200, json={"new_contract": 123, "instance_api_key": "private"})
         if request.url.path == "/api/v0/instances/123/":
             return httpx.Response(
@@ -160,7 +162,7 @@ def test_offers_create_and_instance_responses_are_sanitized() -> None:
                         "status_msg": "image download in progress",
                         "ssh_host": "ssh.example",
                         "ssh_port": 2200,
-                        "ports": {"9444/tcp": [{"HostPort": "54304"}]},
+                        "ports": {"9444/udp": [{"HostPort": "54304"}]},
                         "jupyter_token": "private",
                     }
                 },
@@ -174,7 +176,7 @@ def test_offers_create_and_instance_responses_are_sanitized() -> None:
     instance = client.instance(123)
     assert instance["ssh_host"] == "ssh.example"
     assert instance["status_msg"] == "image download in progress"
-    assert instance["ports"]["9444/tcp"][0]["HostPort"] == "54304"
+    assert instance["ports"]["9444/udp"][0]["HostPort"] == "54304"
     assert "jupyter_token" not in instance
     query = json.loads(requests[0].content)
     assert query["verified"] == {"eq": True}
@@ -285,14 +287,14 @@ def test_deployment_config_has_distinct_hosts_and_no_credentials(tmp_path: Path)
             "ssh_host": "ssh-a",
             "ssh_port": 22,
             "public_ipaddr": "192.0.2.1",
-            "ports": {"9444/tcp": [{"HostPort": "54304"}]},
+            "ports": {"9444/udp": [{"HostPort": "54304"}]},
         },
         {
             "id": 456,
             "ssh_host": "ssh-b",
             "ssh_port": 23,
             "public_ipaddr": "192.0.2.2",
-            "ports": {"9444/tcp": [{"HostPort": "54986"}]},
+            "ports": {"9444/udp": [{"HostPort": "54986"}]},
         },
     ]
     output = tmp_path / "two-node.json"
@@ -497,7 +499,7 @@ def test_provision_preserves_offer_diversity_metadata(
                 "ssh_host": "192.0.2.1",
                 "ssh_port": 22,
                 "public_ipaddr": "192.0.2.1",
-                "ports": {"9444/tcp": [{"HostPort": "9444"}]},
+                "ports": {"9444/udp": [{"HostPort": "9444"}]},
             }
 
     class Process:

@@ -369,7 +369,7 @@ class VastClient:
                 "runtype": "ssh_direct",
                 "cancel_unavail": True,
                 "env": {
-                    "-p 9444:9444": "1",
+                    "-p 9444:9444/udp": "1",
                     "-p 29615:29615": "1",
                     "-p 9400:9400": "1",
                 },
@@ -512,13 +512,13 @@ class VastClient:
 
 def mapped_tls_port(instance: dict[str, Any]) -> int:
     ports = instance.get("ports")
-    bindings = ports.get("9444/tcp") if isinstance(ports, dict) else None
+    bindings = ports.get("9444/udp") if isinstance(ports, dict) else None
     if isinstance(bindings, list):
         for binding in bindings:
             value = binding.get("HostPort")
             if value is not None and 0 < int(value) <= 65535:
                 return int(value)
-    raise ProviderError(f"instance {instance.get('id')} has no external TLS port mapping")
+    raise ProviderError(f"instance {instance.get('id')} has no external QUIC/UDP port mapping")
 
 
 def write_deployment_config(

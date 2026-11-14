@@ -51,6 +51,8 @@ def generate(output: Path, services: dict[str, list[str]]) -> None:
     (output / "ca.crt").write_bytes(public_bytes(ca))
     for name, addresses in {**services, "client": ["localhost"]}.items():
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        if "localhost" not in addresses:
+            addresses = [*addresses, "localhost"]
         alternative_names = []
         for address in addresses:
             try:
