@@ -20,6 +20,7 @@ from xurcroh.errors import (
     ShardIntegrityError,
     XurcrohError,
 )
+from xurcroh.preflight import CheckpointPreflight
 from xurcroh.types import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -41,6 +42,7 @@ __all__ = [
     "ChatCompletionChunk",
     "ChatDelta",
     "ChatMessage",
+    "CheckpointPreflight",
     "ClientClosedError",
     "ClusterError",
     "ClusterUnavailableError",
