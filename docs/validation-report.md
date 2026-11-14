@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Validated implementation revision: `04947a4e84a67ecc0324d1e1215f0f331119f675`
+- Latest implementation revision: `dee3180`; latest full local suite baseline: `04947a4e84a67ecc0324d1e1215f0f331119f675`
 - Local implementation: **passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -16,7 +16,7 @@ The earlier “PRE-GPU IMPLEMENTATION COMPLETE” declaration remains withdrawn.
 
 ## Local and CI evidence
 
-The latest full local suite at `04947a4` reports **397 passed, 23 deselected, 81.10% coverage**, excluding hardware tests and the long video-ladder test that passed separately in 2,209.98 seconds. This includes the corrected image-grid cover-timeout teardown path. Strict mypy covers 135 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
+The latest full local suite at `04947a4` reports **397 passed, 23 deselected, 81.10% coverage**, excluding hardware tests and the long video-ladder test that passed separately in 2,209.98 seconds. This includes the corrected image-grid cover-timeout teardown path. At `dee3180`, an isolated loopback OpenSSH server passes generated-key authentication, host-key pinning, remote execution, SFTP upload, and content readback through the production `AsyncSSHExecutor`. Strict mypy covers 135 source files; Ruff, 29 Rust tests, 32 frontend interaction tests, frontend build/content checks, and local dependency audits pass. The last complete green hosted run was [43409086123](https://github.com/Shannon-Tool/Xurcroh/actions/runs/43409086123), including ProVerif, protocol fuzzing, and the reproducibility job. Newer hosted runs fail before executing any step because GitHub reports failed account payments or a required spending-limit increase.
 
 | Check | Actual result |
 |---|---|
