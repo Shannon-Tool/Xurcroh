@@ -58,6 +58,15 @@ def test_remote_command_executes_real_fortress_worker() -> None:
     assert "--exit-status-file /srv/fortress/role.exit" in command
 
 
+def test_worker_start_backgrounds_provider_ssh(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_module()
+    calls = []
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: calls.append(args))
+    worker = {"name": "role", "host": "ssh.example", "ssh_user": "root", "ssh_port": 22}
+    module.start_worker(worker, "/srv/fortress", "role")
+    assert calls[0][0][1] == "-f"
+
+
 def test_per_worker_ssh_configuration_is_normalized() -> None:
     module = load_module()
     document = {

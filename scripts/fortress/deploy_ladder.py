@@ -91,6 +91,19 @@ def start_command(remote_root: str, name: str, device: str = "cpu") -> str:
     )
 
 
+def start_worker(worker: dict[str, Any], remote_root: str, name: str) -> None:
+    subprocess.run(  # noqa: S603
+        [
+            SSH,
+            "-f",
+            *options(worker),
+            f"{worker['ssh_user']}@{worker['host']}",
+            start_command(remote_root, name, device="cuda"),
+        ],
+        check=True,
+    )
+
+
 def ssh_worker(manifest: dict[str, Any], worker: Any, index: int) -> dict[str, Any]:
     raw_worker = manifest["workers"][index]
     settings = {
@@ -373,9 +386,7 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
         with ThreadPoolExecutor(max_workers=len(workers)) as executor:
             list(
                 executor.map(
-                    lambda worker: ssh(
-                        worker, start_command(remote_root, worker["name"], device="cuda")
-                    ),
+                    lambda worker: start_worker(worker, remote_root, worker["name"]),
                     workers,
                 )
             )
