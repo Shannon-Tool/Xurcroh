@@ -87,6 +87,7 @@ def test_tls_generator_creates_private_identities_and_san_certificates(tmp_path:
     names = certificate.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
     assert names.get_values_for_type(x509.IPAddress)
     assert "worker-a" in names.get_values_for_type(x509.DNSName)
+    assert "localhost" in names.get_values_for_type(x509.DNSName)
     assert stat.S_IMODE((output / "worker-a.key").stat().st_mode) == 0o600
     assert stat.S_IMODE((output / "ca.key").stat().st_mode) == 0o600
     assert (output / "client.crt").is_file()
