@@ -46,6 +46,21 @@ def test_source_revision_accepts_verified_archive_identity(
         module.source_revision()
 
 
+def test_archived_source_is_reused_without_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = load_module()
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    (tmp_path / "source.tar.gz").write_bytes(b"source-archive")
+    monkeypatch.setenv("XURCROH_SOURCE_REVISION", "a" * 40)
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("git is unavailable")),
+    )
+    assert module.source_archive() == b"source-archive"
+
+
 def test_remote_command_executes_real_fortress_worker() -> None:
     module = load_module()
     command = module.start_command("/srv/fortress", "role-0-0")
