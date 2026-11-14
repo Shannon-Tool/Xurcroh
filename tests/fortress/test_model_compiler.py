@@ -299,3 +299,76 @@ def test_qwen3_5_text_loader_excludes_multimodal_towers_and_executes(tmp_path: P
         )
     assert output.logits.shape == (1, 2, 12)
     assert torch.isfinite(output.logits).all()
+
+
+def test_full_gemma4_vlm_keeps_media_towers_local(tmp_path: Path) -> None:
+    from transformers.models.gemma4.configuration_gemma4 import (
+        Gemma4AudioConfig,
+        Gemma4Config,
+        Gemma4TextConfig,
+        Gemma4VisionConfig,
+    )
+    from transformers.models.gemma4.modeling_gemma4 import Gemma4ForConditionalGeneration
+
+    from xurcroh.fortress.module import FortressLinear
+
+    text = Gemma4TextConfig(
+        hidden_size=16,
+        intermediate_size=32,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=1,
+        head_dim=4,
+        global_head_dim=4,
+        vocab_size=12,
+        vocab_size_per_layer_input=12,
+        hidden_size_per_layer_input=4,
+        layer_types=["full_attention", "full_attention"],
+        num_kv_shared_layers=0,
+        use_double_wide_mlp=False,
+    )
+    vision = Gemma4VisionConfig(
+        hidden_size=16,
+        intermediate_size=32,
+        num_hidden_layers=1,
+        num_attention_heads=4,
+        num_key_value_heads=4,
+        position_embedding_size=16,
+        patch_size=4,
+        pooling_kernel_size=1,
+    )
+    audio = Gemma4AudioConfig(
+        hidden_size=16,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        output_proj_dims=16,
+    )
+    model = Gemma4ForConditionalGeneration(
+        Gemma4Config(text_config=text, vision_config=vision, audio_config=audio)
+    )
+    model.save_pretrained(tmp_path, safe_serialization=True)
+    compiled = compile_fortress_checkpoint(tmp_path, seed=731, load_full_multimodal=True)
+    assert compiled.model is not None
+    assert isinstance(
+        compiled.model.model.language_model.layers[0].self_attn.q_proj, FortressLinear
+    )
+    vision_linear = next(
+        module
+        for name, module in compiled.model.model.vision_tower.named_modules()
+        if isinstance(module, torch.nn.Linear)
+    )
+    audio_linear = next(
+        module
+        for name, module in compiled.model.model.audio_tower.named_modules()
+        if isinstance(module, torch.nn.Linear)
+    )
+    assert vision_linear.weight.is_meta is False
+    assert audio_linear.weight.is_meta is False
+    with torch.inference_mode():
+        output = compiled.model(
+            input_ids=torch.tensor([[1, 2]]),
+            return_shared_kv_states=True,
+            use_cache=True,
+        )
+    assert output.logits.shape == (1, 2, 12)
+    assert torch.isfinite(output.logits).all()
