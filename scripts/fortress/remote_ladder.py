@@ -81,7 +81,7 @@ def source_revision() -> str:
     ).stdout.strip()
 
 
-def run(args: argparse.Namespace) -> Path:
+def _run(args: argparse.Namespace) -> Path:
     if not args.smoke and args.signing_key is None:
         raise ValueError("signed ladder evidence requires --signing-key")
     revision = source_revision()
@@ -111,7 +111,8 @@ def run(args: argparse.Namespace) -> Path:
         gateway,
         f"cd {root} && ./scripts/gpu/bootstrap.sh && "
         ".venv-cuda/bin/pip install --retries 10 --timeout 120 --no-cache-dir --no-deps "
-        "transformers==5.22.2 && .venv-cuda/bin/python -c "
+        "transformers==5.22.2 huggingface-hub==2.4.0 tokenizers==0.23.1 && "
+        ".venv-cuda/bin/python -c "
         "'from transformers import AutoModelForMultimodalLM'",
     )
     if not args.download_checkpoint:
@@ -174,23 +175,13 @@ def run(args: argparse.Namespace) -> Path:
             ),
         )
     finally:
-        try:
-            for remote, local in downloads:
-                try:
-                    ssh(gateway, f"test -f {remote}")
-                    download(gateway, remote, output / local)
-                except (OSError, subprocess.CalledProcessError):
-                    if local != "run.log":
-                        raise
-        finally:
-            if args.smoke:
-                store = StateStore(args.state)
-                teardown = destroy_ladder_instances(store, uncapped=True)
-                (output / "worker-teardown.json").write_text(json.dumps(teardown, indent=2) + "\n")
-                watchdog_pid = store.snapshot().get("watchdog_pid")
-                if watchdog_pid:
-                    with contextlib.suppress(ProcessLookupError):
-                        os.kill(int(watchdog_pid), signal.SIGTERM)
+        for remote, local in downloads:
+            try:
+                ssh(gateway, f"test -f {remote}")
+                download(gateway, remote, output / local)
+            except (OSError, subprocess.CalledProcessError):
+                if local != "run.log":
+                    raise
     evidence = output / ("smoke-report.json" if args.smoke else "evidence.json")
     if args.smoke:
         report = json.loads(evidence.read_text())
@@ -201,6 +192,21 @@ def run(args: argparse.Namespace) -> Path:
         verify_rung_evidence(evidence, public_key=private.public_key())
     print(evidence)
     return evidence
+
+
+def run(args: argparse.Namespace) -> Path:
+    try:
+        return _run(args)
+    finally:
+        if args.smoke:
+            store = StateStore(args.state)
+            teardown = destroy_ladder_instances(store, uncapped=True)
+            args.output.mkdir(parents=True, exist_ok=True)
+            (args.output / "worker-teardown.json").write_text(json.dumps(teardown, indent=2) + "\n")
+            watchdog_pid = store.snapshot().get("watchdog_pid")
+            if watchdog_pid:
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(int(watchdog_pid), signal.SIGTERM)
 
 
 def main() -> None:
