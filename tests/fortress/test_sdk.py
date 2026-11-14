@@ -110,6 +110,23 @@ def test_public_sdk_executes_remote_fortress_grid(
                 for transport in operation._transports.values()
             }
             assert len(shared_clients) == 4
+            import torch
+
+            from xurcroh.fortress.arithmetic import FIELD_MODULUS
+
+            operation = operation_clients[0]
+            for cycle in range(65):
+                shares = [
+                    torch.randint(
+                        0,
+                        FIELD_MODULUS,
+                        (operation.operation.quantized.dimensions[1],),
+                        dtype=torch.int64,
+                    )
+                    for _ in range(2)
+                ]
+                operation.execute(shares, request_id=f"shared-rotation:{cycle}")
+            assert all(connection.completed >= 65 for connection in grid.connections.values())
         assert response.usage.completion_tokens == 1
         assert response.execution.engine == "fortress-grid"
         assert len(response.execution.worker_ids) == 4
