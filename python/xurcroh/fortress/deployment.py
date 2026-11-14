@@ -397,7 +397,8 @@ class FortressDeployment:
             f"--certificate {remote}/tls/{service}.crt --private-key {remote}/tls/{service}.key "
             f"--ca {remote}/tls/ca.crt --host 0.0.0.0 --port {role.port} --device {device} "
             f"--ready-file {shlex.quote(str(ready))} --exit-status-file {remote}/role.exit "
-            f"</dev/null >{remote}/role.log 2>&1 & echo $! >{remote}/role.pid"
+            f"--pid-file {shlex.quote(str(role_root / 'role.pid'))} "
+            f"</dev/null >{remote}/role.log 2>&1 &"
         )
         logging.getLogger(__name__).info("Starting Fortress role %s", role.service_name)
         self._executor.run(role.worker, command, timeout=30)
