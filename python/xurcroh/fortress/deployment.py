@@ -389,7 +389,7 @@ class FortressDeployment:
         if device not in {"cpu", "cuda"}:
             raise ConfigurationError(f"unsupported Fortress worker device: {device}")
         command = (
-            f"cd {shlex.quote(self._remote_root)} && setsid env HF_HUB_OFFLINE=1 "
+            f"cd {shlex.quote(self._remote_root)} && setsid -f env HF_HUB_OFFLINE=1 "
             "TRANSFORMERS_OFFLINE=1 "
             "LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:"
             f"/usr/local/cuda/lib64 {python} -m xurcroh.fortress.worker_cli "
@@ -398,7 +398,7 @@ class FortressDeployment:
             f"--ca {remote}/tls/ca.crt --host 0.0.0.0 --port {role.port} --device {device} "
             f"--ready-file {shlex.quote(str(ready))} --exit-status-file {remote}/role.exit "
             f"--pid-file {shlex.quote(str(role_root / 'role.pid'))} "
-            f"</dev/null >{remote}/role.log 2>&1 &"
+            f"</dev/null >{remote}/role.log 2>&1"
         )
         logging.getLogger(__name__).info("Starting Fortress role %s", role.service_name)
         self._executor.run(role.worker, command, timeout=30)
