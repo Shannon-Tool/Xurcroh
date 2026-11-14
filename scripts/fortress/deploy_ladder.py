@@ -23,6 +23,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from scripts.gpu.deploy_two_node import download, options, scp, ssh
 
+from xurcroh.fortress.datagram_deploy import close_datagram_tunnels, start_datagram_tunnels
 from xurcroh.fortress.diffusers_loader import compile_diffusers_component
 from xurcroh.fortress.ladder import LadderRung
 from xurcroh.fortress.ladder_deployment import (
@@ -249,10 +250,12 @@ def kill_workers(workers: list[Any], revision: str) -> None:
                 SSH,
                 *options(worker),
                 f"{worker['ssh_user']}@{worker['host']}",
-                f"if test -f {root}/role.pid; then kill $(cat {root}/role.pid); fi",
+                f"if test -f {root}/role.pid; then kill $(cat {root}/role.pid); fi; "
+                f"if test -f {root}/relay.pid; then kill $(cat {root}/relay.pid); fi",
             ],
             check=False,
         )
+        close_datagram_tunnels([worker])
 
 
 def stop_workers(workers: list[Any], revision: str, *, timeout: float = 60) -> list[int]:
@@ -403,6 +406,16 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
     except Exception:
         kill_workers(workers, revision)
         raise
+    sdk = sdk_configuration(
+        rung,
+        checkpoint_path=checkpoint,
+        fortress_seed=seed,
+        certificate_path=output / "tls" / "client.crt",
+        key_path=output / "tls" / "client.key",
+        ca_path=output / "tls" / "ca.crt",
+    )
+    if raw.get("datagram_tunnel") is True:
+        start_datagram_tunnels(workers, remote_root, sdk, output / "tunnels")
     deployment = {
         "schema_version": 1,
         "source_revision": revision,
@@ -410,14 +423,7 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
         "hardware_validated": hardware_validated(hardware_reports, len(workers)),
         "hardware": hardware_reports,
         "workers": workers,
-        "sdk": sdk_configuration(
-            rung,
-            checkpoint_path=checkpoint,
-            fortress_seed=seed,
-            certificate_path=output / "tls" / "client.crt",
-            key_path=output / "tls" / "client.key",
-            ca_path=output / "tls" / "ca.crt",
-        ),
+        "sdk": sdk,
         "recipient_key_directory": str(key_directory),
         "remote_root": remote_root,
     }
