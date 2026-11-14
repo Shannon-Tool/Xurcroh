@@ -412,8 +412,14 @@ class FortressDeployment:
             if status == "ready":
                 return
             if status == "exited":
+                try:
+                    details = self._executor.run(
+                        role.worker, f"tail -c 4000 {shlex.quote(str(role_root / 'role.log'))}"
+                    ).strip()
+                except Exception as log_error:
+                    details = f"role.log could not be read: {log_error}"
                 raise ClusterUnavailableError(
-                    f"Fortress role {role.service_name!r} exited before readiness; inspect role.log"
+                    f"Fortress role {role.service_name!r} exited before readiness: {details}"
                 )
             if time.monotonic() >= deadline:
                 raise ClusterUnavailableError(
