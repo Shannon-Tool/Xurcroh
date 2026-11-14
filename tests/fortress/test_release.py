@@ -42,6 +42,47 @@ def test_release_sbom_and_signature_cover_artifacts(tmp_path: Path) -> None:
         verify_release(manifest, public_key=private.public_key())
 
 
+def test_sbom_generation_is_reproducible(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "requirements.lock").write_text("torch==2.8.0\n")
+    first = generate_sbom(root, tmp_path / "first.json")
+    second = generate_sbom(root, tmp_path / "second.json")
+    assert first == second
+    assert (tmp_path / "first.json").read_bytes() == (tmp_path / "second.json").read_bytes()
+
+
+def test_release_verification_rejects_sbom_tampering_and_path_escape(tmp_path: Path) -> None:
+    root = tmp_path / "dist"
+    root.mkdir()
+    (root / "artifact.bin").write_bytes(b"artifact")
+    sbom = tmp_path / "sbom.json"
+    sbom.write_text('{"bomFormat":"CycloneDX"}\n')
+    private = Ed25519PrivateKey.generate()
+    manifest = sign_release(root, sbom_path=sbom, signing_key=private)
+    sbom.write_text('{"bomFormat":"tampered"}\n')
+    with pytest.raises(TransparencyError, match="SBOM"):
+        verify_release(manifest, public_key=private.public_key())
+
+    sbom.write_text('{"bomFormat":"CycloneDX"}\n')
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"outside")
+    document = json.loads(manifest.read_text())
+    document.pop("signature")
+    document["artifacts"] = [
+        {
+            "path": "../outside.bin",
+            "sha256": hashlib.sha256(outside.read_bytes()).hexdigest(),
+        }
+    ]
+    document["signature"] = private.sign(
+        json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+    ).hex()
+    manifest.write_text(json.dumps(document))
+    with pytest.raises(TransparencyError, match="outside"):
+        verify_release(manifest, public_key=private.public_key())
+
+
 def _native_wheel(path: Path, workspace: Path) -> bytes:
     sbom_name = "xurcroh_quic-0.1.0.dist-info/sboms/xurcroh-transport.cyclonedx.json"
     record_name = "xurcroh_quic-0.1.0.dist-info/RECORD"

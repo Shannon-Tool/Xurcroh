@@ -111,10 +111,12 @@ def generate_sbom(project_root: str | Path, output: str | Path) -> dict[str, Any
                     }
                 )
     components.sort(key=lambda component: (component["name"], component["version"]))
+    inventory = json.dumps(components, sort_keys=True, separators=(",", ":")).encode()
+    serial = uuid.uuid5(uuid.NAMESPACE_URL, f"xurcroh:sbom:{hashlib.sha256(inventory).hexdigest()}")
     sbom = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
-        "serialNumber": f"urn:uuid:{uuid.uuid4()}",
+        "serialNumber": f"urn:uuid:{serial}",
         "version": 1,
         "components": components,
     }
@@ -141,8 +143,9 @@ def sign_release(
     if not artifacts:
         raise ValueError("release directory contains no artifacts")
     manifest = {
-        "format": "xurcroh-release-v1",
+        "format": "xurcroh-release-v2",
         "artifacts": artifacts,
+        "sbom_path": str(Path(sbom_path).resolve()),
         "sbom_sha256": _digest(Path(sbom_path)),
     }
     manifest["signature"] = signing_key.sign(_canonical(manifest)).hex()
@@ -153,7 +156,7 @@ def sign_release(
 def verify_release(manifest_path: str | Path, *, public_key: Ed25519PublicKey) -> None:
     path = Path(manifest_path)
     document = json.loads(path.read_text())
-    if document.get("format") != "xurcroh-release-v1":
+    if document.get("format") != "xurcroh-release-v2":
         raise TransparencyError("unsupported release-manifest format")
     signature = document.pop("signature", None)
     if not isinstance(signature, str):
@@ -162,7 +165,31 @@ def verify_release(manifest_path: str | Path, *, public_key: Ed25519PublicKey) -
         public_key.verify(bytes.fromhex(signature), _canonical(document))
     except (InvalidSignature, ValueError) as error:
         raise TransparencyError("release signature is invalid") from error
-    for artifact in document["artifacts"]:
-        artifact_path = path.parent / artifact["path"]
-        if not artifact_path.is_file() or _digest(artifact_path) != artifact["sha256"]:
-            raise TransparencyError(f"release artifact digest mismatch: {artifact['path']}")
+    sbom_path = document.get("sbom_path")
+    sbom_digest = document.get("sbom_sha256")
+    if not isinstance(sbom_path, str) or not isinstance(sbom_digest, str):
+        raise TransparencyError("release SBOM identity is missing")
+    sbom = Path(sbom_path)
+    if not sbom.is_file() or _digest(sbom) != sbom_digest:
+        raise TransparencyError("release SBOM digest mismatch")
+    root = path.parent.resolve()
+    artifacts = document.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise TransparencyError("release artifact list is invalid")
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            raise TransparencyError("release artifact entry is invalid")
+        relative = Path(artifact.get("path", ""))
+        digest = artifact.get("sha256")
+        if (
+            not relative.parts
+            or relative.is_absolute()
+            or ".." in relative.parts
+            or not isinstance(digest, str)
+        ):
+            raise TransparencyError("release artifact path is outside the release directory")
+        artifact_path = (root / relative).resolve()
+        if not artifact_path.is_relative_to(root):
+            raise TransparencyError("release artifact path is outside the release directory")
+        if not artifact_path.is_file() or _digest(artifact_path) != digest:
+            raise TransparencyError(f"release artifact digest mismatch: {relative}")
