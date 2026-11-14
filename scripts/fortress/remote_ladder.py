@@ -38,7 +38,9 @@ def worker_configuration(document: dict[str, Any], key_path: str) -> dict[str, A
     return result
 
 
-def remote_command(remote_root: str, revision: str, download_checkpoint: bool = False) -> str:
+def remote_command(
+    remote_root: str, revision: str, download_checkpoint: bool = False, smoke: bool = False
+) -> str:
     root = shlex.quote(remote_root)
     prepare = (
         f".venv-cuda/bin/python scripts/fortress/prepare_checkpoint.py "
@@ -47,13 +49,19 @@ def remote_command(remote_root: str, revision: str, download_checkpoint: bool = 
         if download_checkpoint
         else ""
     )
+    execute = (
+        f".venv-cuda/bin/python scripts/fortress/grid_smoke.py "
+        f"--template {root}/template.json --provisioned-config {root}/workers.json "
+        f"--state {root}/provider-state.json --output {root}/run --uncapped"
+        if smoke
+        else f".venv-cuda/bin/python scripts/fortress/run_ladder.py {root}/template.json "
+        f"--provisioned-config {root}/workers.json --state {root}/provider-state.json "
+        f"--output {root}/run --signing-key {root}/evidence.key --uncapped"
+    )
     return (
         f"cd {root} && set -o pipefail && {{ {prepare}"
         f"env PYTHONUNBUFFERED=1 XURCROH_SOURCE_REVISION={revision} "
-        f".venv-cuda/bin/python scripts/fortress/run_ladder.py {root}/template.json "
-        f"--provisioned-config {root}/workers.json --state {root}/provider-state.json "
-        f"--output {root}/run --signing-key {root}/evidence.key --uncapped; }} "
-        f"2>&1 | tee {root}/run.log"
+        f"{execute}; }} 2>&1 | tee {root}/run.log"
     )
 
 
@@ -68,6 +76,8 @@ def source_revision() -> str:
 
 
 def run(args: argparse.Namespace) -> Path:
+    if not args.smoke and args.signing_key is None:
+        raise ValueError("signed ladder evidence requires --signing-key")
     revision = source_revision()
     template = json.loads(args.template.read_text())
     checkpoint = Path(template["checkpoint_path"])
@@ -110,38 +120,63 @@ def run(args: argparse.Namespace) -> Path:
         root,
     )
     worker_key = args.worker_ssh_key or Path(gateway["ssh_key"])
-    scp(gateway, [worker_key, args.signing_key], root)
+    key_files = [worker_key] if args.smoke else [worker_key, args.signing_key]
+    scp(gateway, key_files, root)
     worker_name = shlex.quote(worker_key.name)
-    signing_name = shlex.quote(args.signing_key.name)
-    ssh(
-        gateway,
+    commands = [
         f"if test {worker_name} != worker-ssh-key; then "
-        f"mv {root}/{worker_name} {root}/worker-ssh-key; fi && "
-        f"if test {signing_name} != evidence.key; then "
-        f"mv {root}/{signing_name} {root}/evidence.key; fi && "
-        f"chmod 600 {root}/worker-ssh-key {root}/evidence.key",
-    )
-    try:
-        ssh(
-            gateway,
-            remote_command(root, revision, download_checkpoint=args.download_checkpoint),
+        f"mv {root}/{worker_name} {root}/worker-ssh-key; fi",
+        f"chmod 600 {root}/worker-ssh-key",
+    ]
+    if not args.smoke:
+        signing_name = shlex.quote(args.signing_key.name)
+        commands.extend(
+            [
+                f"if test {signing_name} != evidence.key; then "
+                f"mv {root}/{signing_name} {root}/evidence.key; fi",
+                f"chmod 600 {root}/evidence.key",
+            ]
         )
-    finally:
-        for remote, local in [
+    ssh(gateway, " && ".join(commands))
+    downloads = (
+        [
+            (f"{root}/run.log", "run.log"),
+            (f"{root}/run/run/smoke-report.json", "smoke-report.json"),
+        ]
+        if args.smoke
+        else [
             (f"{root}/run.log", "run.log"),
             (f"{root}/run/evidence.json", "evidence.json"),
             (f"{root}/run/deployment.json", "deployment.json"),
             (f"{root}/run/manifest.json", "verified-manifest.json"),
-        ]:
+        ]
+    )
+    try:
+        ssh(
+            gateway,
+            remote_command(
+                root,
+                revision,
+                download_checkpoint=args.download_checkpoint,
+                smoke=args.smoke,
+            ),
+        )
+    finally:
+        for remote, local in downloads:
             try:
                 ssh(gateway, f"test -f {remote}")
                 download(gateway, remote, output / local)
             except (OSError, subprocess.CalledProcessError):
-                if local in {"evidence.json", "deployment.json", "verified-manifest.json"}:
+                if local != "run.log":
                     raise
-    evidence = output / "evidence.json"
-    private = Ed25519PrivateKey.from_private_bytes(args.signing_key.read_bytes())
-    verify_rung_evidence(evidence, public_key=private.public_key())
+    evidence = output / ("smoke-report.json" if args.smoke else "evidence.json")
+    if args.smoke:
+        report = json.loads(evidence.read_text())
+        if "error_type" in report:
+            raise RuntimeError(f"remote grid smoke failed: {report['error_type']}")
+    else:
+        private = Ed25519PrivateKey.from_private_bytes(args.signing_key.read_bytes())
+        verify_rung_evidence(evidence, public_key=private.public_key())
     print(evidence)
     return evidence
 
@@ -153,7 +188,8 @@ def main() -> None:
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--template", required=True, type=Path)
     parser.add_argument("--download-checkpoint", action="store_true")
-    parser.add_argument("--signing-key", required=True, type=Path)
+    parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--signing-key", type=Path)
     parser.add_argument("--worker-ssh-key", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
