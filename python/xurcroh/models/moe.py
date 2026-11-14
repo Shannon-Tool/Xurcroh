@@ -23,6 +23,43 @@ class DispatchPlan:
     top_k: int
 
 
+def constant_load_plan(
+    top_indices: torch.Tensor,
+    top_weights: torch.Tensor,
+    *,
+    expert_count: int,
+    constant_load: int,
+) -> DispatchPlan:
+    if (
+        top_indices.ndim != 2
+        or top_weights.shape != top_indices.shape
+        or constant_load < 1
+        or expert_count < 1
+    ):
+        raise ValueError("invalid expert routing or constant-load dimensions")
+    top_k = top_indices.shape[1]
+    token_indices = torch.zeros(
+        expert_count, constant_load, dtype=torch.long, device=top_indices.device
+    )
+    weights = torch.zeros(
+        expert_count, constant_load, dtype=top_weights.dtype, device=top_weights.device
+    )
+    dummy_mask = torch.ones(
+        expert_count, constant_load, dtype=torch.bool, device=top_indices.device
+    )
+    for expert in range(expert_count):
+        locations = (top_indices == expert).nonzero()
+        count = locations.shape[0]
+        if count > constant_load:
+            raise ValueError("constant-load capacity is below an expert's dropless load")
+        if count:
+            token_indices[expert, :count] = locations[:, 0]
+            weights[expert, :count] = top_weights[locations[:, 0], locations[:, 1]]
+            dummy_mask[expert, :count] = False
+    loads = torch.full((expert_count,), constant_load, dtype=torch.long, device=top_indices.device)
+    return DispatchPlan(token_indices, weights, dummy_mask, loads, top_k)
+
+
 class ConstantLoadDispatcher:
     def __init__(self, *, top_k: int, constant_load: int) -> None:
         if top_k < 1 or constant_load < 1:
@@ -38,44 +75,12 @@ class ConstantLoadDispatcher:
         logits = hidden @ router.T
         top_weights, top_indices = torch.topk(logits, self.top_k, dim=-1)
         top_weights = torch.softmax(top_weights, dim=-1)
-        expert_count = router.shape[0]
-        token_indices = torch.zeros(
-            expert_count,
-            self.constant_load,
-            dtype=torch.long,
-            device=hidden.device,
+        return constant_load_plan(
+            top_indices,
+            top_weights,
+            expert_count=router.shape[0],
+            constant_load=self.constant_load,
         )
-        weights = torch.zeros(
-            expert_count,
-            self.constant_load,
-            dtype=top_weights.dtype,
-            device=hidden.device,
-        )
-        dummy_mask = torch.ones(
-            expert_count,
-            self.constant_load,
-            dtype=torch.bool,
-            device=hidden.device,
-        )
-        for expert in range(expert_count):
-            locations = (top_indices == expert).nonzero()
-            count = locations.shape[0]
-            if count > self.constant_load:
-                raise ValueError(
-                    f"constant-load capacity {self.constant_load} is below expert load {count}; "
-                    "dropless routing rejected"
-                )
-            if count:
-                token_indices[expert, :count] = locations[:, 0]
-                weights[expert, :count] = top_weights[locations[:, 0], locations[:, 1]]
-                dummy_mask[expert, :count] = False
-        loads = torch.full(
-            (expert_count,),
-            self.constant_load,
-            dtype=torch.long,
-            device=hidden.device,
-        )
-        return DispatchPlan(token_indices, weights, dummy_mask, loads, self.top_k)
 
     def combine(self, plan: DispatchPlan, expert_outputs: torch.Tensor) -> torch.Tensor:
         if expert_outputs.shape[:2] != plan.weights.shape:
