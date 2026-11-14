@@ -102,3 +102,22 @@ def test_inference_fails_preflight_before_engine_creation(tiny_llama_path: Path)
             model="tiny",
             messages=[{"role": "user", "content": "hello"}],
         )
+
+
+def test_remote_fortress_preflight_rejects_incomplete_role_grid(
+    tiny_llama_path: Path,
+) -> None:
+    definition = ModelDefinition(path=str(tiny_llama_path), engine="fortress")
+    report = preflight_checkpoint(
+        "tiny",
+        definition,
+        [
+            WorkerConfig(
+                name="worker",
+                endpoint="quic://worker:9444",
+                gpu={"model": "test-gpu", "memory_gb": 80},
+            )
+        ],
+    )
+    assert report.supported is False
+    assert any("complete 2-by-2 grid" in issue for issue in report.issues)
