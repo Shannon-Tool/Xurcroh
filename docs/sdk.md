@@ -20,7 +20,7 @@ with Xurcroh(
     print(response.choices[0].message.content)
 ```
 
-`AsyncXurcroh` provides the same resources with `async with`, `await ...create(...)`, and `async for` streaming. Both clients are lazy: a model is loaded on its first request, not during configuration. Calls on a closed client raise `ClientClosedError`.
+`AsyncXurcroh` provides the same resources with `async with`, `await ...create(...)`, and `async for` streaming. Its constructor does not provision or download synchronously; shared initialization is offloaded to a worker thread on `async with` or the first async operation, with concurrent callers coalesced behind one lock. Both clients load model weights lazily. Calls on a closed client raise `ClientClosedError`, and closing an uninitialized async client does not create one.
 
 ## Models
 

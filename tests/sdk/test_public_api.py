@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -98,3 +99,33 @@ def test_response_types_are_publicly_importable() -> None:
     assert ChatCompletion.__name__ == "ChatCompletion"
     assert ChatCompletionChunk.__name__ == "ChatCompletionChunk"
     assert CompletionUsage.__name__ == "CompletionUsage"
+
+
+@pytest.mark.asyncio
+async def test_async_client_initializes_once_without_blocking_constructor(
+    tiny_model_path: Path,
+) -> None:
+    client = AsyncXurcroh(
+        cluster={"endpoint": "local://cpu"}, model_path={"qwen-7b": tiny_model_path}
+    )
+    assert client._sync is None
+    metrics, reports = await asyncio.gather(client.metrics(), client.preflight())
+    assert metrics["requests_started"] == 0
+    assert reports["qwen-7b"].supported is True
+    sync = client._sync
+    assert sync is not None
+    await client.close()
+    assert client._sync is sync
+    with pytest.raises(ClientClosedError):
+        await client.metrics()
+
+
+@pytest.mark.asyncio
+async def test_async_close_before_initialization_stays_uninitialized(
+    tiny_model_path: Path,
+) -> None:
+    client = AsyncXurcroh(
+        cluster={"endpoint": "local://cpu"}, model_path={"qwen-7b": tiny_model_path}
+    )
+    await client.close()
+    assert client._sync is None
