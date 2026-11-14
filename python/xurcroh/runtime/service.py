@@ -121,7 +121,12 @@ class RuntimeService:
         return reports
 
     def _require_preflight(self, name: str) -> None:
-        report = self.preflight(name)[name]
+        report = preflight_checkpoint(
+            name,
+            self.models.get(name),
+            self._workers_for_model(name),
+            require_known_memory=self.cluster.provision_workers,
+        )
         if not report.supported:
             raise ConfigurationError(
                 f"model {name!r} preflight failed: " + "; ".join(report.issues)

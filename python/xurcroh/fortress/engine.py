@@ -20,8 +20,8 @@ from xurcroh.requests import AudioContentPart, ImageContentPart, TextContentPart
 if TYPE_CHECKING:
     from xurcroh.fortress.transport import FortressRoleClient, MutualTLSIdentity, RoleEndpoint
     from xurcroh.runtime.generation import GenerationEvent
+from xurcroh.prompting import render_chat_prompt
 from xurcroh.requests import CompletionRequest
-from xurcroh.runtime.prompting import render_chat_prompt
 
 
 class FortressEngine:

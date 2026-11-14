@@ -11,6 +11,7 @@ import torch
 
 from xurcroh.config import ModelDefinition
 from xurcroh.errors import CapabilityError, ConfigurationError, ModelLoadError
+from xurcroh.prompting import render_chat_prompt
 from xurcroh.requests import CompletionRequest
 from xurcroh.runtime.generation import (
     GenerationEvent,
@@ -19,7 +20,6 @@ from xurcroh.runtime.generation import (
     sample_next_token,
     stopping_strings,
 )
-from xurcroh.runtime.prompting import render_chat_prompt
 
 
 class LocalTransformersEngine:

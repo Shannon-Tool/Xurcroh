@@ -397,7 +397,12 @@ class FortressDeployment:
                 for worker in self.cluster.workers:
                     self._executor.discover(worker)
                 for name, definition in self.models:
-                    report = preflight_checkpoint(name, definition, list(self.cluster.workers))
+                    report = preflight_checkpoint(
+                        name,
+                        definition,
+                        list(self.cluster.workers),
+                        require_known_memory=True,
+                    )
                     if not report.supported:
                         raise ConfigurationError(
                             f"model {name!r} preflight failed: " + "; ".join(report.issues)

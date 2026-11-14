@@ -31,6 +31,7 @@ from xurcroh.errors import (
     RequestTimeoutError,
     ShardIntegrityError,
 )
+from xurcroh.prompting import render_chat_prompt
 from xurcroh.requests import CompletionRequest
 from xurcroh.runtime.attestation import RemoteAttestationClient
 from xurcroh.runtime.generation import (
@@ -39,7 +40,6 @@ from xurcroh.runtime.generation import (
     check_request_health,
     stopping_strings,
 )
-from xurcroh.runtime.prompting import render_chat_prompt
 from xurcroh.runtime.remote import RemoteOpenAIEngine
 from xurcroh.runtime.stage_sessions import ClientStageSession
 from xurcroh.runtime.tensor_codec import decode_stage_tensor, encode_stage_tensor

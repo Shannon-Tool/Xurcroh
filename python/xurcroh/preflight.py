@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import re
 from dataclasses import dataclass
@@ -83,21 +85,35 @@ def preflight_checkpoint(
     name: str,
     definition: ModelDefinition,
     workers: list[WorkerConfig],
+    *,
+    require_known_memory: bool = False,
 ) -> CheckpointPreflight:
     checkpoint = ensure_checkpoint(name, definition)
-    reader = CheckpointReader(checkpoint)
-    config = reader.config
     issues: list[str] = []
-    text = {**config, **config.get("text_config", {})}
-    for field in ("hidden_size", "num_attention_heads", "num_hidden_layers"):
+    if definition.modality in {"image", "video"}:
+        index_path = checkpoint / "model_index.json"
         try:
-            valid = int(text.get(field, 0)) > 0
-        except (TypeError, ValueError):
-            valid = False
-        if not valid:
-            issues.append(f"checkpoint is missing a valid {field}")
-    if not reader.tensor_names():
-        issues.append("checkpoint contains no tensor metadata")
+            index_bytes = index_path.read_bytes()
+            config = json.loads(index_bytes)
+        except (OSError, json.JSONDecodeError) as error:
+            raise ConfigurationError(
+                f"model {name!r} has no readable Diffusers model_index.json"
+            ) from error
+        layout_digest = hashlib.sha256(index_bytes).hexdigest()
+    else:
+        reader = CheckpointReader(checkpoint)
+        config = reader.config
+        layout_digest = reader.fingerprint
+        text = {**config, **config.get("text_config", {})}
+        for field in ("hidden_size", "num_attention_heads", "num_hidden_layers"):
+            try:
+                valid = int(text.get(field, 0)) > 0
+            except (TypeError, ValueError):
+                valid = False
+            if not valid:
+                issues.append(f"checkpoint is missing a valid {field}")
+        if not reader.tensor_names():
+            issues.append("checkpoint contains no tensor metadata")
     storage_bytes = checkpoint_storage_bytes(checkpoint)
     value_bytes = checkpoint_value_bytes(config)
     parameter_estimate = storage_bytes / value_bytes
@@ -115,7 +131,7 @@ def preflight_checkpoint(
             available_gb = (
                 resource_limit if available_gb is None else min(available_gb, resource_limit)
             )
-        if remote and available_gb is None:
+        if require_known_memory and remote and available_gb is None:
             issues.append(
                 f"worker {worker.name} memory is unknown; configure gpu.memory_gb "
                 "or enable SSH resource discovery"
@@ -130,7 +146,7 @@ def preflight_checkpoint(
         checkpoint=str(checkpoint),
         supported=not issues,
         checkpoint_bytes=storage_bytes,
-        checkpoint_layout_digest=reader.fingerprint,
+        checkpoint_layout_digest=layout_digest,
         estimated_client_peak_bytes=client_peak,
         estimated_role_worker_bytes=role_worker_bytes,
         estimated_grid_weight_bytes=role_worker_bytes * definition.fortress_shares,
