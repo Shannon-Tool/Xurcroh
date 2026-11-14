@@ -24,3 +24,4 @@ def test_remote_ladder_command_preserves_revision_and_persistent_log() -> None:
     smoke = remote_command("/srv/gateway", "a" * 40, smoke=True)
     assert "scripts/fortress/grid_smoke.py" in smoke
     assert "scripts/fortress/run_ladder.py" not in smoke
+    assert "--defer-provider-teardown" in smoke
