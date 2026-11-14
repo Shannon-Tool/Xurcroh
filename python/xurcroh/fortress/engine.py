@@ -153,11 +153,15 @@ class FortressEngine:
                     roles = self._roles()
                     frame_bytes = int(self.workers[0].labels.get("frame_bytes", 16_384))
                     cover_interval = float(self.workers[0].labels.get("cover_interval", 1.0))
+                    seeded_activations = self.workers[0].labels.get(
+                        "seeded_activations", "true"
+                    ).lower() not in {"0", "false", "no"}
                     self._grid_runtime = FortressGridRuntime(
                         roles,
                         identity,
                         frame_bytes=frame_bytes,
                         cover_interval=cover_interval,
+                        seeded_activations=seeded_activations,
                     )
                     clients = {
                         name: self._grid_runtime.client(operation, name)

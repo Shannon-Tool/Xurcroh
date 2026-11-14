@@ -373,7 +373,8 @@ def test_role_transport_reconnects_once_after_timeout() -> None:
     calls = []
     reconnects = []
 
-    def execute(activation, request_id, sequence):
+    def execute(activation, request_id, sequence, activation_seed=None):
+        del activation_seed
         calls.append(sequence)
         if len(calls) == 1:
             raise ValueError("QUIC connection failed: timed out")
@@ -384,3 +385,17 @@ def test_role_transport_reconnects_once_after_timeout() -> None:
     assert transport.execute(torch.tensor([1]), "request", 3) == ([7], 10, 20)
     assert calls == [3, 3]
     assert reconnects == [True]
+
+
+def test_seeded_activation_wire_format_expands_exact_share() -> None:
+    from types import SimpleNamespace
+
+    from xurcroh.fortress.arithmetic import _seeded_uniform
+
+    worker = FortressRoleWorker.__new__(FortressRoleWorker)
+    worker.artifacts = {"op": SimpleNamespace(matrix=torch.zeros(2, 3, dtype=torch.int64))}
+    seed = bytes(range(32))
+    payload = b"XF2\x01\x02\x00op" + seed
+    name, activation = worker._decode_activation(payload)
+    assert name == "op"
+    assert torch.equal(activation, _seeded_uniform(seed, (3,)))

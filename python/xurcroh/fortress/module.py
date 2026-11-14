@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import secrets
 from typing import TYPE_CHECKING
 
 import torch
 
-from xurcroh.fortress.arithmetic import quantize_activations, signed_field, split_secret
+from xurcroh.fortress.arithmetic import (
+    activation_row_seed,
+    quantize_activations,
+    seeded_split_secret,
+    signed_field,
+    split_secret,
+)
 from xurcroh.fortress.compiler import (
     CompiledOperation,
     apply_input_basis,
@@ -46,11 +53,36 @@ class FortressLinear(torch.nn.Module):
         flattened = hidden.reshape(-1, hidden.shape[-1])
         transformed = apply_input_basis(operation, flattened)
         activation = quantize_activations(transformed, bits=self.activation_bits)
-        shares = split_secret(activation.values, count=len(operation.shares)).shares
+        activation_seed = (
+            secrets.token_bytes(32)
+            if self.grid_client is not None and self.grid_client.seeded_activations
+            else None
+        )
+        if activation_seed is None:
+            shares = split_secret(activation.values, count=len(operation.shares)).shares
+        else:
+            vector_input = activation.values.ndim == 1
+            rows = activation.values.reshape(-1, activation.values.shape[-1])
+            row_grids = [
+                seeded_split_secret(
+                    row,
+                    seed=activation_row_seed(activation_seed, index),
+                    count=len(operation.shares),
+                ).shares
+                for index, row in enumerate(rows)
+            ]
+            shares = [
+                torch.stack([grid[index] for grid in row_grids])
+                for index in range(len(operation.shares))
+            ]
+            if vector_input:
+                shares = [share[0] for share in shares]
         product = (
             execute_native_grid(shares, operation.shares)
             if self.grid_client is None
-            else self.grid_client.execute(shares, request_id=self.name)
+            else self.grid_client.execute(
+                shares, request_id=self.name, activation_seed=activation_seed
+            )
         )
         scales = activation.scales.unsqueeze(-1)
         result = signed_field(product).to(torch.float64) * scales * operation.quantized.scale
