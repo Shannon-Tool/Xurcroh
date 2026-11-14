@@ -67,6 +67,12 @@ Start the controller with:
 
 Validate YAML locally with the deployment integration tests. `kubectl apply` is a Stage Two infrastructure action and has not been run.
 
+## SDK-managed Fortress grids
+
+For the current Fortress text path, provide four SSH-configured CUDA hosts for the default two-share grid and select `engine="fortress"`. The public client automatically discovers memory, resolves a pinned hub checkpoint when `allow_download=true`, compiles recipient-sealed role artifacts, deploys the committed source archive, bootstraps the locked CUDA environment, generates deployment-scoped mutual TLS identities, and starts `xurcroh.fortress.worker_cli` over authenticated QUIC. No global model key or plaintext checkpoint is sent to workers. Each model receives isolated role packages and ports on shared hosts. Use the client as a context manager so owned role processes, local private artifacts, and remote deployment directories are cleaned up. The complete Gemma E2B example is in `README.md`; resource checks are available through `client.preflight()` and `await AsyncXurcroh.preflight()`.
+
+Provisioning requires a clean committed source checkout so the remote archive exactly matches the client revision. It does not automatically provision non-Fortress models or multimodal diffusion towers. Existing initialized Fortress endpoints remain supported for separately managed deployments. Shared grid transport uses one connection and encrypted session per role, per-session key rotation, bounded session ownership, and grid-rate cover traffic rather than per-operation threads and connections.
+
 ## Encrypted dense stages
 
 Compile the checkpoint on a trusted host with a separate client-boundary key and one X25519 recipient identity per worker. Distribute only each stage's `.xurcroh` shard, its recipient-sealed key envelope, and that worker's private identity. Retain the boundary shard and client key on the trusted client. Start each worker with its own identity file and an optimized engine:
