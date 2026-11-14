@@ -12,7 +12,7 @@
 
 Orthogonal and contragredient transformations are computational obfuscation, not FHE, secret sharing, or a zero-knowledge proof. They may preserve norms, inner products, attention patterns, or other invariants. Public-weight Procrustes and norm attacks are included to demonstrate this boundary. Colluding workers, malicious computation, endpoint metadata, global timing, power/cache/TLB channels, physical bus attacks, and compromised attestation roots require separate mitigations.
 
-PRG-based masking is not an information-theoretic one-time pad. Constant-load MoE padding makes packet sizes uniform but does not eliminate timing, TLB, cache, power, or implementation side channels. The uniform page-touch path is a mitigation to measure, not a proven elimination.
+PRG-based masking is not an information-theoretic one-time pad. Raw uniformly random Fortress shares can provide information-theoretic hiding only under their independence and non-collusion assumptions. The default seeded activation transport provides computational hiding instead; fresh operation, row, and role-index seed derivation does not change that classification. Constant-load MoE padding makes packet sizes uniform but does not eliminate timing, TLB, cache, power, or implementation side channels. The uniform page-touch path is a mitigation to measure, not a proven elimination.
 
 Independent sanitizer kernels cannot prove every physical register or SRAM location is erased. Python/framework copies and host root/hypervisor access limit physical-erasure claims. dm-verity verifies stored artifacts, not runtime computation.
 
