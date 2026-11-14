@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import secrets
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -17,6 +17,7 @@ from xurcroh.fortress.compiler import (
     apply_input_basis,
     apply_output_basis,
 )
+from xurcroh.models.moe import ConstantLoadDispatcher, constant_load_plan
 
 if TYPE_CHECKING:
     from xurcroh.fortress.transport import FortressRoleClient
@@ -106,6 +107,62 @@ class FortressLinear(torch.nn.Module):
         return result.reshape(*original_shape[:-1], result.shape[-1])
 
 
+class FortressExperts(torch.nn.Module):
+    gate_proj: torch.nn.ModuleList
+    up_proj: torch.nn.ModuleList
+    down_proj: torch.nn.ModuleList
+
+    def __init__(
+        self,
+        original: Any,
+        prefix: str,
+        operations: dict[str, CompiledOperation],
+        grid_clients: dict[str, FortressRoleClient] | None,
+    ) -> None:
+        super().__init__()
+        self.num_experts = int(original.num_experts)
+        self.act_fn = original.act_fn
+        for projection in ("gate_proj", "up_proj", "down_proj"):
+            modules = []
+            for expert in range(self.num_experts):
+                name = f"{prefix}.{expert}.{projection}"
+                if name not in operations:
+                    raise ValueError(f"missing Fortress expert operation: {name}")
+                modules.append(
+                    FortressLinear(
+                        name,
+                        operations[name],
+                        grid_client=None if grid_clients is None else grid_clients[name],
+                    )
+                )
+            setattr(self, projection, torch.nn.ModuleList(modules))
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        top_k_index: torch.Tensor,
+        top_k_weights: torch.Tensor,
+    ) -> torch.Tensor:
+        if hidden_states.ndim != 2 or top_k_index.shape[0] != hidden_states.shape[0]:
+            raise ValueError("Fortress expert input and routing dimensions do not match")
+        top_k = top_k_index.shape[1]
+        constant_load = hidden_states.shape[0] * top_k
+        plan = constant_load_plan(
+            top_k_index,
+            top_k_weights,
+            expert_count=self.num_experts,
+            constant_load=constant_load,
+        )
+        outputs = []
+        for expert in range(self.num_experts):
+            selected = hidden_states[plan.token_indices[expert]]
+            gate = self.gate_proj[expert](selected)
+            up = self.up_proj[expert](selected)
+            outputs.append(self.down_proj[expert](self.act_fn(gate) * up))
+        dispatcher = ConstantLoadDispatcher(top_k=top_k, constant_load=constant_load)
+        return dispatcher.combine(plan, torch.stack(outputs))
+
+
 def replace_linear_layers(
     module: torch.nn.Module,
     operations: dict[str, CompiledOperation],
@@ -116,7 +173,13 @@ def replace_linear_layers(
 ) -> torch.nn.Module:
     for name, child in module.named_children():
         qualified = f"{prefix}{name}"
-        if isinstance(child, torch.nn.Linear):
+        if type(child).__name__ in {"Qwen3MoeExperts", "Gemma4TextExperts"}:
+            setattr(
+                module,
+                name,
+                FortressExperts(child, qualified, operations, grid_clients),
+            )
+        elif isinstance(child, torch.nn.Linear):
             operation_name = next(
                 (
                     candidate
