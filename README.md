@@ -24,6 +24,43 @@ client.close()
 
 Synchronous, asynchronous, streaming, multimodal, advanced cluster, and security configuration are documented in `docs/sdk.md`. A requested model must resolve to a real execution adapter; Xurcroh never returns generated-looking canned responses. Deployment and repeatable JSON benchmarks are documented in `docs/deployment.md` and `docs/benchmarking.md`.
 
+## Protected multi-host quickstart
+
+From a committed source checkout, four SSH-reachable CUDA workers can be provisioned automatically. The trusted client downloads the pinned checkpoint, compiles encrypted role artifacts, starts the workers, and tears them down when the context exits:
+
+```python
+from Xurcroh import Xurcroh
+
+workers = [
+    {
+        "name": f"gpu-{index}",
+        "host": f"10.0.0.{10 + index}",
+        "ssh": {"username": "ubuntu", "key_path": "~/.ssh/id_ed25519"},
+    }
+    for index in range(4)
+]
+
+with Xurcroh(
+    cluster=workers,
+    model_path={
+        "gemma": {
+            "path": "google/gemma-4-E2B-it",
+            "revision": "4adf15748de9e1a0097b6274cee9c15836c41c37",
+            "engine": "fortress",
+            "allow_download": True,
+        }
+    },
+) as client:
+    response = client.chat.completions.create(
+        model="gemma",
+        messages=[{"role": "user", "content": "Hello!"}],
+        max_tokens=128,
+    )
+    print(response.choices[0].message.content)
+```
+
+Use a trusted gateway with sufficient host memory and disk for checkpoint compilation. `client.preflight()` reports measured checkpoint size and resource issues before inference. This is the implemented deployment interface, not a claim that the official Gemma checkpoint has completed physical multi-host validation.
+
 ## Development
 
 ```bash

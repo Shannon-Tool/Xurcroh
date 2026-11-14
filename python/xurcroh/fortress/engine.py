@@ -35,6 +35,7 @@ class FortressEngine:
             "fortress-local" if workers[0].endpoint == "local://cpu" else "fortress-grid"
         )
         self._tokenizer: Any = None
+        self._stop_token_ids: set[int] = set()
         self._compiled: FortressCheckpoint | None = None
         self._combiner: FortressCombiner | None = None
         self._clients: dict[str, FortressRoleClient] = {}
@@ -102,7 +103,7 @@ class FortressEngine:
             if self._combiner is not None:
                 return
             try:
-                from transformers import AutoTokenizer
+                from transformers import AutoTokenizer, GenerationConfig
 
                 options = {
                     "local_files_only": not self.definition.allow_download,
@@ -110,6 +111,23 @@ class FortressEngine:
                     "revision": self.definition.revision,
                 }
                 self._tokenizer = AutoTokenizer.from_pretrained(self.definition.path, **options)
+                try:
+                    generation = GenerationConfig.from_pretrained(
+                        self.definition.path,
+                        local_files_only=not self.definition.allow_download,
+                        trust_remote_code=False,
+                        revision=self.definition.revision or "main",
+                    )
+                    eos_ids = generation.eos_token_id
+                except OSError:
+                    eos_ids = None
+                if eos_ids is None:
+                    eos_ids = self._tokenizer.eos_token_id
+                self._stop_token_ids = {
+                    int(value)
+                    for value in (eos_ids if isinstance(eos_ids, list) else [eos_ids])
+                    if value is not None
+                }
                 self._compiled = compile_fortress_checkpoint(
                     self.definition.path,
                     seed=self.definition.fortress_seed,
@@ -144,7 +162,14 @@ class FortressEngine:
                 if compiled.model is not None and clients:
                     from xurcroh.fortress.module import connect_grid_clients
 
-                    connect_grid_clients(compiled.model, clients)
+                    model_clients = {
+                        **clients,
+                        **{
+                            name.replace("model.language_model.", "model.", 1): client
+                            for name, client in clients.items()
+                        },
+                    }
+                    connect_grid_clients(compiled.model, model_clients)
                 self._combiner = FortressCombiner(
                     layers=list(compiled.layers),
                     operations=compiled.operations,
@@ -270,7 +295,7 @@ class FortressEngine:
                 shared = getattr(outputs, "shared_kv_states", None)
                 current = next_token
                 yield GenerationEvent(delta=delta)
-                if token_id == self._tokenizer.eos_token_id:
+                if token_id in self._stop_token_ids:
                     finish_reason = "stop"
                     break
                 if stops and any(text.endswith(stop) for stop in stops):
@@ -331,7 +356,7 @@ class FortressEngine:
                     delta = updated_text[len(text) :]
                     text = updated_text
                     yield GenerationEvent(delta=delta)
-                    if token_id == self._tokenizer.eos_token_id:
+                    if token_id in self._stop_token_ids:
                         finish_reason = "stop"
                         break
                     if stops and any(text.endswith(stop) for stop in stops):
@@ -371,3 +396,4 @@ class FortressEngine:
         self._combiner = None
         self._compiled = None
         self._tokenizer = None
+        self._stop_token_ids.clear()

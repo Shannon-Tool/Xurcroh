@@ -16,7 +16,7 @@ For diffusion/video, include text encoders, transformer weights, VAE/Tiny AutoEn
 | Llama 70B BF16 | 2–4 × 80 GB GPUs on independent hosts; TP only inside a host group | About 140 GB weights before KV/workspaces | Stage parity, long-context KV, WAN recovery |
 | Qwen 235B MoE, FP8 where supported | 4 × 80 GB pipeline stages; EP/TP in high-bandwidth groups | About 235 GB raw FP8 weights plus router/expert workspaces | Routing parity, dropless padding, cache/timing review |
 | DeepSeek V3-class MoE | At least 16 × 80 GB GPUs, e.g. two 8-GPU high-bandwidth hosts, adjusted for actual dtype and stages | FP8 weights alone are hundreds of GB; full BF16 is much larger | Checkpoint-specific memory plan, EP/MLA parity, failure isolation |
-| Gemma 12B / Qwen 27B VLM | 1 × 80 GB GPU plus a trusted client boundary host | Weights, vision/audio encoders, long multimodal context | Official-config text/image/audio parity and chaff masks |
+| Gemma 4 E2B text / Qwen 27B VLM | Four Fortress role workers plus a trusted high-memory client gateway; use `client.preflight()` for per-role estimates | Text decoder weights, shared-KV state, transport buffers, and client boundary/model state | Official-config text parity first; image/audio support is a separate gate |
 | Flux / Qwen-Image | 1 × 48–80 GB GPU plus client decoder | Text encoders, diffusion transformer, latent and VAE workspaces | Denoising/reference quality and editing parity |
 | Wan 14B-class video | 1 × 80 GB GPU for initial small-context tests; scale sequence parallelism after profiling | Temporal activations and text/VAE components can exceed weight memory | Frame count, temporal quality, sequence-parallel parity |
 
