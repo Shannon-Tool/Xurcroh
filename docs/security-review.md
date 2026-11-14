@@ -22,6 +22,7 @@
 | Direct provider UDP was unavailable | Optional loopback-only SSH datagram relay with real local QUIC coverage; no physical pass claimed |
 | Idle relay connections could fail permanently | One bounded reconnect for connection/timeout errors with the same stateless role request |
 | Documentation retained the removed modular-ring design | Prime-field decision and evidence updated in `docs/architecture/decisions.md` |
+| Release verification did not check SBOM content or constrain artifact paths | Version-2 manifests verify the SBOM digest and reject path/symlink escapes; deterministic SBOM UUIDs and a standalone verification CLI are tested |
 
 ## Per-threat comparison
 

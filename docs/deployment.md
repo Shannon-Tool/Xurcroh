@@ -93,3 +93,23 @@ Use `benchmarks/cluster.example.yaml` as a schema example. Set the worker creden
 ## Shutdown and failure behavior
 
 Clients should be context managers. Closing cancels active work and releases model resources. Workers close their runtime at FastAPI lifespan shutdown. Registration expiry removes unhealthy workers from controller topology. Request admission is bounded per model. These local lifecycle tests do not prove recovery from physical host failure or WAN partition.
+
+## Release and transparency verification
+
+Create a deterministic CycloneDX SBOM and sign release artifacts with a protected Ed25519 key:
+
+```bash
+.venv/bin/python scripts/release.py dist \
+  --project . --sbom dist-sbom.json --signing-key /secure/release-ed25519.key
+```
+
+Verify the resulting version-2 manifest on a trusted host:
+
+```bash
+.venv/bin/python scripts/verify_release.py dist/release-manifest.json \
+  --public-key <release-public-key-hex>
+```
+
+Version 2 binds the SBOM path and digest, validates every artifact digest, and rejects absolute paths, parent traversal, and symlink escapes. The verifier requires the referenced SBOM to exist at its recorded trusted path. Store signing keys outside the release directory and never commit them.
+
+A transparency service can be run with `python -m xurcroh.transparency_cli` using an indirect write-token environment variable, persistent storage, and TLS certificate/key options. Clients must pin the Ed25519 public key and required image measurements; `scripts/verify_transparency.py` verifies the signed hash chain. A publicly hosted log is an external deployment gate and is not claimed from local tests.
