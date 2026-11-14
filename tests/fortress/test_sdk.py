@@ -134,6 +134,8 @@ def test_public_sdk_executes_remote_fortress_grid(
         assert metrics["fortress_bytes_sent"] > 0
         assert metrics["fortress_bytes_received"] > 0
         assert metrics["fortress_role_requests"] > 0
+        assert metrics["fortress_reconnections"] >= 0
+        assert metrics["fortress_cover_failures"] >= 0
     finally:
         for worker in workers:
             worker.close()

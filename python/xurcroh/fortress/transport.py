@@ -307,6 +307,7 @@ class _RoleTransport:
         self._call_lock = threading.Lock()
         self._execution_lock = connection.call_lock if connection is not None else self._call_lock
         self._frame_sizes: set[int] = set()
+        self.reconnect_count = 0
         self.observations: list[tuple[float, bool]] = []
 
     def _connect(self) -> None:
@@ -346,6 +347,7 @@ class _RoleTransport:
                     marker in str(error).lower() for marker in ("timed out", "connection", "closed")
                 ):
                     raise
+                self.reconnect_count += 1
                 self._connect()
                 result = self._execute(activation, request_id, sequence, activation_seed)
         self.observations.append((time.perf_counter() - started, cover))
@@ -560,6 +562,7 @@ class FortressGridRuntime:
         self._lock = threading.Lock()
         self._closed = False
         self._cover_error: Exception | None = None
+        self.cover_failure_count = 0
         self._cover_stop = threading.Event()
         self._cover_thread = threading.Thread(target=self._cover_loop, daemon=True)
         self._cover_thread.start()
@@ -613,7 +616,9 @@ class FortressGridRuntime:
                 client._execute_token(shares, f"cover:{uuid.uuid4().hex}", 0, cover=True)
             except Exception as error:
                 client._cover_error = error
+                client.cover_failure_count += 1
                 self._cover_error = error
+                self.cover_failure_count += 1
                 return
 
     def close(self) -> None:
@@ -689,6 +694,7 @@ class FortressRoleClient:
         self._cover_interval = cover_interval
         self._cover_stop = threading.Event()
         self._cover_error: Exception | None = None
+        self.cover_failure_count = 0
         self._quarantined: RoleExecutionError | None = None
         self._cover_thread = threading.Thread(target=self._cover_loop, daemon=True)
         if runtime is None:
@@ -768,6 +774,7 @@ class FortressRoleClient:
                 self._execute_token(shares, f"cover:{uuid.uuid4().hex}", 0, cover=True)
             except Exception as error:
                 self._cover_error = error
+                self.cover_failure_count += 1
                 return
 
     def execute(

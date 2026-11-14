@@ -77,7 +77,7 @@ Chat messages accept plain text or typed content parts: `{"type": "text", "text"
 
 ## Operational metrics
 
-`client.metrics()` returns aggregate started, completed, failed, timed-out, cancelled, and total-duration counters. `await AsyncXurcroh.metrics()` provides the same snapshot asynchronously. Workers expose `/metrics`. These values exclude prompts, tokens, media, credentials, and circuit secrets; restrict metric endpoint access because aggregate activity can still reveal operational behavior.
+`client.metrics()` returns aggregate started, completed, failed, timed-out, cancelled, and total-duration counters. Fortress grids additionally report request/byte totals, reconnections, cover traffic, and cover-failure counts without operation names, prompts, or endpoint identifiers. `await AsyncXurcroh.metrics()` provides the same snapshot asynchronously. Workers expose `/metrics`. These values exclude prompts, tokens, media, credentials, and circuit secrets; restrict metric endpoint access because aggregate activity can still reveal operational behavior.
 
 ## Errors
 
