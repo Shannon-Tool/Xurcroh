@@ -34,6 +34,7 @@ def test_cuda_package_is_pinned_and_records_hardware() -> None:
     assert 'RUSTUP_HOME="${XURCROH_RUSTUP_HOME:-$ROOT/.rustup}"' in bootstrap
     assert 'if [[ ! -x "$CARGO_HOME/bin/cargo" ]]' in bootstrap
     assert 'export RUSTUP_TOOLCHAIN="1.99.1"' in bootstrap
+    assert "for attempt in 1 2 3 4 5" in bootstrap
     forensic = (ROOT / "scripts/fortress/cuda_forensics.sh").read_text()
     assert "export LD_LIBRARY_PATH=" in forensic
     assert "/usr/lib/x86_64-linux-gnu" in forensic

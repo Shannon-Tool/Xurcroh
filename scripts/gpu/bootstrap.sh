@@ -10,10 +10,20 @@ export CARGO_HOME="${XURCROH_CARGO_HOME:-$ROOT/.cargo}"
 export RUSTUP_HOME="${XURCROH_RUSTUP_HOME:-$ROOT/.rustup}"
 export PATH="$CARGO_HOME/bin:$PATH"
 if [[ ! -x "$CARGO_HOME/bin/cargo" ]]; then
-  curl --proto '=https' --tlsv1.2 --retry 3 --retry-delay 5 --retry-all-errors -sSf https://sh.rustup.rs \
-    | sh -s -- -y --profile minimal --default-toolchain 1.99.1
+  for attempt in 1 2 3 4 5; do
+    if curl --proto '=https' --tlsv1.2 --retry 3 --retry-delay 5 --retry-all-errors -sSf https://sh.rustup.rs \
+      | sh -s -- -y --profile minimal --default-toolchain 1.99.1; then
+      break
+    fi
+    if [[ "$attempt" == "5" ]]; then
+      echo "Rust toolchain installation failed after five attempts" >&2
+      exit 1
+    fi
+    sleep "$((attempt * 5))"
+  done
 fi
 export RUSTUP_TOOLCHAIN="1.99.1"
+[[ -x "$CARGO_HOME/bin/cargo" ]] || { echo "pinned Cargo executable is missing" >&2; exit 1; }
 IMAGE_PACKAGES=0
 if "$PYTHON" - <<'PY'
 import importlib.metadata
