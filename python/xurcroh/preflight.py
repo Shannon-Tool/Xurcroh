@@ -152,6 +152,8 @@ def preflight_checkpoint(
     for worker in workers:
         available_gb = worker.gpu.memory_gb if worker.gpu is not None else None
         resource_limit = worker.resources.max_gpu_memory_gb
+        if available_gb is None and worker.labels.get("device") == "cpu":
+            resource_limit = worker.resources.max_host_memory_gb
         if resource_limit is not None:
             available_gb = (
                 resource_limit if available_gb is None else min(available_gb, resource_limit)
