@@ -75,6 +75,7 @@ def test_remote_fortress_requires_discovered_memory(tiny_llama_path: Path) -> No
         "tiny",
         definition,
         [WorkerConfig(name="worker", endpoint="quic://worker:9444")],
+        require_known_memory=True,
     )
     assert report.supported is False
     assert any("memory is unknown" in issue for issue in report.issues)
