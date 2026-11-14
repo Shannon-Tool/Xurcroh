@@ -302,3 +302,41 @@ def test_automatic_media_provisioning_uses_diffusers_component(
     assert any(deployment._roles[0].package.iterdir())
     assert deployment.workers["tiny-image"][0].endpoint == "quic://10.0.0.10:9444"
     deployment.close()
+
+
+def test_managed_datagram_tunnel_rewrites_endpoints_and_cleans_relay(
+    tiny_llama_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    executor = RecordingExecutor()
+    cluster = provisioned_cluster().model_copy(update={"datagram_tunnel": True})
+    definition = ModelDefinition(path=str(tiny_llama_path), engine="fortress", fortress_seed=731)
+    deployment = FortressDeployment(
+        cluster,
+        (("tiny", definition),),
+        workspace=tmp_path / "deployment",
+        executor_factory=lambda: executor,
+    )
+    monkeypatch.setattr(deployment, "_source_archive", lambda: b"source-archive")
+    closed = []
+
+    def start(workers, remote_root, sdk, output, *, target_port, tunnel_name):
+        assert target_port == 9444
+        assert tunnel_name == "relay-0"
+        for worker, configured in zip(workers, sdk["cluster"], strict=True):
+            worker["datagram_tunnel"] = {
+                "local_relay_pid": 99999999,
+                "ssh_forward_pid": 99999998,
+                "remote_pid_path": f"{remote_root}/{tunnel_name}.pid",
+            }
+            configured.endpoint = "quic://127.0.0.1:12000"
+
+    monkeypatch.setattr("xurcroh.fortress.datagram_deploy.start_datagram_tunnels", start)
+    monkeypatch.setattr(
+        "xurcroh.fortress.datagram_deploy.close_datagram_tunnels",
+        lambda workers: closed.append(workers),
+    )
+    deployment.start()
+    assert deployment.workers["tiny"][0].endpoint == "quic://127.0.0.1:12000"
+    deployment.close()
+    assert len(closed) == 1
+    assert any("relay-0.pid" in command for _, command in executor.commands)

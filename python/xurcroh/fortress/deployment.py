@@ -173,6 +173,7 @@ class FortressDeployment:
         self._remote_root = f"{REMOTE_ROOT}/xurcroh-fortress-{self._deployment_id}"
         self._roles: list[RoleDeployment] = []
         self._workers: dict[str, list[WorkerConfig]] = {}
+        self._tunnel_workers: list[list[dict[str, Any]]] = []
         self._started = False
         self._closed = False
         self._lock = threading.RLock()
@@ -404,6 +405,40 @@ class FortressDeployment:
             }
             self._workers.setdefault(role.model, []).append(worker)
 
+    def _tunnel_worker(self, worker: WorkerConfig) -> dict[str, Any]:
+        assert worker.host is not None and worker.ssh is not None
+        if worker.ssh.password is not None or worker.ssh.password_env is not None:
+            raise ConfigurationError(
+                "SSH datagram forwarding requires a key or agent, not password authentication"
+            )
+        return {
+            "name": worker.name,
+            "host": worker.host,
+            "ssh_user": worker.ssh.username,
+            "ssh_port": worker.ssh.port,
+            "ssh_key": worker.ssh.key_path,
+            "known_hosts": worker.ssh.known_hosts_path,
+        }
+
+    def _enable_tunnels(self) -> None:
+        if not self.cluster.datagram_tunnel:
+            return
+        from xurcroh.fortress.datagram_deploy import start_datagram_tunnels
+
+        for model_index, (name, _) in enumerate(self.models):
+            generated = self._workers[name]
+            tunnel_workers = [self._tunnel_worker(worker) for worker in self.cluster.workers]
+            sdk = {"cluster": generated}
+            start_datagram_tunnels(
+                tunnel_workers,
+                self._remote_root,
+                sdk,
+                self._workspace / "tunnels" / f"model-{model_index}",
+                target_port=9444 + model_index,
+                tunnel_name=f"relay-{model_index}",
+            )
+            self._tunnel_workers.append(tunnel_workers)
+
     def start(self) -> FortressDeployment:
         with self._lock:
             if self._closed:
@@ -440,6 +475,7 @@ class FortressDeployment:
                 for role in self._roles:
                     self._start_role(role)
                 self._publish_workers()
+                self._enable_tunnels()
                 self._started = True
                 return self
             except BaseException as error:
@@ -488,6 +524,30 @@ class FortressDeployment:
         failures: list[str] = []
         failed_workers: set[str] = set()
         if executor is not None:
+            from xurcroh.fortress.datagram_deploy import close_datagram_tunnels
+
+            configured = {worker.name: worker for worker in self.cluster.workers}
+            for group in self._tunnel_workers:
+                try:
+                    close_datagram_tunnels(group)
+                except Exception as error:
+                    failures.append(f"local relay cleanup failed: {error}")
+                for tunneled in group:
+                    tunnel = tunneled.get("datagram_tunnel", {})
+                    pid_path = tunnel.get("remote_pid_path")
+                    worker = configured.get(tunneled["name"])
+                    if pid_path is None or worker is None:
+                        continue
+                    try:
+                        quoted = shlex.quote(str(pid_path))
+                        executor.run(
+                            worker,
+                            f"if test -f {quoted}; then kill $(cat {quoted}) "
+                            "2>/dev/null || true; fi",
+                        )
+                    except Exception as error:
+                        failures.append(f"{worker.name}: relay cleanup failed: {error}")
+                        failed_workers.add(worker.name)
             for role in roles:
                 try:
                     self._stop_role(role)
