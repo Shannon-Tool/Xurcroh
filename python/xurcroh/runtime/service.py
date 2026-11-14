@@ -53,6 +53,8 @@ class RequestHandle:
     request_id: str
     cancelled: threading.Event
     model: str
+    executing: threading.Event
+    finished: threading.Event
 
 
 class RuntimeService:
@@ -204,6 +206,8 @@ class RuntimeService:
             request_id=request_id,
             cancelled=threading.Event(),
             model=request.model,
+            executing=threading.Event(),
+            finished=threading.Event(),
         )
         with self._lock:
             self._ensure_open()
@@ -278,6 +282,7 @@ class RuntimeService:
         try:
             self._admit(request.model, timeout)
             admitted = True
+            handle.executing.set()
             summary = None
             for event in engine.generate(request, cancelled=handle.cancelled, timeout=timeout):
                 if event.summary is not None:
@@ -312,10 +317,12 @@ class RuntimeService:
             self._record_error(error)
             raise
         finally:
+            handle.executing.clear()
             if admitted:
                 self._release(request.model)
             with self._lock:
                 self._requests.pop(handle.request_id, None)
+            handle.finished.set()
 
     def stream(self, request: CompletionRequest) -> Iterator[ChatCompletionChunk]:
         self._ensure_open()
@@ -342,13 +349,25 @@ class RuntimeService:
             raise
 
         def cleanup() -> None:
+            handle.executing.clear()
             self._release(request.model)
             with self._lock:
                 self._requests.pop(handle.request_id, None)
+            handle.finished.set()
 
         def generate() -> Iterator[ChatCompletionChunk]:
+            iterator = engine.generate(request, cancelled=handle.cancelled, timeout=timeout)
             try:
-                for event in engine.generate(request, cancelled=handle.cancelled, timeout=timeout):
+                while True:
+                    if handle.cancelled.is_set():
+                        raise RequestCancelledError(f"request {handle.request_id} was cancelled")
+                    handle.executing.set()
+                    try:
+                        event = next(iterator)
+                    except StopIteration:
+                        break
+                    finally:
+                        handle.executing.clear()
                     if event.summary is None:
                         yield ChatCompletionChunk(
                             id=completion_id,
@@ -389,6 +408,8 @@ class RuntimeService:
             except Exception as error:
                 self._record_error(error)
                 raise
+            finally:
+                handle.executing.clear()
 
         return ManagedStream(generate(), cleanup)
 
@@ -413,6 +434,7 @@ class RuntimeService:
         try:
             self._admit(request.model, timeout)
             admitted = True
+            handle.executing.set()
             response = engine.generate_image(
                 request,
                 request_id=handle.request_id,
@@ -426,10 +448,12 @@ class RuntimeService:
             self._record_error(error)
             raise
         finally:
+            handle.executing.clear()
             if admitted:
                 self._release(request.model)
             with self._lock:
                 self._requests.pop(handle.request_id, None)
+            handle.finished.set()
 
     def generate_video(self, request: VideoGenerationRequest) -> VideoGenerationResponse:
         self._ensure_open()
@@ -452,6 +476,7 @@ class RuntimeService:
         try:
             self._admit(request.model, timeout)
             admitted = True
+            handle.executing.set()
             response = engine.generate_video(
                 request,
                 request_id=handle.request_id,
@@ -465,10 +490,12 @@ class RuntimeService:
             self._record_error(error)
             raise
         finally:
+            handle.executing.clear()
             if admitted:
                 self._release(request.model)
             with self._lock:
                 self._requests.pop(handle.request_id, None)
+            handle.finished.set()
 
     def cancel(self, request_id: str) -> bool:
         with self._lock:
@@ -480,12 +507,22 @@ class RuntimeService:
 
     def close(self) -> None:
         with self._lock:
-            if self._closed:
+            if self._closed and not self._engines and self._deployment is None:
                 return
             self._closed = True
-            for handle in self._requests.values():
+            handles = list(self._requests.values())
+            for handle in handles:
                 handle.cancelled.set()
+            executing = [handle for handle in handles if handle.executing.is_set()]
             engines = list(self._engines.values())
+        deadline = time.monotonic() + self.cluster.request_timeout_seconds + 5
+        for handle in executing:
+            if not handle.finished.wait(max(0, deadline - time.monotonic())):
+                raise RequestTimeoutError(
+                    f"shutdown timed out waiting for request {handle.request_id}; "
+                    "resources remain available for a close retry"
+                )
+        with self._lock:
             for engine in engines:
                 if isinstance(engine, FortressEngine):
                     self._fortress_metrics.update(engine.transport_metrics())
