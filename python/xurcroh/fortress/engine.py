@@ -532,6 +532,12 @@ class FortressEngine:
             "fortress_cover_requests": sum(client.cover_request_count for client in clients),
             "fortress_cover_bytes_sent": sum(client.cover_bytes_sent for client in clients),
             "fortress_cover_bytes_received": sum(client.cover_bytes_received for client in clients),
+            "fortress_reconnections": sum(
+                transport.reconnect_count
+                for client in clients
+                for transport in client._transports.values()
+            ),
+            "fortress_cover_failures": sum(client.cover_failure_count for client in clients),
         }
 
     def close(self) -> None:

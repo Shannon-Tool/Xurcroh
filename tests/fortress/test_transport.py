@@ -369,6 +369,7 @@ def test_role_transport_reconnects_once_after_timeout() -> None:
     transport._call_lock = threading.Lock()
     transport._execution_lock = transport._call_lock
     transport._connection = None
+    transport.reconnect_count = 0
     transport.observations = []
     calls = []
     reconnects = []
@@ -385,6 +386,7 @@ def test_role_transport_reconnects_once_after_timeout() -> None:
     assert transport.execute(torch.tensor([1]), "request", 3) == ([7], 10, 20)
     assert calls == [3, 3]
     assert reconnects == [True]
+    assert transport.reconnect_count == 1
 
 
 def test_seeded_activation_wire_format_expands_exact_share() -> None:
