@@ -35,10 +35,10 @@ The implementation uses one importable `python/xurcroh` package instead of dupli
 
 ## ADR-007: Checkpoint-driven model architecture detection
 
-Live checkpoint metadata on 2026-11-10 contradicts two blueprint assumptions. `Qwen/Qwen3.8-27B` declares `model_type=qwen3_5` and `Qwen3_5ForConditionalGeneration`, 24 query heads with head dimension 256, 16 linear key heads and 48 linear value heads, and an empty `deepstack_visual_indexes` list. `google/gemma-4-12B-it` declares 16 query heads, head dimension 256, global head dimension 512, and tied embeddings rather than the blueprint's 24 heads at dimension 160. Adapters therefore resolve behavior from a pinned checkpoint's `config.json` and revision, validate required fields explicitly, and never silently substitute the blueprint constants. Sources:
+Live checkpoint metadata contradicts blueprint assumptions. `Qwen/Qwen3.8-27B` declares `model_type=qwen3_5`, `Qwen3_5ForConditionalGeneration`, 24 query heads with head dimension 256, 16 linear key heads and 48 linear value heads, and an empty `deepstack_visual_indexes` list. The verified `google/gemma-4-E2B-it` checkpoint declares 35 text layers, eight query heads, one KV head, head dimension 256, and 20 shared-KV layers. Fortress text execution constructs only `Gemma4ForCausalLM` from `text_config`, remaps `model.language_model` checkpoint names, and does not allocate the vision/audio towers. Adapters resolve behavior from a pinned checkpoint's `config.json` and revision, validate required fields explicitly, and never silently substitute blueprint constants. Sources:
 
 - https://huggingface.co/Qwen/Qwen3.8-27B/raw/main/config.json
-- https://huggingface.co/google/gemma-4-12B-it/raw/main/config.json
+- https://huggingface.co/google/gemma-4-E2B-it/raw/4adf15748de9e1a0097b6274cee9c15836c41c37/config.json
 
 ## ADR-008: Public SDK and production boundaries
 

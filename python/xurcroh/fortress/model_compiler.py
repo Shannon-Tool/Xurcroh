@@ -324,41 +324,28 @@ def compile_fortress_checkpoint(
         media_projections["vision"] = vision
     if audio is not None:
         media_projections["audio"] = audio
-    from transformers import AutoModelForCausalLM, AutoModelForMultimodalLM
+    from transformers import AutoModelForCausalLM
     from transformers.models.auto.configuration_auto import CONFIG_MAPPING
 
     model = None
     if load_model and reader.config.get("model_type") in CONFIG_MAPPING:
-        loader = (
-            AutoModelForMultimodalLM
-            if reader.config.get("model_type") in {"gemma4", "qwen3_5"}
-            else AutoModelForCausalLM
-        )
-        model = loader.from_pretrained(
-            checkpoint,
-            dtype=boundary_dtype,
-            local_files_only=True,
-            trust_remote_code=False,
-        )
-        from xurcroh.fortress.module import replace_linear_layers
+        if reader.config.get("model_type") in {"gemma4", "qwen3_5"}:
+            from xurcroh.fortress.text_loader import load_text_decoder
 
-        replace_linear_layers(
-            model,
-            operations,
-            client_only=(
-                "lm_head",
-                "model.per_layer_model_projection",
-                "model.language_model.per_layer_model_projection",
-                "per_layer_input_gate",
-                "per_layer_projection",
-                "vision_projection",
-                "model.vision_projection",
-                "multi_modal_projector",
-                "audio_projection",
-                "model.audio_projection",
-                "model.embed_audio",
-            ),
-        )
+            model, model_operations = load_text_decoder(reader, operations, boundary_dtype)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                checkpoint,
+                dtype=boundary_dtype,
+                local_files_only=True,
+                trust_remote_code=False,
+            )
+            model_operations = operations
+        from xurcroh.fortress.module import replace_linear_layers
+        from xurcroh.fortress.text_loader import CLIENT_ONLY
+
+        if reader.config.get("model_type") not in {"gemma4", "qwen3_5"}:
+            replace_linear_layers(model, model_operations, client_only=CLIENT_ONLY)
         model.get_input_embeddings().weight = torch.nn.Parameter(embedding, requires_grad=False)
         output_embeddings = model.get_output_embeddings()
         if output_embeddings is not None:

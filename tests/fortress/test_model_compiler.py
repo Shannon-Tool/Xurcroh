@@ -183,3 +183,119 @@ def test_language_model_prefixed_checkpoint_compiles(tiny_llama_path: Path, tmp_
     assert compiled.embedding.shape[0] > 0
     assert compiled.operations
     assert all(name.startswith("model.language_model.layers.") for name in compiled.operations)
+
+
+def test_gemma4_text_loader_excludes_multimodal_towers_and_executes(tmp_path: Path) -> None:
+    import json
+
+    from safetensors.torch import save_file
+    from transformers.models.gemma4 import Gemma4ForCausalLM, Gemma4TextConfig
+
+    text_config = {
+        "hidden_size": 16,
+        "intermediate_size": 32,
+        "num_hidden_layers": 2,
+        "num_attention_heads": 4,
+        "num_key_value_heads": 1,
+        "head_dim": 4,
+        "global_head_dim": 4,
+        "vocab_size": 12,
+        "vocab_size_per_layer_input": 12,
+        "hidden_size_per_layer_input": 4,
+        "layer_types": ["full_attention", "full_attention"],
+        "num_kv_shared_layers": 1,
+        "use_double_wide_mlp": False,
+        "max_position_embeddings": 128,
+    }
+    config = Gemma4TextConfig(**text_config)
+    with torch.device("meta"):
+        reference = Gemma4ForCausalLM(config)
+    ignored = {f"model.{name}" for name in reference.model._keys_to_ignore_on_load_unexpected}
+    generator = torch.Generator().manual_seed(812)
+    tensors = {}
+    for name, parameter in reference.state_dict().items():
+        if name in ignored:
+            continue
+        checkpoint_name = (
+            name.replace("model.", "model.language_model.", 1)
+            if name.startswith("model.")
+            else name
+        )
+        tensors[checkpoint_name] = (
+            torch.randn(tuple(parameter.shape), generator=generator, dtype=torch.float64) / 8
+        )
+    (tmp_path / "config.json").write_text(
+        json.dumps(
+            {
+                "model_type": "gemma4",
+                "architectures": ["Gemma4ForConditionalGeneration"],
+                "text_config": text_config,
+            }
+        )
+    )
+    save_file(tensors, str(tmp_path / "model.safetensors"))
+    compiled = compile_fortress_checkpoint(tmp_path, seed=731)
+    assert type(compiled.model).__name__ == "Gemma4ForCausalLM"
+    assert not hasattr(compiled.model.model, "vision_tower")
+    with torch.inference_mode():
+        output = compiled.model(
+            input_ids=torch.tensor([[1, 2]]),
+            return_shared_kv_states=True,
+            use_cache=True,
+        )
+    assert output.logits.shape == (1, 2, 12)
+    assert torch.isfinite(output.logits).all()
+
+
+def test_qwen3_5_text_loader_excludes_multimodal_towers_and_executes(tmp_path: Path) -> None:
+    import json
+
+    from safetensors.torch import save_file
+    from transformers import AutoConfig, AutoModelForCausalLM
+
+    text_config = {
+        "hidden_size": 16,
+        "intermediate_size": 32,
+        "num_hidden_layers": 1,
+        "num_attention_heads": 4,
+        "num_key_value_heads": 1,
+        "head_dim": 4,
+        "vocab_size": 12,
+        "layer_types": ["full_attention"],
+        "max_position_embeddings": 128,
+    }
+    config = AutoConfig.for_model("qwen3_5_text", **text_config)
+    with torch.device("meta"):
+        reference = AutoModelForCausalLM.from_config(config)
+    generator = torch.Generator().manual_seed(813)
+    tensors = {}
+    for name, parameter in reference.state_dict().items():
+        checkpoint_name = (
+            name.replace("model.", "model.language_model.", 1)
+            if name.startswith("model.")
+            else name
+        )
+        tensors[checkpoint_name] = (
+            torch.randn(tuple(parameter.shape), generator=generator, dtype=torch.float64) / 8
+        )
+    (tmp_path / "config.json").write_text(
+        json.dumps(
+            {
+                "model_type": "qwen3_5",
+                "architectures": ["Qwen3_5ForConditionalGeneration"],
+                "text_config": {"model_type": "qwen3_5_text", **text_config},
+            }
+        )
+    )
+    save_file(tensors, str(tmp_path / "model.safetensors"))
+    compiled = compile_fortress_checkpoint(tmp_path, seed=731)
+    assert type(compiled.model).__name__ == "Qwen3_5ForCausalLM"
+    assert not hasattr(compiled.model.model, "visual")
+    with torch.inference_mode():
+        output = compiled.model(
+            input_ids=torch.tensor([[1, 2]]),
+            return_shared_kv_states=True,
+            use_cache=True,
+        )
+    assert output.logits.shape == (1, 2, 12)
+    assert torch.isfinite(output.logits).all()
