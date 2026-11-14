@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import copy
 import json
+import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +22,8 @@ from scripts.fortress.deploy_ladder import pin_host_key, wait_for_ssh
 from scripts.gpu.deploy_two_node import download, scp, ssh
 
 from xurcroh.fortress.ladder import verify_rung_evidence
+from xurcroh.fortress.ladder_provider import destroy_ladder_instances
+from xurcroh.providers.vast import StateStore
 
 ROOT = Path(__file__).resolve().parents[2]
 GIT = shutil.which("git")
@@ -52,7 +57,8 @@ def remote_command(
     execute = (
         f".venv-cuda/bin/python scripts/fortress/grid_smoke.py "
         f"--template {root}/template.json --provisioned-config {root}/workers.json "
-        f"--state {root}/provider-state.json --output {root}/run --uncapped"
+        f"--state {root}/provider-state.json --output {root}/run --uncapped "
+        f"--defer-provider-teardown"
         if smoke
         else f".venv-cuda/bin/python scripts/fortress/run_ladder.py {root}/template.json "
         f"--provisioned-config {root}/workers.json --state {root}/provider-state.json "
@@ -101,7 +107,13 @@ def run(args: argparse.Namespace) -> Path:
     ).stdout
     ssh(gateway, f"rm -rf {root} && mkdir -p {root}")
     ssh(gateway, f"tar -xzf - -C {root}", input_data=archive)
-    ssh(gateway, f"cd {root} && ./scripts/gpu/bootstrap.sh")
+    ssh(
+        gateway,
+        f"cd {root} && ./scripts/gpu/bootstrap.sh && "
+        ".venv-cuda/bin/pip install --retries 10 --timeout 120 --no-cache-dir --no-deps "
+        "transformers==5.22.2 && .venv-cuda/bin/python -c "
+        "'from transformers import AutoModelForMultimodalLM'",
+    )
     if not args.download_checkpoint:
         scp(gateway, [checkpoint], root, recursive=True)
     checkpoint_name = "checkpoint" if args.download_checkpoint else checkpoint.name
@@ -162,13 +174,23 @@ def run(args: argparse.Namespace) -> Path:
             ),
         )
     finally:
-        for remote, local in downloads:
-            try:
-                ssh(gateway, f"test -f {remote}")
-                download(gateway, remote, output / local)
-            except (OSError, subprocess.CalledProcessError):
-                if local != "run.log":
-                    raise
+        try:
+            for remote, local in downloads:
+                try:
+                    ssh(gateway, f"test -f {remote}")
+                    download(gateway, remote, output / local)
+                except (OSError, subprocess.CalledProcessError):
+                    if local != "run.log":
+                        raise
+        finally:
+            if args.smoke:
+                store = StateStore(args.state)
+                teardown = destroy_ladder_instances(store, uncapped=True)
+                (output / "worker-teardown.json").write_text(json.dumps(teardown, indent=2) + "\n")
+                watchdog_pid = store.snapshot().get("watchdog_pid")
+                if watchdog_pid:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(int(watchdog_pid), signal.SIGTERM)
     evidence = output / ("smoke-report.json" if args.smoke else "evidence.json")
     if args.smoke:
         report = json.loads(evidence.read_text())

@@ -53,7 +53,9 @@ def run(args: argparse.Namespace) -> Path:
                     deployment["workers"], deployment["source_revision"]
                 )
         finally:
-            if args.state.is_file():
+            if args.defer_provider_teardown:
+                report["teardown"] = {"deferred_to_local_controller": True}
+            elif args.state.is_file():
                 report["teardown"] = destroy_ladder_instances(store, uncapped=args.uncapped)
                 watchdog_pid = store.snapshot().get("watchdog_pid")
                 if watchdog_pid:
@@ -77,6 +79,7 @@ def main() -> None:
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--uncapped", action="store_true")
+    parser.add_argument("--defer-provider-teardown", action="store_true")
     args = parser.parse_args()
     run(args)
 
