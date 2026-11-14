@@ -625,7 +625,7 @@ class FortressGridRuntime:
         self._cover_stop.set()
         self._cover_thread.join(timeout=30)
         self.executor.shutdown(wait=True)
-        first_error = self._cover_error
+        first_error = None
         for connection in self.connections.values():
             try:
                 connection.close()
@@ -828,7 +828,7 @@ class FortressRoleClient:
             self._executor.shutdown(wait=True)
         else:
             self._runtime._unregister(self)
-        first_error: Exception | None = self._cover_error
+        first_error: Exception | None = None
         for transport in self._transports.values():
             try:
                 transport.close()
