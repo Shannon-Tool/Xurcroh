@@ -176,3 +176,58 @@ def test_managed_role_crash_restarts_and_resumes_inference(
         second = client.chat.completions.create(**request)
         assert second.usage.completion_tokens == 1
         assert client.metrics()["fortress_reconnections"] > 0
+
+
+def test_multiple_models_share_managed_cluster_with_isolated_roles(
+    tiny_llama_path: Path, tmp_path: Path
+) -> None:
+    from tests.fortress.test_official_models import copy_tokenizer
+    from transformers.models.qwen3_moe import Qwen3MoeConfig, Qwen3MoeForCausalLM
+
+    moe_checkpoint = tmp_path / "moe-model"
+    config = Qwen3MoeConfig(
+        vocab_size=64,
+        hidden_size=16,
+        intermediate_size=32,
+        moe_intermediate_size=8,
+        num_hidden_layers=1,
+        num_attention_heads=4,
+        num_key_value_heads=1,
+        num_experts=2,
+        num_experts_per_tok=1,
+        max_position_embeddings=128,
+    )
+    Qwen3MoeForCausalLM(config).save_pretrained(moe_checkpoint, safe_serialization=True)
+    copy_tokenizer(tiny_llama_path, moe_checkpoint)
+    with (
+        ssh_testbed(tmp_path) as base,
+        Xurcroh(
+            cluster=_cpu_workers(base),
+            model_path={
+                "tiny": {
+                    "path": str(tiny_llama_path),
+                    "engine": "fortress",
+                    "fortress_seed": 731,
+                },
+                "moe": {
+                    "path": str(moe_checkpoint),
+                    "engine": "fortress",
+                    "fortress_seed": 732,
+                },
+            },
+        ) as client,
+    ):
+        for model in ("tiny", "moe"):
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": "hello"}],
+                temperature=0,
+                max_tokens=1,
+                timeout=120,
+            )
+            assert response.usage.completion_tokens == 1
+            assert len(response.execution.worker_ids) == 4
+        moe_endpoints = client._runtime._workers_for_model("moe")
+        assert [worker.endpoint for worker in moe_endpoints] == [
+            f"quic://127.0.0.1:{10444 + index}" for index in range(4)
+        ]
