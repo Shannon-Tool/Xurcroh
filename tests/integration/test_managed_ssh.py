@@ -141,3 +141,38 @@ def test_sdk_managed_moe_inference_over_real_ssh(tiny_llama_path: Path, tmp_path
         assert response.usage.completion_tokens == 1
         assert response.execution.engine == "fortress-grid"
         assert len(response.execution.worker_ids) == 4
+
+
+def test_managed_role_crash_restarts_and_resumes_inference(
+    tiny_llama_path: Path, tmp_path: Path
+) -> None:
+    with (
+        ssh_testbed(tmp_path) as base,
+        Xurcroh(
+            cluster=_cpu_workers(base),
+            model_path={
+                "tiny": {
+                    "path": str(tiny_llama_path),
+                    "engine": "fortress",
+                    "fortress_seed": 731,
+                }
+            },
+        ) as client,
+    ):
+        request = {
+            "model": "tiny",
+            "messages": [{"role": "user", "content": "hello"}],
+            "temperature": 0,
+            "max_tokens": 1,
+            "timeout": 120,
+        }
+        first = client.chat.completions.create(**request)
+        assert first.usage.completion_tokens == 1
+        deployment = client._runtime._deployment
+        assert deployment is not None
+        role = deployment._roles[0]
+        pid = Path(deployment._remote_root) / "model-0" / role.worker.name / "role.pid"
+        deployment._executor.run(role.worker, f"kill -KILL $(cat {pid})")
+        second = client.chat.completions.create(**request)
+        assert second.usage.completion_tokens == 1
+        assert client.metrics()["fortress_reconnections"] > 0
