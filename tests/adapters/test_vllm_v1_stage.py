@@ -613,6 +613,7 @@ def test_stage_transition_also_transforms_residual_basis() -> None:
         WorkerConfig(name="b", endpoint="https://b.invalid"),
     ]
     engine._tokenizer = Tokenizer()
+    engine._stop_token_ids = {Tokenizer.eos_token_id}
     engine.position_limit = 100
     engine.vocabulary_size = 100
     engine.boundary = Boundary()
