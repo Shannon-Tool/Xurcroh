@@ -218,6 +218,8 @@ class FortressDeployment:
         self._started = False
         self._closed = False
         self._lock = threading.RLock()
+        self._restart_condition = threading.Condition(self._lock)
+        self._restarting: set[str] = set()
 
     @property
     def workers(self) -> Mapping[str, list[WorkerConfig]]:
@@ -660,7 +662,13 @@ class FortressDeployment:
         return reports
 
     def restart_role(self, provider_id: str) -> None:
-        with self._lock:
+        with self._restart_condition:
+            coalesced = False
+            while provider_id in self._restarting:
+                coalesced = True
+                self._restart_condition.wait()
+            if coalesced:
+                return
             if self._closed or not self._started:
                 raise ClusterUnavailableError(
                     f"cannot restart Fortress role {provider_id!r} before startup or after close"
@@ -671,11 +679,19 @@ class FortressDeployment:
             if len(matches) != 1:
                 raise ClusterUnavailableError(f"unknown managed Fortress role: {provider_id}")
             role = matches[0]
-        self._stop_role(role)
-        self._start_role(role)
+            self._restarting.add(provider_id)
+        try:
+            self._stop_role(role)
+            self._start_role(role)
+        finally:
+            with self._restart_condition:
+                self._restarting.remove(provider_id)
+                self._restart_condition.notify_all()
 
     def close(self) -> None:
-        with self._lock:
+        with self._restart_condition:
+            while self._restarting:
+                self._restart_condition.wait()
             if self._closed and not self._workspace.exists():
                 return
             self._closed = True
