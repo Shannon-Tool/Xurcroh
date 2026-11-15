@@ -447,6 +447,7 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
         "{% for message in messages %}{{ message.role + ':' }}"
         "{% for part in message.content %}"
         "{% if part.type == 'text' %}{{ part.text }}"
+        "{% elif part.type in ['input_audio', 'audio'] %}{{ '<audio>' }}"
         "{% else %}{{ '<image>' }}{% endif %}"
         "{% endfor %}{{ '\\n' }}{% endfor %}assistant:"
     )
@@ -516,3 +517,35 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
         )
         assert response.usage.completion_tokens == 1
         assert response.execution.engine == "fortress-grid"
+        import wave
+
+        import numpy as np
+
+        audio_buffer = io.BytesIO()
+        with wave.open(audio_buffer, "wb") as output:
+            output.setnchannels(1)
+            output.setsampwidth(2)
+            output.setframerate(16_000)
+            output.writeframes(np.arange(5120, dtype="<i2").tobytes())
+        audio_response = client.chat.completions.create(
+            model="gemma-vlm",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "hello"},
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": base64.b64encode(audio_buffer.getvalue()).decode(),
+                                "format": "wav",
+                            },
+                        },
+                    ],
+                }
+            ],
+            temperature=0,
+            max_tokens=1,
+            timeout=120,
+        )
+        assert audio_response.usage.completion_tokens == 1

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import threading
 import time
@@ -424,7 +425,12 @@ class FortressEngine:
             if audio:
                 if len(set(sample_rates)) != 1:
                     raise ConfigurationError("audio inputs must share one sample rate")
-                parameters["audios"] = audio
+                audio_parameter = (
+                    "audio"
+                    if "audio" in inspect.signature(self._processor.__call__).parameters
+                    else "audios"
+                )
+                parameters[audio_parameter] = audio
                 parameters["sampling_rate"] = sample_rates[0]
             inputs = self._processor(**parameters)
             prompt_tokens = int(inputs["input_ids"].shape[-1])
