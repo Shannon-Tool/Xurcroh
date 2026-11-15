@@ -178,22 +178,30 @@ def preflight_checkpoint(
         recipients: list[str] = []
         for worker in workers:
             try:
-                role = (
-                    int(worker.labels["activation_index"]),
-                    int(worker.labels["weight_index"]),
-                )
                 recipient = worker.labels["recipient_public"]
                 if len(bytes.fromhex(recipient)) != 32:
                     raise ValueError("recipient key must contain 32 bytes")
-                recipients.append(recipient)
-            except (KeyError, ValueError) as error:
-                issues.append(f"worker {worker.name} has invalid Fortress role metadata: {error}")
-            else:
                 assigned = {
                     name.strip() for name in worker.labels.get("operations", "*").split(",")
                 }
-                for operation in assigned:
-                    groups.setdefault(operation, []).append(role)
+                if "operation_roles" in worker.labels:
+                    operation_roles = json.loads(worker.labels["operation_roles"])
+                    if not isinstance(operation_roles, dict):
+                        raise ValueError("operation_roles must be an object")
+                    for operation, value in operation_roles.items():
+                        if not isinstance(value, list) or len(value) != 2:
+                            raise ValueError("operation role must contain two indexes")
+                        groups.setdefault(operation, []).append((int(value[0]), int(value[1])))
+                else:
+                    role = (
+                        int(worker.labels["activation_index"]),
+                        int(worker.labels["weight_index"]),
+                    )
+                    for operation in assigned:
+                        groups.setdefault(operation, []).append(role)
+                recipients.append(recipient)
+            except (KeyError, TypeError, ValueError) as error:
+                issues.append(f"worker {worker.name} has invalid Fortress role metadata: {error}")
             if worker.endpoint is None or not worker.endpoint.startswith("quic://"):
                 issues.append(f"worker {worker.name} requires a quic:// Fortress endpoint")
             for label in ("client_certificate_path", "client_key_path", "ca_path"):

@@ -162,23 +162,52 @@ def test_public_sdk_executes_split_operation_grids(
         PublicFormat,
     )
 
+    from xurcroh.config import WorkerConfig
     from xurcroh.fortress.model_compiler import compile_fortress_checkpoint
+    from xurcroh.fortress.placement import (
+        Operation,
+        PlacementPolicy,
+        Provider,
+        apply_placement,
+        place_operations,
+    )
     from xurcroh.fortress.transport import encode_role_artifact
     from xurcroh.fortress.worker import FortressRoleWorker
 
     compiled = compile_fortress_checkpoint(tiny_llama_path, seed=731)
     operation_names = list(compiled.operations)
+    worker_names = [f"grid-{group}-{index}" for group in range(2) for index in range(4)]
+    placement = place_operations(
+        [Operation(name, index, "projection") for index, name in enumerate(operation_names)],
+        [
+            Provider(
+                name,
+                "us" if name.startswith("grid-0") else "de",
+                "amd" if name.startswith("grid-0") else "intel",
+            )
+            for name in worker_names
+        ],
+        PlacementPolicy(shares=2, max_provider_fraction=1.0),
+    )
     workers: list[FortressRoleWorker] = []
     cluster = []
     for group in range(2):
-        assigned = operation_names[group::2]
         for index in range(4):
+            name = f"grid-{group}-{index}"
             activation_index, weight_index = divmod(index, 2)
             private = X25519PrivateKey.generate()
             public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+            assignments = {
+                assignment.unit_id: assignment
+                for assignment in placement.assignments
+                if assignment.provider_id == name
+            }
             artifacts = {
-                name: encode_role_artifact(operation, weight_index, public)
-                for name, operation in compiled.operations.items()
+                operation_name: encode_role_artifact(
+                    operation, assignments[operation_name].weight_share, public
+                )
+                for operation_name, operation in compiled.operations.items()
+                if operation_name in assignments
             }
             worker = FortressRoleWorker(
                 artifacts,
@@ -190,24 +219,24 @@ def test_public_sdk_executes_split_operation_grids(
             worker.start()
             workers.append(worker)
             cluster.append(
-                {
-                    "name": f"grid-{group}-{index}",
-                    "endpoint": f"quic://{worker.address}",
-                    "gpu": {"model": "test-gpu", "memory_gb": 1},
-                    "labels": {
+                WorkerConfig(
+                    name=name,
+                    endpoint=f"quic://{worker.address}",
+                    gpu={"model": "test-gpu", "memory_gb": 1},
+                    labels={
                         "activation_index": str(activation_index),
                         "weight_index": str(weight_index),
                         "recipient_public": public.hex(),
-                        "operations": ",".join(assigned),
                         "cover_interval": "60",
                     },
-                }
+                )
             )
     (tmp_path / "client.crt").write_bytes(mtls_identities["client_certificate"])
     (tmp_path / "client.key").write_bytes(mtls_identities["client_key"])
     (tmp_path / "ca.crt").write_bytes(mtls_identities["ca"])
+    cluster = apply_placement(cluster, placement)
     for worker in cluster:
-        worker["labels"].update(
+        worker.labels.update(
             {
                 "client_certificate_path": str(tmp_path / "client.crt"),
                 "client_key_path": str(tmp_path / "client.key"),
@@ -233,7 +262,7 @@ def test_public_sdk_executes_split_operation_grids(
                 max_tokens=1,
             )
             engine = client._runtime._engines["tiny"]
-            assert len(engine._grid_runtimes) == 2
+            assert len(engine._grid_runtimes) >= 2
             assert all(len(runtime.connections) == 4 for runtime in engine._grid_runtimes)
         assert response.usage.completion_tokens == 1
         assert len(response.execution.worker_ids) == 8

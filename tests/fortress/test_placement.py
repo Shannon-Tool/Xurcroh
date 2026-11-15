@@ -101,6 +101,14 @@ def test_placement_enforces_role_diversity_pairs_replicas_and_epoch_refresh() ->
         }
         assert left.isdisjoint(right)
 
+    for provider in providers():
+        weight_roles = {
+            assignment.weight_share
+            for assignment in placement.assignments
+            if assignment.provider_id == provider.provider_id
+        }
+        assert len(weight_roles) <= 1
+
     refreshed = placement.reshuffle()
     assert refreshed.epoch == 4
     assert refreshed.assignments != placement.assignments
