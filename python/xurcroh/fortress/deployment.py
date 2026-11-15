@@ -173,10 +173,11 @@ class RoleDeployment:
     recipient_key: Path
     package: Path
     service_name: str
+    port_number: int
 
     @property
     def port(self) -> int:
-        return 9444 + self.model_index
+        return self.port_number
 
 
 class FortressDeployment:
@@ -283,7 +284,14 @@ class FortressDeployment:
             model_root.mkdir()
             model_seed = definition.fortress_seed if definition.fortress_seed is not None else seed
             model_roles: list[RoleDeployment] = []
+            host_slots: dict[str, int] = {}
             for index, worker in enumerate(self.cluster.workers):
+                host = worker.host or worker.name
+                host_slot = host_slots.get(host, 0)
+                host_slots[host] = host_slot + 1
+                port_number = 9444 + model_index * 1000 + host_slot
+                if port_number > 65535:
+                    raise ConfigurationError("Fortress role port allocation exceeds 65535")
                 activation_index, weight_index = divmod(index, definition.fortress_shares)
                 private = X25519PrivateKey.generate()
                 public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
@@ -303,6 +311,7 @@ class FortressDeployment:
                         recipient_key=key_path,
                         package=model_root / f"role-{index}",
                         service_name=f"model-{model_index}-{worker.name}",
+                        port_number=port_number,
                     )
                 )
             self._roles.extend(model_roles)
@@ -476,7 +485,7 @@ class FortressDeployment:
                 self._remote_root,
                 sdk,
                 self._workspace / "tunnels" / f"model-{model_index}",
-                target_port=9444 + model_index,
+                target_ports=[role.port for role in self._roles if role.model == name],
                 tunnel_name=f"relay-{model_index}",
             )
             self._tunnel_workers.append(tunnel_workers)

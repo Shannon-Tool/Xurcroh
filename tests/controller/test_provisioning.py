@@ -326,8 +326,11 @@ def test_managed_datagram_tunnel_rewrites_endpoints_and_cleans_relay(
     monkeypatch.setattr(deployment, "_source_archive", lambda: b"source-archive")
     closed = []
 
-    def start(workers, remote_root, sdk, output, *, target_port, tunnel_name):
+    def start(
+        workers, remote_root, sdk, output, *, target_port=9444, target_ports=None, tunnel_name
+    ):
         assert target_port == 9444
+        assert target_ports == [9444, 9444, 9444, 9444]
         assert tunnel_name == "relay-0"
         for worker, configured in zip(workers, sdk["cluster"], strict=True):
             worker["datagram_tunnel"] = {
