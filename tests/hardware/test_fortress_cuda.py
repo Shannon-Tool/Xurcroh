@@ -129,3 +129,15 @@ def test_chacha_expansion_matches_cpu_reference() -> None:
     key = [0x03020100 + index * 0x04040404 for index in range(8)]
     nonce = bytes(range(12))
     assert controller.chacha_words(key, nonce, 80) == _chacha_reference(key, nonce, 80)
+
+
+def test_native_field_expansion_matches_cpu_reference() -> None:
+    require_cuda()
+    from xurcroh.fortress.arithmetic import _seeded_uniform
+
+    root = Path(__file__).parents[2]
+    controller = FortressNativeController(root / "native/build/xurcroh_burn_alloc.so")
+    seed = bytes(range(32))
+    actual = controller.expand_field_device(seed, 257).cpu()
+    expected = _seeded_uniform(seed, (257,)).to(torch.int32).cpu()
+    assert torch.equal(actual, expected)
