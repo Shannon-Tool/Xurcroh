@@ -140,6 +140,42 @@ def test_provisioning_requires_complete_role_grid(tiny_llama_path: Path, tmp_pat
         deployment.start()
 
 
+def test_provisioning_accepts_complete_three_share_role_grid(
+    tiny_llama_path: Path, tmp_path: Path
+) -> None:
+    cluster = ClusterConfig.normalize(
+        {
+            "workers": [
+                {
+                    "name": f"worker-{index}",
+                    "host": f"10.0.0.{10 + index}",
+                    "ssh": {"username": "ubuntu"},
+                }
+                for index in range(9)
+            ],
+            "provision_workers": True,
+        }
+    )
+    deployment = FortressDeployment(
+        cluster,
+        (
+            (
+                "tiny",
+                ModelDefinition(
+                    path=str(tiny_llama_path),
+                    revision="a" * 40,
+                    engine="fortress",
+                    fortress_shares=3,
+                ),
+            ),
+        ),
+        workspace=tmp_path / "deployment",
+        executor_factory=RecordingExecutor,
+    )
+
+    deployment._validate()
+
+
 def test_asyncssh_executor_scopes_credentials_and_validates_commands(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
