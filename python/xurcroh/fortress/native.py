@@ -95,6 +95,29 @@ class FortressNativeController:
             activation_device.zero_()
             output.zero_()
 
+    def expand_field_device(self, seed: bytes, count: int) -> torch.Tensor:
+        if len(seed) != 32 or count < 1:
+            raise ValueError("field expansion requires a 32-byte seed and positive count")
+        key = [int.from_bytes(seed[index : index + 4], "little") for index in range(0, 32, 4)]
+        key_device = self._cuda_words(key)
+        nonce_device = torch.tensor(list(bytes(16)), dtype=torch.uint8, device="cuda")
+        output = torch.empty(count, dtype=torch.int32, device="cuda")
+        wide: torch.Tensor | None = None
+        reduced: torch.Tensor | None = None
+        try:
+            self.chacha_device(output, key_device, nonce_device)
+            wide = output.to(torch.int64)
+            reduced = wide.remainder(FIELD_MODULUS)
+            return reduced.to(torch.int32)
+        finally:
+            key_device.zero_()
+            nonce_device.zero_()
+            output.zero_()
+            if wide is not None:
+                wide.zero_()
+            if reduced is not None:
+                reduced.zero_()
+
     def chacha_words(self, key: list[int], nonce: bytes, count: int) -> list[int]:
         if len(key) != 8 or len(nonce) != 12 or count < 1:
             raise ValueError("ChaCha requires eight key words, a 12-byte nonce, and positive count")

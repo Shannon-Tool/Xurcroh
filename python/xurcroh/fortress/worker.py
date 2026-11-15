@@ -6,7 +6,7 @@ import os
 import threading
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -141,6 +141,11 @@ class FortressRoleWorker:
                 self._threads.append(thread)
             thread.start()
 
+    def _expand_activation_seed(self, seed: bytes, features: int) -> torch.Tensor:
+        if self._cuda_controller is not None:
+            return cast(torch.Tensor, self._cuda_controller.expand_field_device(seed, features))
+        return _seeded_uniform(seed, (features,))
+
     def _decode_activation(self, payload: bytes) -> tuple[str, torch.Tensor]:
         seeded = payload.startswith(b"XF2\x01")
         header = 4 if seeded else 0
@@ -166,7 +171,7 @@ class FortressRoleWorker:
         if seeded:
             if len(activation_payload) != 32:
                 raise ProtocolError("seeded Fortress activation requires a 32-byte seed")
-            return name, _seeded_uniform(activation_payload, (input_features,))
+            return name, self._expand_activation_seed(activation_payload, input_features)
         if len(activation_payload) != input_features * 4:
             raise ProtocolError("Fortress activation dimensions are invalid")
         activation = torch.from_numpy(
@@ -184,7 +189,12 @@ class FortressRoleWorker:
                     activation.remainder(FIELD_MODULUS).tolist(), self._native_weights[name]
                 )
             ]
-        activation_device = activation.remainder(FIELD_MODULUS).to(torch.int32).cuda()
+        if activation.device.type == "cuda":
+            if activation.dtype != torch.int32 or not activation.is_contiguous():
+                raise ValueError("CUDA activations must be contiguous int32 field elements")
+            activation_device = activation
+        else:
+            activation_device = activation.remainder(FIELD_MODULUS).to(torch.int32).cuda()
         output = torch.empty(self.artifacts[name].matrix.shape[0], dtype=torch.int32, device="cuda")
         try:
             self._cuda_controller.matvec_device(self._cuda_weights[name], activation_device, output)
