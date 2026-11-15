@@ -448,6 +448,21 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
         audio_seq_length=8,
     )
     processor.save_pretrained(checkpoint)
+    import json
+
+    tokenizer_config = checkpoint / "tokenizer_config.json"
+    tokenizer_values = json.loads(tokenizer_config.read_text())
+    tokenizer_values.update(
+        {
+            "boi_token_id": 7,
+            "eoi_token_id": 9,
+            "image_token_id": 8,
+            "boi_token": "<boi>",
+            "eoi_token": "<eoi>",
+            "image_token": "<image>",
+        }
+    )
+    tokenizer_config.write_text(json.dumps(tokenizer_values))
     image = Image.new("RGB", (32, 32), (20, 40, 60))
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
