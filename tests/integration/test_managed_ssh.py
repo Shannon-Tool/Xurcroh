@@ -387,7 +387,7 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
         num_key_value_heads=4,
         position_embedding_size=48,
         patch_size=16,
-        pooling_kernel_size=1,
+        pooling_kernel_size=3,
         default_output_length=4,
     )
     audio = Gemma4AudioConfig(
