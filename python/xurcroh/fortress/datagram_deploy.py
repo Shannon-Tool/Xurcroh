@@ -110,8 +110,9 @@ def start_datagram_tunnels(
     try:
         for index, worker in enumerate(workers):
             root = shlex.quote(remote_root)
-            address = Path(remote_root) / f"{tunnel_name}.address"
-            pid_path = Path(remote_root) / f"{tunnel_name}.pid"
+            instance_name = f"{tunnel_name}-{index}"
+            address = Path(remote_root) / f"{instance_name}.address"
+            pid_path = Path(remote_root) / f"{instance_name}.pid"
             python = shlex.quote(str(worker.get("python_path", ".venv-cuda/bin/python")))
             start_detached(
                 worker,
@@ -120,7 +121,7 @@ def start_datagram_tunnels(
                 f"--listen-port 0 --target-host 127.0.0.1 --target-port {ports[index]} "
                 f"--address-file {shlex.quote(str(address))} "
                 f"--pid-file {shlex.quote(str(pid_path))} </dev/null "
-                f">{root}/{shlex.quote(tunnel_name)}.log 2>&1",
+                f">{root}/{shlex.quote(instance_name)}.log 2>&1",
             )
             remote_port = wait_remote_port(worker, address)
             forward_port = free_tcp_port()

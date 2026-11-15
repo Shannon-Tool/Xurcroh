@@ -336,7 +336,7 @@ def test_managed_datagram_tunnel_rewrites_endpoints_and_cleans_relay(
             worker["datagram_tunnel"] = {
                 "local_relay_pid": 99999999,
                 "ssh_forward_pid": 99999998,
-                "remote_pid_path": f"{remote_root}/{tunnel_name}.pid",
+                "remote_pid_path": f"{remote_root}/{tunnel_name}-0.pid",
             }
             configured.endpoint = "quic://127.0.0.1:12000"
 
@@ -349,4 +349,4 @@ def test_managed_datagram_tunnel_rewrites_endpoints_and_cleans_relay(
     assert deployment.workers["tiny"][0].endpoint == "quic://127.0.0.1:12000"
     deployment.close()
     assert len(closed) == 1
-    assert any("relay-0.pid" in command for _, command in executor.commands)
+    assert any("relay-0-0.pid" in command for _, command in executor.commands)
