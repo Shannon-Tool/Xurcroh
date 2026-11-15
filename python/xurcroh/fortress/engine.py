@@ -111,11 +111,18 @@ class FortressEngine:
             ):
                 continue
             try:
-                activation_index = int(worker.labels["activation_index"])
-                weight_index = int(worker.labels["weight_index"])
+                if operation_name is not None and "operation_roles" in worker.labels:
+                    assigned_role = json.loads(worker.labels["operation_roles"])[operation_name]
+                    if not isinstance(assigned_role, list) or len(assigned_role) != 2:
+                        raise ValueError("operation role must contain two indexes")
+                    activation_index = int(assigned_role[0])
+                    weight_index = int(assigned_role[1])
+                else:
+                    activation_index = int(worker.labels["activation_index"])
+                    weight_index = int(worker.labels["weight_index"])
                 recipient_public = bytes.fromhex(worker.labels["recipient_public"])
                 address = (worker.endpoint or "").removeprefix("quic://")
-            except (KeyError, ValueError) as error:
+            except (KeyError, TypeError, ValueError) as error:
                 raise ConfigurationError(
                     f"worker {worker.name} lacks Fortress role indexes or recipient public key"
                 ) from error

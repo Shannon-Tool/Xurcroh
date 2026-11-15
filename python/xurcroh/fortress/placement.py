@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import json
 import secrets
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from xurcroh.config import WorkerConfig
 
 
 @dataclass(frozen=True)
@@ -56,6 +61,45 @@ class PlacementMap:
         )
 
 
+def apply_placement(workers: list[WorkerConfig], placement: PlacementMap) -> list[WorkerConfig]:
+    by_name = {worker.name: worker for worker in workers}
+    if len(by_name) != len(workers):
+        raise ValueError("worker names must be unique")
+    unknown = {assignment.provider_id for assignment in placement.assignments} - set(by_name)
+    if unknown:
+        raise ValueError(f"placement references unknown workers: {sorted(unknown)}")
+    expected = {
+        (activation, weight)
+        for activation in range(placement.policy.shares)
+        for weight in range(placement.policy.shares)
+    }
+    for operation in placement.operations:
+        actual = {
+            (assignment.activation_share, assignment.weight_share)
+            for assignment in placement.assignments
+            if assignment.unit_id == operation.identifier
+        }
+        if actual != expected:
+            raise ValueError(f"operation {operation.identifier!r} has an incomplete placement grid")
+
+    placed: list[WorkerConfig] = []
+    for worker in workers:
+        roles: dict[str, list[int]] = {}
+        for assignment in placement.assignments:
+            if assignment.provider_id != worker.name:
+                continue
+            if assignment.unit_id in roles:
+                raise ValueError("a worker cannot hold duplicate roles for one operation")
+            roles[assignment.unit_id] = [assignment.activation_share, assignment.weight_share]
+        configured = worker.model_copy(deep=True)
+        configured.labels["operations"] = ",".join(sorted(roles))
+        configured.labels["operation_roles"] = json.dumps(
+            roles, sort_keys=True, separators=(",", ":")
+        )
+        placed.append(configured)
+    return placed
+
+
 def place_operations(
     operations: list[Operation],
     providers: list[Provider],
@@ -81,6 +125,7 @@ def place_operations(
     assignments: list[RoleAssignment] = []
     per_operation: dict[str, set[str]] = {}
     provider_units: dict[str, set[str]] = {provider.provider_id: set() for provider in providers}
+    provider_weight_roles: dict[str, int] = {}
     roles = [
         (activation_share, weight_share, replica)
         for activation_share in range(policy.shares)
@@ -121,6 +166,7 @@ def place_operations(
                 and provider.provider_id not in paired_providers
                 and provider.provider_id not in previous_providers
                 and len(provider_units[provider.provider_id]) < maximum_units
+                and provider_weight_roles.get(provider.provider_id, weight_share) == weight_share
             ]
             shuffle(candidates)
             for provider in candidates:
@@ -138,12 +184,16 @@ def place_operations(
                 )
                 current.add(provider.provider_id)
                 provider_units[provider.provider_id].add(operation.identifier)
+                had_weight_role = provider.provider_id in provider_weight_roles
+                provider_weight_roles[provider.provider_id] = weight_share
                 result = assign_role(role_index + 1)
                 if result is not None:
                     return result
                 assignments.pop()
                 current.remove(provider.provider_id)
                 provider_units[provider.provider_id].remove(operation.identifier)
+                if not had_weight_role:
+                    provider_weight_roles.pop(provider.provider_id)
             return None
 
         return assign_role(0)
