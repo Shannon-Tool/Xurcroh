@@ -61,6 +61,7 @@ worktrees/
 /docs/requirements/
 /docs/superpowers/
 /docs/handoff.md
+/docs/roadmap.md
 
 # Editors and operating systems
 .config/
