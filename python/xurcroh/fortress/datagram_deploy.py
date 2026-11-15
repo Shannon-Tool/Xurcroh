@@ -94,10 +94,17 @@ def start_datagram_tunnels(
     output: Path,
     *,
     target_port: int = 9444,
+    target_ports: list[int] | None = None,
     tunnel_name: str = "relay",
 ) -> None:
-    if not 1 <= target_port <= 65535 or not tunnel_name or "/" in tunnel_name:
-        raise ValueError("datagram tunnel requires a valid port and simple name")
+    ports = target_ports or [target_port] * len(workers)
+    if (
+        len(ports) != len(workers)
+        or any(not 1 <= port <= 65535 for port in ports)
+        or not tunnel_name
+        or "/" in tunnel_name
+    ):
+        raise ValueError("datagram tunnel requires valid per-worker ports and a simple name")
     output.mkdir(parents=True, exist_ok=True)
     started: list[dict[str, Any]] = []
     try:
@@ -109,7 +116,7 @@ def start_datagram_tunnels(
                 worker,
                 f"cd {root} && setsid env .venv-cuda/bin/python -m "
                 "xurcroh.fortress.datagram_tunnel server --listen-host 127.0.0.1 "
-                f"--listen-port 0 --target-host 127.0.0.1 --target-port {target_port} "
+                f"--listen-port 0 --target-host 127.0.0.1 --target-port {ports[index]} "
                 f"--address-file {shlex.quote(str(address))} </dev/null "
                 f">{root}/{shlex.quote(tunnel_name)}.log 2>&1 & "
                 f"echo $! >{shlex.quote(str(pid_path))}",
