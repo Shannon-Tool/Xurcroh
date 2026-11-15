@@ -9,25 +9,28 @@ from Xurcroh import Xurcroh
 from xurcroh.config import WorkerConfig
 
 
+def _cpu_workers(base: WorkerConfig) -> list[WorkerConfig]:
+    return [
+        WorkerConfig(
+            name=f"cpu-{index}",
+            host=base.host,
+            ssh=base.ssh,
+            labels={
+                "device": "cpu",
+                "bootstrap": "false",
+                "python_path": sys.executable,
+            },
+            resources={"max_host_memory_gb": 16},
+        )
+        for index in range(4)
+    ]
+
+
 def test_sdk_managed_fortress_inference_over_real_ssh(
     tiny_llama_path: Path, tmp_path: Path
 ) -> None:
     with ssh_testbed(tmp_path) as base:
-        workers = []
-        for index in range(4):
-            workers.append(
-                WorkerConfig(
-                    name=f"cpu-{index}",
-                    host=base.host,
-                    ssh=base.ssh,
-                    labels={
-                        "device": "cpu",
-                        "bootstrap": "false",
-                        "python_path": sys.executable,
-                    },
-                    resources={"max_host_memory_gb": 16},
-                )
-            )
+        workers = _cpu_workers(base)
         with Xurcroh(
             cluster=workers,
             model_path={
@@ -52,3 +55,45 @@ def test_sdk_managed_fortress_inference_over_real_ssh(
             assert [worker.endpoint for worker in endpoints] == [
                 f"quic://127.0.0.1:{9444 + index}" for index in range(4)
             ]
+
+
+def test_sdk_managed_image_generation_over_real_ssh(tmp_path: Path) -> None:
+    import pytest
+
+    diffusers = pytest.importorskip("diffusers")
+    model = diffusers.UNet2DModel(
+        sample_size=8,
+        in_channels=3,
+        out_channels=3,
+        layers_per_block=1,
+        block_out_channels=(8, 16),
+        down_block_types=("DownBlock2D", "AttnDownBlock2D"),
+        up_block_types=("UpBlock2D", "UpBlock2D"),
+        norm_num_groups=4,
+    )
+    checkpoint = tmp_path / "image-model"
+    diffusers.DDPMPipeline(model, scheduler=diffusers.DDPMScheduler()).save_pretrained(checkpoint)
+    with (
+        ssh_testbed(tmp_path) as base,
+        Xurcroh(
+            cluster=_cpu_workers(base),
+            model_path={
+                "tiny-image": {
+                    "path": str(checkpoint),
+                    "engine": "fortress",
+                    "fortress_seed": 731,
+                }
+            },
+        ) as client,
+    ):
+        response = client.images.generate(
+            model="tiny-image",
+            prompt="a small red square",
+            size="64x64",
+            steps=1,
+            seed=11,
+            timeout=120,
+        )
+        assert response.data[0].b64_json
+        assert response.execution.engine == "fortress-diffusion-grid"
+        assert len(response.execution.worker_ids) == 4
