@@ -26,7 +26,7 @@ Synchronous, asynchronous, streaming, multimodal, advanced cluster, and security
 
 ## Protected multi-host quickstart
 
-From a committed source checkout, four SSH-reachable CUDA workers can be provisioned automatically. The trusted client downloads the pinned checkpoint, compiles encrypted role artifacts, starts the workers, and tears them down when the context exits:
+From a committed source checkout, SSH-reachable CUDA workers can be provisioned automatically with per-operation placement. The trusted client downloads the pinned checkpoint, compiles encrypted role artifacts, starts the workers, and tears them down when the context exits. This Gemma topology uses 20 workers with alternating geographic and CPU-vendor metadata:
 
 ```python
 from Xurcroh import Xurcroh
@@ -36,8 +36,12 @@ workers = [
         "name": f"gpu-{index}",
         "host": f"10.0.0.{10 + index}",
         "ssh": {"username": "ubuntu", "key_path": "~/.ssh/id_ed25519"},
+        "provider": {
+            "country": "us" if index % 2 else "de",
+            "cpu_vendor": "amd" if index % 2 else "intel",
+        },
     }
-    for index in range(4)
+    for index in range(20)
 ]
 
 with Xurcroh(
@@ -59,7 +63,7 @@ with Xurcroh(
     print(response.choices[0].message.content)
 ```
 
-A runnable CLI version is available at `examples/managed_gemma.py`; supply each worker with repeated `--host` arguments and use `--datagram-tunnel` when direct UDP is unavailable. Use `--shares N` for an `N × N` grid and provide exactly `N²` hosts; the default is `--shares 2`. Use a trusted gateway with sufficient host memory and disk for checkpoint compilation. `client.preflight()` reports measured checkpoint size and resource issues before inference. This is the implemented deployment interface, not a claim that the official Gemma checkpoint has completed physical multi-host validation.
+A runnable CLI version is available at `examples/managed_gemma.py`; supply each worker with repeated `--host` arguments and use `--datagram-tunnel` when direct UDP is unavailable. Use `--shares N` for per-operation `N × N` grids and provide exactly `5N²` hosts; the default is `--shares 2` with 20 hosts. Set `--countries` and `--cpu-vendors` to one value each or one per host to describe the actual infrastructure. Use a trusted gateway with sufficient host memory and disk for checkpoint compilation. `client.preflight()` reports measured checkpoint size and resource issues before inference. This is the implemented deployment interface, not a claim that the official Gemma checkpoint has completed physical multi-host validation.
 
 ## Development
 

@@ -217,6 +217,7 @@ class ModelDefinition(StrictModel):
     latent_security: Literal["equivariant", "transport_only"] = "equivariant"
     fortress_seed: int | None = None
     fortress_shares: int = Field(default=2, ge=2)
+    fortress_max_provider_fraction: float = Field(default=0.25, gt=0, le=1)
 
 
 class ModelRegistry:

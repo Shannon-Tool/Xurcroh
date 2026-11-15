@@ -23,9 +23,13 @@ def _cpu_workers(base: WorkerConfig) -> list[WorkerConfig]:
                 "bootstrap": "false",
                 "python_path": sys.executable,
             },
+            provider={
+                "country": "us" if index % 2 else "de",
+                "cpu_vendor": "amd" if index % 2 else "intel",
+            },
             resources={"max_host_memory_gb": 16},
         )
-        for index in range(4)
+        for index in range(12)
     ]
 
 
@@ -41,6 +45,7 @@ def test_sdk_managed_fortress_inference_over_real_ssh(
                     "path": str(tiny_llama_path),
                     "engine": "fortress",
                     "fortress_seed": 731,
+                    "fortress_max_provider_fraction": 1.0,
                 }
             },
         ) as client:
@@ -53,10 +58,10 @@ def test_sdk_managed_fortress_inference_over_real_ssh(
             )
             assert response.usage.completion_tokens == 1
             assert response.execution.engine == "fortress-grid"
-            assert len(response.execution.worker_ids) == 4
+            assert len(response.execution.worker_ids) == 12
             endpoints = client._runtime._workers_for_model("tiny")
             assert [worker.endpoint for worker in endpoints] == [
-                f"quic://127.0.0.1:{9444 + index}" for index in range(4)
+                f"quic://127.0.0.1:{9444 + index}" for index in range(12)
             ]
 
 
@@ -85,6 +90,7 @@ def test_sdk_managed_image_generation_over_real_ssh(tmp_path: Path) -> None:
                     "path": str(checkpoint),
                     "engine": "fortress",
                     "fortress_seed": 731,
+                    "fortress_max_provider_fraction": 1.0,
                 }
             },
         ) as client,
@@ -99,7 +105,7 @@ def test_sdk_managed_image_generation_over_real_ssh(tmp_path: Path) -> None:
         )
         assert response.data[0].b64_json
         assert response.execution.engine == "fortress-diffusion-grid"
-        assert len(response.execution.worker_ids) == 4
+        assert len(response.execution.worker_ids) == 12
 
 
 def test_sdk_managed_moe_inference_over_real_ssh(tiny_llama_path: Path, tmp_path: Path) -> None:
@@ -130,6 +136,7 @@ def test_sdk_managed_moe_inference_over_real_ssh(tiny_llama_path: Path, tmp_path
                     "path": str(checkpoint),
                     "engine": "fortress",
                     "fortress_seed": 731,
+                    "fortress_max_provider_fraction": 1.0,
                 }
             },
         ) as client,
@@ -143,7 +150,7 @@ def test_sdk_managed_moe_inference_over_real_ssh(tiny_llama_path: Path, tmp_path
         )
         assert response.usage.completion_tokens == 1
         assert response.execution.engine == "fortress-grid"
-        assert len(response.execution.worker_ids) == 4
+        assert len(response.execution.worker_ids) == 12
 
 
 def test_managed_role_crash_restarts_and_resumes_inference(
@@ -158,6 +165,7 @@ def test_managed_role_crash_restarts_and_resumes_inference(
                     "path": str(tiny_llama_path),
                     "engine": "fortress",
                     "fortress_seed": 731,
+                    "fortress_max_provider_fraction": 1.0,
                 }
             },
         ) as client,
@@ -211,6 +219,7 @@ def test_multiple_models_share_managed_cluster_with_isolated_roles(
                     "path": str(tiny_llama_path),
                     "engine": "fortress",
                     "fortress_seed": 731,
+                    "fortress_max_provider_fraction": 1.0,
                 },
                 "moe": {
                     "path": str(moe_checkpoint),
@@ -229,10 +238,10 @@ def test_multiple_models_share_managed_cluster_with_isolated_roles(
                 timeout=120,
             )
             assert response.usage.completion_tokens == 1
-            assert len(response.execution.worker_ids) == 4
+            assert len(response.execution.worker_ids) == 12
         moe_endpoints = client._runtime._workers_for_model("moe")
         assert [worker.endpoint for worker in moe_endpoints] == [
-            f"quic://127.0.0.1:{10444 + index}" for index in range(4)
+            f"quic://127.0.0.1:{10444 + index}" for index in range(12)
         ]
 
 
@@ -248,6 +257,7 @@ def test_managed_datagram_tunnel_executes_real_fortress_inference(
                     "path": str(tiny_llama_path),
                     "engine": "fortress",
                     "fortress_seed": 731,
+                    "fortress_max_provider_fraction": 1.0,
                 }
             },
         ) as client,
@@ -310,6 +320,7 @@ def test_managed_multimodal_boundary_inference_over_real_ssh(
                     "engine": "fortress",
                     "modality": "vlm",
                     "fortress_seed": 731,
+                    "fortress_max_provider_fraction": 1.0,
                 }
             },
         ) as client,
@@ -338,7 +349,7 @@ def test_managed_multimodal_boundary_inference_over_real_ssh(
         )
         assert response.usage.completion_tokens == 1
         assert response.execution.engine == "fortress-grid"
-        assert len(response.execution.worker_ids) == 4
+        assert len(response.execution.worker_ids) == 12
 
 
 def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path) -> None:
@@ -499,6 +510,7 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
                     "engine": "fortress",
                     "modality": "vlm",
                     "fortress_seed": 731,
+                    "fortress_max_provider_fraction": 1.0,
                 }
             },
         ) as client,
@@ -614,6 +626,7 @@ def test_managed_video_generation_over_real_ssh(tiny_llama_path: Path, tmp_path:
                     "path": str(checkpoint),
                     "engine": "fortress",
                     "fortress_seed": 731,
+                    "fortress_max_provider_fraction": 1.0,
                 }
             },
         ) as client,
@@ -630,4 +643,4 @@ def test_managed_video_generation_over_real_ssh(tiny_llama_path: Path, tmp_path:
         )
         assert response.data[0].b64_json
         assert response.execution.engine == "fortress-diffusion-grid"
-        assert len(response.execution.worker_ids) == 4
+        assert len(response.execution.worker_ids) == 12

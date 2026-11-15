@@ -120,12 +120,13 @@ def place_operations(
     if providers and required_per_unit > len(providers):
         raise ValueError("not enough providers for unique grid-cell roles")
     maximum_units = max(1, int(len(operations) * policy.max_provider_fraction))
+    if len(providers) * maximum_units < required_per_unit * len(operations):
+        raise ValueError("not enough provider capacity for per-operation role assignments")
     indexed = sorted(enumerate(operations), key=lambda item: item[1].index)
 
     assignments: list[RoleAssignment] = []
     per_operation: dict[str, set[str]] = {}
     provider_units: dict[str, set[str]] = {provider.provider_id: set() for provider in providers}
-    provider_weight_roles: dict[str, int] = {}
     roles = [
         (activation_share, weight_share, replica)
         for activation_share in range(policy.shares)
@@ -134,6 +135,12 @@ def place_operations(
     ]
     search_nodes = 0
     shuffle = secrets.SystemRandom().shuffle
+    shuffled_providers = list(providers)
+    shuffle(shuffled_providers)
+    provider_weight_roles = {
+        provider.provider_id: index % policy.shares
+        for index, provider in enumerate(shuffled_providers)
+    }
 
     def search(position: int, previous_providers: set[str]) -> list[RoleAssignment] | None:
         nonlocal search_nodes
@@ -179,6 +186,7 @@ def place_operations(
                 and provider_weight_roles.get(provider.provider_id, weight_share) == weight_share
             ]
             shuffle(candidates)
+            candidates.sort(key=lambda provider: len(provider_units[provider.provider_id]))
             for provider in candidates:
                 search_nodes += 1
                 if search_nodes > 250_000:
