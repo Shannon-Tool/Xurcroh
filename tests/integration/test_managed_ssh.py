@@ -386,7 +386,7 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
         num_attention_heads=4,
         num_key_value_heads=4,
         position_embedding_size=16,
-        patch_size=4,
+        patch_size=16,
         pooling_kernel_size=1,
         default_output_length=4,
     )
