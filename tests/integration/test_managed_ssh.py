@@ -447,7 +447,7 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
         "{% for message in messages %}{{ message.role + ':' }}"
         "{% for part in message.content %}"
         "{% if part.type == 'text' %}{{ part.text }}"
-        "{% elif part.type == 'image_url' %}{{ '<image>' }}{% endif %}"
+        "{% else %}{{ '<image>' }}{% endif %}"
         "{% endfor %}{{ '\\n' }}{% endfor %}assistant:"
     )
     processor = Gemma4Processor(
