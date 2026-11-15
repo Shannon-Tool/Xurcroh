@@ -264,3 +264,75 @@ def test_managed_datagram_tunnel_executes_real_fortress_inference(
             and not worker.endpoint.endswith(":9444")
             for worker in endpoints
         )
+
+
+def test_managed_multimodal_boundary_inference_over_real_ssh(
+    tiny_llama_path: Path, tmp_path: Path
+) -> None:
+    import base64
+    import io
+    import shutil
+    import wave
+
+    import numpy as np
+    import torch
+    from PIL import Image
+    from safetensors import safe_open
+    from safetensors.torch import save_file
+
+    checkpoint = tmp_path / "vlm-model"
+    shutil.copytree(tiny_llama_path, checkpoint)
+    tensors = {}
+    with safe_open(checkpoint / "model.safetensors", framework="pt") as handle:
+        for name in handle.keys():  # noqa: SIM118
+            tensors[name] = handle.get_tensor(name)
+    tensors["vision_projection.weight"] = torch.randn(16, 6912, dtype=torch.float64) / 100
+    tensors["audio_projection.weight"] = torch.randn(16, 640, dtype=torch.float64) / 100
+    save_file(tensors, str(checkpoint / "model.safetensors"))
+    image_path = tmp_path / "red.png"
+    Image.new("RGB", (48, 48), color=(255, 0, 0)).save(image_path)
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(16_000)
+        output.writeframes(np.arange(800, dtype="<i2").tobytes())
+    with (
+        ssh_testbed(tmp_path) as base,
+        Xurcroh(
+            cluster=_cpu_workers(base),
+            model_path={
+                "tiny-vlm": {
+                    "path": str(checkpoint),
+                    "engine": "fortress",
+                    "modality": "vlm",
+                    "fortress_seed": 731,
+                }
+            },
+        ) as client,
+    ):
+        response = client.chat.completions.create(
+            model="tiny-vlm",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "hello"},
+                        {"type": "image_url", "image_url": {"url": image_path.as_uri()}},
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": base64.b64encode(buffer.getvalue()).decode(),
+                                "format": "wav",
+                            },
+                        },
+                    ],
+                }
+            ],
+            temperature=0,
+            max_tokens=1,
+            timeout=120,
+        )
+        assert response.usage.completion_tokens == 1
+        assert response.execution.engine == "fortress-grid"
+        assert len(response.execution.worker_ids) == 4
