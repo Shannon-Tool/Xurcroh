@@ -46,6 +46,19 @@ def sample_next_token(logits: torch.Tensor, request: CompletionRequest) -> torch
     return torch.multinomial(probabilities, num_samples=1, generator=generator)
 
 
+def normalize_stop_token_ids(*values: object) -> set[int]:
+    normalized: set[int] = set()
+    for value in values:
+        if value is None:
+            continue
+        items = value if isinstance(value, list | tuple | set) else [value]
+        for item in items:
+            if not isinstance(item, int) or isinstance(item, bool):
+                raise ValueError("stop token IDs must be integers")
+            normalized.add(item)
+    return normalized
+
+
 def stopping_strings(request: CompletionRequest) -> tuple[str, ...]:
     if request.stop is None:
         return ()

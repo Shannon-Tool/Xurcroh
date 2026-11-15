@@ -17,6 +17,7 @@ from xurcroh.runtime.generation import (
     GenerationEvent,
     GenerationSummary,
     check_request_health,
+    normalize_stop_token_ids,
     sample_next_token,
     stopping_strings,
 )
@@ -30,6 +31,7 @@ class LocalTransformersEngine:
         self.engine_name = "transformers"
         self._model: Any = None
         self._tokenizer: Any = None
+        self._stop_token_ids: set[int] = set()
         self._load_lock = threading.Lock()
         self._inference_lock = threading.Lock()
         self._closed = False
@@ -83,6 +85,10 @@ class LocalTransformersEngine:
                     self.definition.path, dtype=torch.float32, **options
                 )
                 self._model.eval()
+                generation = getattr(self._model, "generation_config", None)
+                self._stop_token_ids = normalize_stop_token_ids(
+                    getattr(generation, "eos_token_id", None), self._tokenizer.eos_token_id
+                )
                 if self._tokenizer.pad_token_id is None:
                     self._tokenizer.pad_token = self._tokenizer.eos_token
             except Exception as error:
@@ -142,7 +148,7 @@ class LocalTransformersEngine:
                     past = outputs.past_key_values
                     current = next_token
                 yield GenerationEvent(delta=delta)
-                if token_id == self._tokenizer.eos_token_id:
+                if token_id in self._stop_token_ids:
                     finish_reason = "stop"
                     break
                 if stops and any(text.endswith(stop) for stop in stops):
@@ -166,6 +172,7 @@ class LocalTransformersEngine:
         if self._inference_lock.acquire(blocking=False):
             self._model = None
             self._tokenizer = None
+            self._stop_token_ids.clear()
             self._inference_lock.release()
 
     def require_modality(self, expected: str) -> None:

@@ -38,6 +38,7 @@ from xurcroh.runtime.generation import (
     GenerationEvent,
     GenerationSummary,
     check_request_health,
+    normalize_stop_token_ids,
     stopping_strings,
 )
 from xurcroh.runtime.remote import RemoteOpenAIEngine
@@ -75,6 +76,7 @@ class DenseStageEngine:
         self.modality = "text"
         self.controller_endpoint = controller_endpoint
         self._closed = False
+        self._stop_token_ids: set[int] = set()
         manifest_path = Path(definition.manifest_path)
         try:
             document = json.loads(manifest_path.read_text())
@@ -146,6 +148,15 @@ class DenseStageEngine:
             self.kv_heads = int(text_config["num_key_value_heads"])
             self.position_limit = int(text_config["max_position_embeddings"])
             self.vocabulary_size = int(text_config["vocab_size"])
+            generation_path = Path(definition.path) / "generation_config.json"
+            generation = (
+                json.loads(generation_path.read_text()) if generation_path.is_file() else {}
+            )
+            self._stop_token_ids = normalize_stop_token_ids(
+                generation.get("eos_token_id"),
+                text_config.get("eos_token_id"),
+                self._tokenizer.eos_token_id,
+            )
             self.interleaved_rope = text_config.get("rope_style") == "interleaved"
         except (OSError, KeyError, ValueError, json.JSONDecodeError) as error:
             self.boundary.close()
@@ -513,7 +524,7 @@ class DenseStageEngine:
             token_ids = torch.cat([token_ids, next_token.reshape(1, 1)], dim=1)
             hidden.zero_()
             yield GenerationEvent(delta=delta)
-            if token_id == self._tokenizer.eos_token_id:
+            if token_id in self._stop_token_ids:
                 finish_reason = "stop"
                 break
             if stops and any(text.endswith(stop) for stop in stops):
@@ -542,5 +553,6 @@ class DenseStageEngine:
                     client.close()
             self._native_clients.clear()
             self._residuals.clear()
+            self._stop_token_ids.clear()
             self.boundary.close()
             self._client.close()
