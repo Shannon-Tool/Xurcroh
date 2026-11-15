@@ -48,7 +48,7 @@ class RecordingExecutor:
         self.uploads.append((worker.name, tuple(str(path) for path in sources), remote))
 
 
-def provisioned_cluster() -> ClusterConfig:
+def provisioned_cluster(count: int = 20) -> ClusterConfig:
     return ClusterConfig.normalize(
         {
             "workers": [
@@ -56,8 +56,12 @@ def provisioned_cluster() -> ClusterConfig:
                     "name": f"worker-{index}",
                     "host": f"10.0.0.{10 + index}",
                     "ssh": {"username": "ubuntu"},
+                    "provider": {
+                        "country": "us" if index % 2 else "de",
+                        "cpu_vendor": "amd" if index % 2 else "intel",
+                    },
                 }
-                for index in range(4)
+                for index in range(count)
             ],
             "provision_workers": True,
             "controller_endpoint": "local://controller",
@@ -83,14 +87,11 @@ def test_fortress_provisioning_deploys_encrypted_roles_and_cleans_up(
     )
     monkeypatch.setattr(deployment, "_source_archive", lambda: b"source-archive")
     deployment.start()
-    assert len(deployment.workers["tiny"]) == 4
-    assert len({worker.labels["recipient_public"] for worker in deployment.workers["tiny"]}) == 4
-    assert [worker.labels["activation_index"] for worker in deployment.workers["tiny"]] == [
-        "0",
-        "0",
-        "1",
-        "1",
-    ]
+    assert len(deployment.workers["tiny"]) == 20
+    assert len({worker.labels["recipient_public"] for worker in deployment.workers["tiny"]}) == 20
+    assert all(worker.labels["operation_roles"] for worker in deployment.workers["tiny"])
+    assert len(deployment._placements["tiny"].assignments) == 14 * 4
+    assert all(role.package.is_dir() for role in deployment._roles)
     workspace = deployment.workspace
     assert not (workspace / "tls" / "ca.key").exists()
     assert (workspace / "tls" / "client.key").is_file()
@@ -136,26 +137,14 @@ def test_provisioning_requires_complete_role_grid(tiny_llama_path: Path, tmp_pat
         workspace=tmp_path / "deployment",
         executor_factory=RecordingExecutor,
     )
-    with pytest.raises(ConfigurationError, match="exactly 4 workers"):
+    with pytest.raises(ConfigurationError, match="at least 12 workers"):
         deployment.start()
 
 
 def test_provisioning_accepts_complete_three_share_role_grid(
     tiny_llama_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cluster = ClusterConfig.normalize(
-        {
-            "workers": [
-                {
-                    "name": f"worker-{index}",
-                    "host": f"10.0.0.{10 + index}",
-                    "ssh": {"username": "ubuntu"},
-                }
-                for index in range(9)
-            ],
-            "provision_workers": True,
-        }
-    )
+    cluster = provisioned_cluster(42)
     deployment = FortressDeployment(
         cluster,
         (
@@ -178,10 +167,16 @@ def test_provisioning_accepts_complete_three_share_role_grid(
     deployment.start()
     try:
         roles = deployment.workers["tiny"]
-        assert len(roles) == 9
-        assert [
-            (worker.labels["activation_index"], worker.labels["weight_index"]) for worker in roles
-        ] == [(str(activation), str(weight)) for activation in range(3) for weight in range(3)]
+        assert len(roles) == 42
+        placement = deployment._placements["tiny"]
+        assert len(placement.assignments) == 14 * 9
+        for operation in placement.operations:
+            assigned = [
+                assignment
+                for assignment in placement.assignments
+                if assignment.unit_id == operation.identifier
+            ]
+            assert len({(item.activation_share, item.weight_share) for item in assigned}) == 9
     finally:
         deployment.close()
 
@@ -343,7 +338,7 @@ def test_automatic_media_provisioning_uses_diffusers_component(
     definition = ModelDefinition(path=str(checkpoint), engine="fortress", fortress_seed=731)
     executor = RecordingExecutor()
     deployment = FortressDeployment(
-        provisioned_cluster(),
+        provisioned_cluster(24),
         (("tiny-image", definition),),
         workspace=tmp_path / "deployment",
         executor_factory=lambda: executor,
@@ -376,7 +371,7 @@ def test_managed_datagram_tunnel_rewrites_endpoints_and_cleans_relay(
         workers, remote_root, sdk, output, *, target_port=9444, target_ports=None, tunnel_name
     ):
         assert target_port == 9444
-        assert target_ports == [9444, 9444, 9444, 9444]
+        assert target_ports == [9444] * 20
         assert tunnel_name == "relay-0"
         for worker, configured in zip(workers, sdk["cluster"], strict=True):
             worker["datagram_tunnel"] = {

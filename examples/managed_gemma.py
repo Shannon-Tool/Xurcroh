@@ -14,7 +14,7 @@ def main() -> None:
         "--host",
         action="append",
         required=True,
-        help="SSH worker hostname or IP; repeat shares^2 times (four by default)",
+        help="SSH worker hostname or IP; repeat 5*shares^2 times (20 by default)",
     )
     parser.add_argument("--ssh-user", default="ubuntu")
     parser.add_argument("--ssh-key", default="~/.ssh/id_ed25519")
@@ -24,21 +24,32 @@ def main() -> None:
         "--shares",
         type=int,
         default=2,
-        help="shares per grid dimension; requires shares^2 worker hosts",
+        help="shares per grid dimension; requires 5*shares^2 worker hosts",
     )
+    parser.add_argument("--countries", nargs="+", required=True)
+    parser.add_argument("--cpu-vendors", nargs="+", required=True)
     parser.add_argument("--datagram-tunnel", action="store_true")
     args = parser.parse_args()
     if args.shares < 2:
         parser.error("--shares must be at least 2")
-    expected = args.shares**2
+    expected = 5 * args.shares**2
     if len(args.host) != expected:
         parser.error(f"this grid requires exactly {expected} --host values")
+    for name, values in (("countries", args.countries), ("cpu-vendors", args.cpu_vendors)):
+        if len(values) not in {1, expected}:
+            parser.error(f"--{name} requires one value or one per host")
+    countries = args.countries * expected if len(args.countries) == 1 else args.countries
+    cpu_vendors = args.cpu_vendors * expected if len(args.cpu_vendors) == 1 else args.cpu_vendors
     cluster = {
         "workers": [
             {
                 "name": f"gpu-{index}",
                 "host": host,
                 "ssh": {"username": args.ssh_user, "key_path": args.ssh_key},
+                "provider": {
+                    "country": countries[index],
+                    "cpu_vendor": cpu_vendors[index],
+                },
             }
             for index, host in enumerate(args.host)
         ],

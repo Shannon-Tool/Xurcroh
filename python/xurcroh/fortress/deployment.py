@@ -26,8 +26,22 @@ from cryptography.hazmat.primitives.serialization import (
 from xurcroh.config import ClusterConfig, GPUConfig, ModelDefinition, WorkerConfig
 from xurcroh.errors import ClusterUnavailableError, ConfigurationError
 from xurcroh.fortress.compiler import CompiledOperation
-from xurcroh.fortress.diffusers_loader import compile_diffusers_component
-from xurcroh.fortress.model_compiler import compile_fortress_checkpoint
+from xurcroh.fortress.diffusers_loader import (
+    compile_diffusers_component,
+    discover_diffusers_operations,
+)
+from xurcroh.fortress.model_compiler import (
+    compile_fortress_checkpoint,
+    discover_fortress_operations,
+)
+from xurcroh.fortress.placement import (
+    PlacementMap,
+    PlacementPolicy,
+    Provider,
+    RoleAssignment,
+    apply_placement,
+    place_operations,
+)
 from xurcroh.fortress.tls import generate_mutual_tls
 from xurcroh.fortress.transport import encode_role_artifact
 from xurcroh.fortress.worker_cli import artifact_file_name
@@ -199,6 +213,7 @@ class FortressDeployment:
         self._remote_root = f"{REMOTE_ROOT}/xurcroh-fortress-{self._deployment_id}"
         self._roles: list[RoleDeployment] = []
         self._workers: dict[str, list[WorkerConfig]] = {}
+        self._placements: dict[str, PlacementMap] = {}
         self._tunnel_workers: list[list[dict[str, Any]]] = []
         self._started = False
         self._closed = False
@@ -224,11 +239,11 @@ class FortressDeployment:
             ensure_checkpoint(name, definition)
             detect_modality(definition)
         shares = self.models[0][1].fortress_shares
-        expected = shares**2
-        if len(self.cluster.workers) != expected:
+        minimum = 3 * shares**2
+        if len(self.cluster.workers) < minimum:
             raise ConfigurationError(
-                f"Fortress provisioning requires exactly {expected} workers for one complete "
-                f"{shares}-by-{shares} role grid"
+                f"Fortress placement requires at least {minimum} workers for {shares}-by-"
+                f"{shares} operation grids with adjacency and pair separation"
             )
         if any(
             definition.fortress_shares != self.models[0][1].fortress_shares
@@ -241,6 +256,10 @@ class FortressDeployment:
             if worker.host is None or worker.ssh is None:
                 raise ClusterUnavailableError(
                     f"worker {worker.name!r} requires host and SSH configuration for provisioning"
+                )
+            if not worker.provider.get("country") or not worker.provider.get("cpu_vendor"):
+                raise ConfigurationError(
+                    f"worker {worker.name!r} requires provider country and cpu_vendor metadata"
                 )
 
     def _source_archive(self) -> bytes:
@@ -278,22 +297,61 @@ class FortressDeployment:
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(value)
 
+    def _place_workers(
+        self, definition: ModelDefinition
+    ) -> tuple[list[WorkerConfig], PlacementMap]:
+        providers = [
+            Provider(
+                worker.name,
+                str(worker.provider["country"]),
+                str(worker.provider["cpu_vendor"]),
+            )
+            for worker in self.cluster.workers
+        ]
+        if definition.modality in {"image", "video"}:
+            component = (
+                "transformer" if (Path(definition.path) / "transformer").is_dir() else "unet"
+            )
+            operations = discover_diffusers_operations(definition.path, component=component)
+        else:
+            operations = discover_fortress_operations(definition.path)
+        placement = place_operations(
+            operations,
+            providers,
+            PlacementPolicy(
+                shares=definition.fortress_shares,
+                max_provider_fraction=definition.fortress_max_provider_fraction,
+            ),
+        )
+        return apply_placement(self.cluster.workers, placement), placement
+
     def _create_roles(self) -> None:
         seed = int.from_bytes(os.urandom(32), "big")
         for model_index, (name, definition) in enumerate(self.models):
             model_root = self._workspace / f"model-{model_index}"
             model_root.mkdir()
             model_seed = definition.fortress_seed if definition.fortress_seed is not None else seed
+            placed_workers, placement = self._place_workers(definition)
+            placed_workers = [worker for worker in placed_workers if worker.labels["operations"]]
+            self._placements[name] = placement
+            assignments = {
+                (assignment.provider_id, assignment.unit_id): assignment
+                for assignment in placement.assignments
+            }
             model_roles: list[RoleDeployment] = []
             host_slots: dict[str, int] = {}
-            for index, worker in enumerate(self.cluster.workers):
+            for index, worker in enumerate(placed_workers):
                 host = worker.host or worker.name
                 host_slot = host_slots.get(host, 0)
                 host_slots[host] = host_slot + 1
                 port_number = 9444 + model_index * 1000 + host_slot
                 if port_number > 65535:
                     raise ConfigurationError("Fortress role port allocation exceeds 65535")
-                activation_index, weight_index = divmod(index, definition.fortress_shares)
+                first_assignment = next(
+                    assignment
+                    for assignment in placement.assignments
+                    if assignment.provider_id == worker.name
+                )
                 private = X25519PrivateKey.generate()
                 public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
                 key_path = model_root / f"recipient-{index}.key"
@@ -306,8 +364,8 @@ class FortressDeployment:
                         model=name,
                         model_index=model_index,
                         worker=worker,
-                        activation_index=activation_index,
-                        weight_index=weight_index,
+                        activation_index=first_assignment.activation_share,
+                        weight_index=first_assignment.weight_share,
                         recipient_public=public.hex(),
                         recipient_key=key_path,
                         package=model_root / f"role-{index}",
@@ -321,11 +379,17 @@ class FortressDeployment:
                 operation_name: str,
                 operation: CompiledOperation,
                 roles: list[RoleDeployment] = model_roles,
+                assignments: dict[tuple[str, str], RoleAssignment] = assignments,
             ) -> None:
                 for role in roles:
+                    assignment = assignments.get((role.worker.name, operation_name))
+                    if assignment is None:
+                        continue
                     role.package.mkdir(parents=True, exist_ok=True)
                     encoded = encode_role_artifact(
-                        operation, role.weight_index, bytes.fromhex(role.recipient_public)
+                        operation,
+                        assignment.weight_share,
+                        bytes.fromhex(role.recipient_public),
                     )
                     self._write_secret(
                         role.package / f"{artifact_file_name(operation_name)}.json", encoded
@@ -485,7 +549,9 @@ class FortressDeployment:
 
         for model_index, (name, _) in enumerate(self.models):
             generated = self._workers[name]
-            tunnel_workers = [self._tunnel_worker(worker) for worker in self.cluster.workers]
+            tunnel_workers = [
+                self._tunnel_worker(role.worker) for role in self._roles if role.model == name
+            ]
             sdk = {"cluster": generated}
             start_datagram_tunnels(
                 tunnel_workers,
