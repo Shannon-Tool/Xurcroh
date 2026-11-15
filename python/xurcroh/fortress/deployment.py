@@ -223,11 +223,12 @@ class FortressDeployment:
                 )
             ensure_checkpoint(name, definition)
             detect_modality(definition)
-        expected = 2 * self.models[0][1].fortress_shares
+        shares = self.models[0][1].fortress_shares
+        expected = shares**2
         if len(self.cluster.workers) != expected:
             raise ConfigurationError(
                 f"Fortress provisioning requires exactly {expected} workers for one complete "
-                f"2-by-{self.models[0][1].fortress_shares} role grid"
+                f"{shares}-by-{shares} role grid"
             )
         if any(
             definition.fortress_shares != self.models[0][1].fortress_shares
