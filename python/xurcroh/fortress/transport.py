@@ -832,9 +832,10 @@ class FortressRoleClient:
             if self._cover_error is not None:
                 raise ProtocolError("Fortress cover traffic failed") from self._cover_error
             if self._runtime is not None and self._runtime._cover_error is not None:
+                error = self._runtime._cover_error
                 raise ProtocolError(
-                    "Fortress grid cover traffic failed"
-                ) from self._runtime._cover_error
+                    f"Fortress grid cover traffic failed: {type(error).__name__}: {error}"
+                ) from error
         if len(activation_shares) != len(self.operation.shares):
             raise ValueError("activation share count must match the compiled weight grid")
         correlation_id = request_id or uuid.uuid4().hex
