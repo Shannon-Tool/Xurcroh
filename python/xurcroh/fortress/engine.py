@@ -60,6 +60,7 @@ class FortressEngine:
         self._combiner: FortressCombiner | None = None
         self._clients: dict[str, FortressRoleClient] = {}
         self._grid_runtime: FortressGridRuntime | None = None
+        self._grid_runtimes: list[FortressGridRuntime] = []
         self._load_lock = threading.Lock()
         self._inference_lock = threading.Lock()
         self._closed = False
@@ -97,11 +98,18 @@ class FortressEngine:
             server_name=labels.get("server_name", "localhost"),
         )
 
-    def _roles(self) -> list[RoleEndpoint]:
+    def _roles(self, operation_name: str | None = None) -> list[RoleEndpoint]:
         from xurcroh.fortress.transport import RoleEndpoint
 
         roles = []
         for worker in self.workers:
+            assigned = {name.strip() for name in worker.labels.get("operations", "*").split(",")}
+            if (
+                operation_name is not None
+                and operation_name not in assigned
+                and "*" not in assigned
+            ):
+                continue
             try:
                 activation_index = int(worker.labels["activation_index"])
                 weight_index = int(worker.labels["weight_index"])
@@ -123,6 +131,8 @@ class FortressEngine:
                     server_name=worker.labels.get("server_name"),
                 )
             )
+        if operation_name is not None and not roles:
+            raise ConfigurationError(f"operation {operation_name!r} has no assigned Fortress roles")
         return roles
 
     def _load(self) -> None:
@@ -188,24 +198,30 @@ class FortressEngine:
                     from xurcroh.fortress.transport import FortressGridRuntime
 
                     identity = self._identity()
-                    roles = self._roles()
                     frame_bytes = int(self.workers[0].labels.get("frame_bytes", 16_384))
                     cover_interval = float(self.workers[0].labels.get("cover_interval", 1.0))
                     seeded_activations = self.workers[0].labels.get(
                         "seeded_activations", "true"
                     ).lower() not in {"0", "false", "no"}
-                    self._grid_runtime = FortressGridRuntime(
-                        roles,
-                        identity,
-                        frame_bytes=frame_bytes,
-                        cover_interval=cover_interval,
-                        seeded_activations=seeded_activations,
-                        recover_role=self._recover_role,
-                    )
-                    clients = {
-                        name: self._grid_runtime.client(operation, name)
-                        for name, operation in compiled.operations.items()
-                    }
+                    runtimes: dict[tuple[str, ...], FortressGridRuntime] = {}
+                    for name, operation in compiled.operations.items():
+                        roles = self._roles(name)
+                        group = tuple(role.provider_id for role in roles)
+                        runtime = runtimes.get(group)
+                        if runtime is None:
+                            runtime = FortressGridRuntime(
+                                roles,
+                                identity,
+                                frame_bytes=frame_bytes,
+                                cover_interval=cover_interval,
+                                seeded_activations=seeded_activations,
+                                recover_role=self._recover_role,
+                            )
+                            runtimes[group] = runtime
+                            self._grid_runtimes.append(runtime)
+                            if self._grid_runtime is None:
+                                self._grid_runtime = runtime
+                        clients[name] = runtime.client(operation, name)
                 self._clients = clients
                 if compiled.model is not None and clients:
                     from xurcroh.fortress.module import connect_grid_clients
@@ -576,9 +592,10 @@ class FortressEngine:
                 client.close()
         finally:
             self._clients.clear()
-            if self._grid_runtime is not None:
-                self._grid_runtime.close()
-                self._grid_runtime = None
+            for runtime in self._grid_runtimes:
+                runtime.close()
+            self._grid_runtimes.clear()
+            self._grid_runtime = None
         self._combiner = None
         self._compiled = None
         self._tokenizer = None

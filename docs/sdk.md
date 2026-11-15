@@ -50,6 +50,8 @@ A cluster can be an endpoint string, one worker dictionary, a worker list, or an
 
 Worker fields include `name`, `host`, `endpoint`, `ssh`, `gpu`, `labels`, `group`, `provider`, `network_interface`, and `resources`. SSH supports `username`, `port`, `key_path`, `password`, `password_env`, `known_hosts_path`, and strict host-key checking. `SecretStr` redaction prevents passwords from appearing in representations. Operators should prefer SSH keys, agents, or indirectly supplied environment credentials. Secrets are never valid log fields.
 
+For separately managed Fortress endpoints, the optional `labels.operations` value is a comma-separated list of compiled operation names assigned to that worker; the default `*` preserves the full-grid behavior. Every assigned operation must have a complete `N × N` role grid. Operations with identical worker sets share authenticated connections, while disjoint sets execute on independent grid runtimes. Automatic SSH provisioning currently emits `*` and does not yet consume the standalone `PlacementMap`.
+
 Parallelism is validated before execution; pipeline degree cannot exceed worker count. Strict security rejects plaintext worker weights and unauthenticated transport. `tee` mode requires attestation. Development-only downgrades must be selected explicitly and are not production security configurations.
 
 ## Chat completions

@@ -151,6 +151,124 @@ def test_public_sdk_executes_remote_fortress_grid(
             worker.close()
 
 
+def test_public_sdk_executes_split_operation_grids(
+    tiny_llama_path: Path, tmp_path: Path, mtls_identities: dict[str, bytes]
+) -> None:
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding,
+        NoEncryption,
+        PrivateFormat,
+        PublicFormat,
+    )
+
+    from xurcroh.fortress.model_compiler import compile_fortress_checkpoint
+    from xurcroh.fortress.transport import encode_role_artifact
+    from xurcroh.fortress.worker import FortressRoleWorker
+
+    compiled = compile_fortress_checkpoint(tiny_llama_path, seed=731)
+    operation_names = list(compiled.operations)
+    workers: list[FortressRoleWorker] = []
+    cluster = []
+    for group in range(2):
+        assigned = operation_names[group::2]
+        for index in range(4):
+            activation_index, weight_index = divmod(index, 2)
+            private = X25519PrivateKey.generate()
+            public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+            artifacts = {
+                name: encode_role_artifact(operation, weight_index, public)
+                for name, operation in compiled.operations.items()
+            }
+            worker = FortressRoleWorker(
+                artifacts,
+                private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
+                private_key=mtls_identities["server_key"],
+                client_ca=mtls_identities["ca"],
+            )
+            worker.start()
+            workers.append(worker)
+            cluster.append(
+                {
+                    "name": f"grid-{group}-{index}",
+                    "endpoint": f"quic://{worker.address}",
+                    "gpu": {"model": "test-gpu", "memory_gb": 1},
+                    "labels": {
+                        "activation_index": str(activation_index),
+                        "weight_index": str(weight_index),
+                        "recipient_public": public.hex(),
+                        "operations": ",".join(assigned),
+                        "cover_interval": "60",
+                    },
+                }
+            )
+    (tmp_path / "client.crt").write_bytes(mtls_identities["client_certificate"])
+    (tmp_path / "client.key").write_bytes(mtls_identities["client_key"])
+    (tmp_path / "ca.crt").write_bytes(mtls_identities["ca"])
+    for worker in cluster:
+        worker["labels"].update(
+            {
+                "client_certificate_path": str(tmp_path / "client.crt"),
+                "client_key_path": str(tmp_path / "client.key"),
+                "ca_path": str(tmp_path / "ca.crt"),
+            }
+        )
+    try:
+        with Xurcroh(
+            cluster=cluster,
+            model_path={
+                "tiny": {
+                    "path": str(tiny_llama_path),
+                    "revision": "a" * 40,
+                    "engine": "fortress",
+                    "fortress_seed": 731,
+                }
+            },
+        ) as client:
+            response = client.chat.completions.create(
+                model="tiny",
+                messages=[{"role": "user", "content": "hello"}],
+                temperature=0,
+                max_tokens=1,
+            )
+            engine = client._runtime._engines["tiny"]
+            assert len(engine._grid_runtimes) == 2
+            assert all(len(runtime.connections) == 4 for runtime in engine._grid_runtimes)
+        assert response.usage.completion_tokens == 1
+        assert len(response.execution.worker_ids) == 8
+    finally:
+        for worker in workers:
+            worker.close()
+
+
+def test_fortress_engine_selects_operation_specific_roles(tiny_llama_path: Path) -> None:
+    from xurcroh.config import ModelDefinition, WorkerConfig
+    from xurcroh.fortress.engine import FortressEngine
+
+    workers = [
+        WorkerConfig(
+            name=name,
+            endpoint=f"quic://{name}:9444",
+            labels={
+                "activation_index": "0",
+                "weight_index": "0",
+                "recipient_public": "00" * 32,
+                "operations": operation,
+            },
+        )
+        for name, operation in (("grid-a", "operation-a"), ("grid-b", "operation-b"))
+    ]
+    engine = FortressEngine(
+        "tiny",
+        ModelDefinition(path=str(tiny_llama_path), engine="fortress"),
+        workers,
+    )
+
+    assert [role.provider_id for role in engine._roles("operation-a")] == ["grid-a"]
+    assert [role.provider_id for role in engine._roles("operation-b")] == ["grid-b"]
+
+
 def test_fortress_inference_queue_honors_request_timeout(tiny_llama_path: Path) -> None:
 
     import pytest
