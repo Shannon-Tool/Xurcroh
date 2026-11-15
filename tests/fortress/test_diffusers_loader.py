@@ -30,7 +30,20 @@ def test_real_diffusers_layout_loads_only_transformer_linear_layers(tmp_path: Pa
     vae.mkdir()
     save_file({"decoder.weight": torch.randn(4, 4)}, str(vae / "model.safetensors"))
 
+    from xurcroh.fortress.diffusers_loader import discover_diffusers_operations
+
+    discovered = discover_diffusers_operations(tmp_path, component="transformer")
     operations = compile_diffusers_component(tmp_path, component="transformer")
+    assert [operation.identifier for operation in discovered] == list(operations)
+    by_name = {operation.identifier: operation for operation in discovered}
+    assert (
+        by_name["transformer_blocks.0.attn.to_q.weight"].paired_with
+        == "transformer_blocks.0.attn.to_k.weight"
+    )
+    assert (
+        by_name["transformer_blocks.0.attn.to_k.weight"].paired_with
+        == "transformer_blocks.0.attn.to_q.weight"
+    )
     assert len(operations) == 4
     assert "transformer_blocks.0.norm.norm.weight" not in operations
     assert all(
