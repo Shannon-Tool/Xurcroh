@@ -47,7 +47,7 @@ def generate_mutual_tls(output: Path, services: dict[str, list[str]]) -> None:
     for name, addresses in {**services, "client": ["localhost"]}.items():
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         alternative_names: list[x509.GeneralName] = []
-        for address in dict.fromkeys([*addresses, "localhost"]):
+        for address in dict.fromkeys([name, *addresses, "localhost"]):
             try:
                 alternative_names.append(x509.IPAddress(ipaddress.ip_address(address)))
             except ValueError:
