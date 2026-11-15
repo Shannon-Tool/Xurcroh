@@ -18,7 +18,6 @@ from xurcroh.errors import (
     CapabilityError,
     ConfigurationError,
     ModelLoadError,
-    RequestTimeoutError,
 )
 from xurcroh.fortress.combiner import FortressCombiner
 from xurcroh.fortress.model_compiler import FortressCheckpoint, compile_fortress_checkpoint
@@ -74,18 +73,10 @@ class FortressEngine:
     def _inference_scope(
         self, started: float, timeout: float, cancelled: threading.Event
     ) -> Iterator[None]:
-        from xurcroh.runtime.generation import check_request_health
+        from xurcroh.runtime.generation import bounded_execution
 
-        check_request_health(cancelled, started, timeout)
-        remaining = timeout - (time.monotonic() - started)
-        if not self._inference_lock.acquire(timeout=max(remaining, 0)):
-            raise RequestTimeoutError(
-                f"model {self.name!r} inference queue exceeded {timeout:.6f}s"
-            )
-        try:
+        with bounded_execution(self._inference_lock, cancelled, started, timeout, self.name):
             yield
-        finally:
-            self._inference_lock.release()
 
     def _identity(self) -> MutualTLSIdentity:
         from xurcroh.fortress.transport import MutualTLSIdentity

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from threading import Event
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 
@@ -72,6 +73,26 @@ def check_request_health(cancelled: Event, started: float, timeout: float) -> No
         raise RequestCancelledError("request was cancelled")
     if time.monotonic() - started > timeout:
         raise RequestTimeoutError(f"request exceeded {timeout:.3f}s timeout")
+
+
+@contextmanager
+def bounded_execution(
+    lock: Any,
+    cancelled: Event,
+    started: float,
+    timeout: float,
+    model: str,
+) -> Iterator[None]:
+    import time
+
+    check_request_health(cancelled, started, timeout)
+    remaining = timeout - (time.monotonic() - started)
+    if not lock.acquire(timeout=max(remaining, 0)):
+        raise RequestTimeoutError(f"model {model!r} inference queue exceeded {timeout:.6f}s")
+    try:
+        yield
+    finally:
+        lock.release()
 
 
 def iter_completion_text(text: str) -> Iterator[str]:

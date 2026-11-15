@@ -127,3 +127,20 @@ def test_close_waits_for_inflight_real_engine_cancellation(
         with pytest.raises(RequestCancelledError):
             future.result(timeout=5)
     assert client.metrics()["requests_cancelled"] == 1
+
+
+def test_local_inference_queue_honors_request_timeout(tiny_model_path: Path) -> None:
+    client = Xurcroh(cluster={"endpoint": "local://cpu"}, model_path={"tiny": tiny_model_path})
+    engine = client._runtime._engine("tiny")
+    engine._inference_lock.acquire()
+    try:
+        with pytest.raises(RequestTimeoutError, match="inference queue"):
+            client.chat.completions.create(
+                model="tiny",
+                messages=[{"role": "user", "content": "hello"}],
+                max_tokens=1,
+                timeout=0.01,
+            )
+    finally:
+        engine._inference_lock.release()
+        client.close()

@@ -16,6 +16,7 @@ from xurcroh.requests import CompletionRequest
 from xurcroh.runtime.generation import (
     GenerationEvent,
     GenerationSummary,
+    bounded_execution,
     check_request_health,
     normalize_stop_token_ids,
     sample_next_token,
@@ -105,7 +106,7 @@ class LocalTransformersEngine:
     ) -> Iterator[GenerationEvent]:
         self._load()
         started = time.monotonic()
-        with self._inference_lock:
+        with bounded_execution(self._inference_lock, cancelled, started, timeout, self.name):
             prompt = render_chat_prompt(self._tokenizer, request.messages)
             inputs = self._tokenizer(prompt, return_tensors="pt")
             input_ids = inputs["input_ids"]
