@@ -45,6 +45,31 @@ def test_placement_backtracks_to_find_country_and_cpu_vendor_diversity() -> None
     assert len({provider.cpu_vendor for provider in selected}) == 2
 
 
+def test_placement_enforces_multiple_operation_pairs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "xurcroh.fortress.placement.secrets.SystemRandom.shuffle",
+        lambda self, values: None,
+    )
+    paired = [
+        Operation("gate", 0, "feed_forward", paired_with=("up", "down")),
+        Operation("up", 1, "feed_forward", paired_with=("gate", "down")),
+        Operation("down", 2, "feed_forward", paired_with=("gate", "up")),
+    ]
+    placement = place_operations(
+        paired, providers()[:12], PlacementPolicy(max_provider_fraction=1.0)
+    )
+    by_operation = {
+        operation.identifier: {
+            assignment.provider_id
+            for assignment in placement.assignments
+            if assignment.unit_id == operation.identifier
+        }
+        for operation in paired
+    }
+    assert by_operation["down"].isdisjoint(by_operation["gate"])
+    assert by_operation["down"].isdisjoint(by_operation["up"])
+
+
 def test_placement_enforces_role_diversity_pairs_replicas_and_epoch_refresh() -> None:
     policy = PlacementPolicy(shares=2, replicas=2, max_provider_fraction=1.0)
     placement = place_operations(operations(), providers(), policy, epoch=3)
