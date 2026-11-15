@@ -20,6 +20,8 @@ The latest standard local suite at `59ff7af` reports **423 passed, 33 deselected
 
 At `59ff7af`, the public SDK also completed real managed SSH inference with 12 CPU role processes using generated per-operation placement maps and operation-specific encrypted artifacts in 71.82 seconds. This is loopback host evidence with an explicit test-only provider-fraction relaxation, not independent physical infrastructure or a production topology benchmark.
 
+At `e66bef0`, managed Diffusers image generation through the same placed 12-role SSH path passed in 70.77 seconds. The run exposed and corrected a divergence where diffusion previously built an unplaced all-worker grid; text and diffusion now share the same grid-builder, and duplicate role coordinates are rejected. This remains loopback evidence.
+
 | Check | Actual result |
 |---|---|
 | Python unit/integration/security tests | **423 passed, 33 deselected** at `59ff7af`; slow managed/video tests have separate results |
