@@ -299,6 +299,63 @@ def test_public_sdk_owns_provisioned_fortress_lifecycle(
     assert not workspace.exists()
 
 
+def test_concurrent_role_recovery_restarts_each_role_once(
+    tiny_llama_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    deployment = FortressDeployment(
+        provisioned_cluster(),
+        (("tiny", ModelDefinition(path=str(tiny_llama_path), engine="fortress")),),
+        workspace=tmp_path / "deployment",
+        executor_factory=RecordingExecutor,
+    )
+    monkeypatch.setattr(deployment, "_source_archive", lambda: b"source-archive")
+    deployment.start()
+    role = deployment._roles[0]
+    provider_id = f"{role.worker.name}-{role.model}"
+    started = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+
+    def stop(role) -> None:
+        calls.append("stop")
+        started.set()
+        assert release.wait(timeout=5)
+
+    def start(role) -> None:
+        calls.append("start")
+
+    monkeypatch.setattr(deployment, "_stop_role", stop)
+    monkeypatch.setattr(deployment, "_start_role", start)
+    waiting = threading.Event()
+    original_wait = deployment._restart_condition.wait
+
+    def wait() -> bool:
+        waiting.set()
+        return original_wait()
+
+    monkeypatch.setattr(deployment._restart_condition, "wait", wait)
+    threads = [
+        threading.Thread(target=deployment.restart_role, args=(provider_id,)) for _ in range(2)
+    ]
+    try:
+        threads[0].start()
+        assert started.wait(timeout=5)
+        threads[1].start()
+        assert waiting.wait(timeout=5)
+        release.set()
+        for thread in threads:
+            thread.join(timeout=5)
+        assert all(not thread.is_alive() for thread in threads)
+        assert calls == ["stop", "start"]
+    finally:
+        release.set()
+        for thread in threads:
+            thread.join(timeout=5)
+        deployment.close()
+
+
 def test_failed_remote_cleanup_retains_recovery_state_and_can_retry(
     tiny_llama_path: Path, tmp_path: Path
 ) -> None:
