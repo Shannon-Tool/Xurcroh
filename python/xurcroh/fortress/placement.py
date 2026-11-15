@@ -21,7 +21,7 @@ class Operation:
     identifier: str
     index: int
     kind: str
-    paired_with: str | None = None
+    paired_with: str | tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -140,7 +140,17 @@ def place_operations(
         if position == len(indexed):
             return list(assignments)
         operation = indexed[position][1]
-        paired_providers = per_operation.get(operation.paired_with or "", set())
+        if operation.paired_with is None:
+            paired_operations: tuple[str, ...] = ()
+        elif isinstance(operation.paired_with, str):
+            paired_operations = (operation.paired_with,)
+        else:
+            paired_operations = operation.paired_with
+        paired_providers = {
+            provider
+            for identifier in paired_operations
+            for provider in per_operation.get(identifier, set())
+        }
         current: set[str] = set()
 
         def assign_role(role_index: int) -> list[RoleAssignment] | None:
