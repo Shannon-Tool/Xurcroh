@@ -97,3 +97,45 @@ def test_sdk_managed_image_generation_over_real_ssh(tmp_path: Path) -> None:
         assert response.data[0].b64_json
         assert response.execution.engine == "fortress-diffusion-grid"
         assert len(response.execution.worker_ids) == 4
+
+
+def test_sdk_managed_moe_inference_over_real_ssh(tmp_path: Path) -> None:
+    from transformers.models.qwen3_moe import Qwen3MoeConfig, Qwen3MoeForCausalLM
+
+    config = Qwen3MoeConfig(
+        vocab_size=12,
+        hidden_size=16,
+        intermediate_size=32,
+        moe_intermediate_size=8,
+        num_hidden_layers=1,
+        num_attention_heads=4,
+        num_key_value_heads=1,
+        num_experts=2,
+        num_experts_per_tok=1,
+        max_position_embeddings=128,
+    )
+    checkpoint = tmp_path / "moe-model"
+    Qwen3MoeForCausalLM(config).save_pretrained(checkpoint, safe_serialization=True)
+    with (
+        ssh_testbed(tmp_path) as base,
+        Xurcroh(
+            cluster=_cpu_workers(base),
+            model_path={
+                "tiny-moe": {
+                    "path": str(checkpoint),
+                    "engine": "fortress",
+                    "fortress_seed": 731,
+                }
+            },
+        ) as client,
+    ):
+        response = client.chat.completions.create(
+            model="tiny-moe",
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0,
+            max_tokens=1,
+            timeout=120,
+        )
+        assert response.usage.completion_tokens == 1
+        assert response.execution.engine == "fortress-grid"
+        assert len(response.execution.worker_ids) == 4
