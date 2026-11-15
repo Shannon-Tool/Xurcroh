@@ -66,6 +66,11 @@ def place_operations(
         raise ValueError("provider identities must be unique")
     if len({operation.identifier for operation in operations}) != len(operations):
         raise ValueError("operation identities must be unique")
+    if (
+        len({provider.country for provider in providers}) < 2
+        or len({provider.cpu_vendor for provider in providers}) < 2
+    ):
+        raise ValueError("placement requires country and CPU vendor diversity")
     required_per_unit = policy.shares**2 * policy.replicas
     if providers and required_per_unit > len(providers):
         raise ValueError("not enough providers for unique grid-cell roles")
@@ -90,12 +95,16 @@ def place_operations(
         operation = indexed[position][1]
         paired_providers = per_operation.get(operation.paired_with or "", set())
         current: set[str] = set()
-        countries: set[str] = set()
-        cpu_vendors: set[str] = set()
 
         def assign_role(role_index: int) -> list[RoleAssignment] | None:
             nonlocal search_nodes
             if role_index == len(roles):
+                selected = [provider for provider in providers if provider.provider_id in current]
+                if (
+                    len({provider.country for provider in selected}) < 2
+                    or len({provider.cpu_vendor for provider in selected}) < 2
+                ):
+                    return None
                 per_operation[operation.identifier] = current
                 result = search(position + 1, current)
                 if result is not None:
@@ -128,16 +137,12 @@ def place_operations(
                     )
                 )
                 current.add(provider.provider_id)
-                countries.add(provider.country)
-                cpu_vendors.add(provider.cpu_vendor)
                 provider_units[provider.provider_id].add(operation.identifier)
                 result = assign_role(role_index + 1)
                 if result is not None:
                     return result
                 assignments.pop()
                 current.remove(provider.provider_id)
-                countries.discard(provider.country)
-                cpu_vendors.discard(provider.cpu_vendor)
                 provider_units[provider.provider_id].remove(operation.identifier)
             return None
 

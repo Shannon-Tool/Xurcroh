@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from xurcroh.fortress.placement import (
     Operation,
     PlacementMap,
@@ -24,6 +26,23 @@ def operations() -> list[Operation]:
         Operation("up", 3, "projection", paired_with="gate"),
         Operation("down", 4, "projection"),
     ]
+
+
+def test_placement_rejects_single_country_and_cpu_vendor_grids() -> None:
+    homogeneous = [Provider(f"provider-{index}", "us", "amd") for index in range(4)]
+    with pytest.raises(ValueError, match="country and CPU vendor diversity"):
+        place_operations(operations()[:1], homogeneous, PlacementPolicy())
+
+
+def test_placement_backtracks_to_find_country_and_cpu_vendor_diversity() -> None:
+    candidates = [
+        *(Provider(f"provider-{index}", "us", "amd") for index in range(4)),
+        *(Provider(f"provider-{index}", "de", "intel") for index in range(4, 8)),
+    ]
+    placement = place_operations(operations()[:1], candidates, PlacementPolicy())
+    selected = [placement.provider(assignment.provider_id) for assignment in placement.assignments]
+    assert len({provider.country for provider in selected}) == 2
+    assert len({provider.cpu_vendor for provider in selected}) == 2
 
 
 def test_placement_enforces_role_diversity_pairs_replicas_and_epoch_refresh() -> None:
