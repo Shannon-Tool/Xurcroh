@@ -571,6 +571,27 @@ class FortressDeployment:
                 )
             time.sleep(0.2)
 
+    def diagnostics(self) -> dict[str, str]:
+        if self._executor is None:
+            return {}
+        reports: dict[str, str] = {}
+        for role in self._roles:
+            path = (
+                Path(self._remote_root)
+                / f"model-{role.model_index}"
+                / role.worker.name
+                / "role.log"
+            )
+            try:
+                output = self._executor.run(
+                    role.worker, f"tail -c 4000 {shlex.quote(str(path))}", timeout=10
+                ).strip()
+                if output:
+                    reports[role.service_name] = output
+            except Exception as error:
+                reports[role.service_name] = f"role.log unavailable: {error}"
+        return reports
+
     def restart_role(self, provider_id: str) -> None:
         with self._lock:
             if self._closed or not self._started:

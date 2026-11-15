@@ -257,6 +257,9 @@ class RuntimeService:
             self._metrics.cancelled()
         else:
             self._metrics.failed()
+        if self._deployment is not None:
+            for role, report in self._deployment.diagnostics().items():
+                error.add_note(f"{role}: {report}")
 
     def metrics(self) -> dict[str, int | float]:
         snapshot = self._metrics.snapshot()
