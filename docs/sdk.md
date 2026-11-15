@@ -67,7 +67,7 @@ for chunk in stream:
     print(chunk.choices[0].delta.content or "", end="")
 ```
 
-Call `client.cancel("request-42")` to cancel active work. Cancellation and timeout raise `RequestCancelledError` and `RequestTimeoutError`. Concurrent requests use independent request state and actual model execution. Closing a stream or client releases its request registration; abandoned streams cannot deadlock shutdown.
+Call `client.cancel("request-42")` to cancel active work. Cancellation and timeout raise `RequestCancelledError` and `RequestTimeoutError`. Fortress inference-lock acquisition uses the request deadline, so waiting for another request cannot silently exceed the configured timeout. Concurrent requests use independent request state and actual model execution. Closing a stream or client releases its request registration; abandoned streams cannot deadlock shutdown.
 
 ## Images and video
 

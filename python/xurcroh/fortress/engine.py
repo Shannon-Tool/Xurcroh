@@ -5,6 +5,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -12,7 +13,12 @@ import numpy as np
 import torch
 
 from xurcroh.config import ModelDefinition, WorkerConfig
-from xurcroh.errors import CapabilityError, ConfigurationError, ModelLoadError
+from xurcroh.errors import (
+    CapabilityError,
+    ConfigurationError,
+    ModelLoadError,
+    RequestTimeoutError,
+)
 from xurcroh.fortress.combiner import FortressCombiner
 from xurcroh.fortress.model_compiler import FortressCheckpoint, compile_fortress_checkpoint
 from xurcroh.models.vlm import GemmaAudioEmbedder, GemmaVisionEmbedder
@@ -55,6 +61,23 @@ class FortressEngine:
         supported = {"text", "vlm"} if self.definition.modality == "vlm" else {"text"}
         if expected not in supported:
             raise CapabilityError(f"Fortress engine does not support {expected}")
+
+    @contextmanager
+    def _inference_scope(
+        self, started: float, timeout: float, cancelled: threading.Event
+    ) -> Iterator[None]:
+        from xurcroh.runtime.generation import check_request_health
+
+        check_request_health(cancelled, started, timeout)
+        remaining = timeout - (time.monotonic() - started)
+        if not self._inference_lock.acquire(timeout=max(remaining, 0)):
+            raise RequestTimeoutError(
+                f"model {self.name!r} inference queue exceeded {timeout:.6f}s"
+            )
+        try:
+            yield
+        finally:
+            self._inference_lock.release()
 
     def _identity(self) -> MutualTLSIdentity:
         from xurcroh.fortress.transport import MutualTLSIdentity
@@ -282,7 +305,7 @@ class FortressEngine:
         compiled = self._compiled
         assert compiled is not None and compiled.model is not None
         started = time.monotonic()
-        with self._inference_lock:
+        with self._inference_scope(started, timeout, cancelled):
             prompt = render_chat_prompt(self._tokenizer, request.messages)
             input_ids = self._tokenizer(prompt, return_tensors="pt", add_special_tokens=False)[
                 "input_ids"
@@ -356,7 +379,7 @@ class FortressEngine:
         compiled = self._compiled
         assert compiled is not None and compiled.model is not None and self._processor is not None
         started = time.monotonic()
-        with self._inference_lock:
+        with self._inference_scope(started, timeout, cancelled):
             images = []
             audio = []
             sample_rates = []
@@ -485,7 +508,7 @@ class FortressEngine:
             yield from self._generate_official_vlm(request, cancelled=cancelled, timeout=timeout)
             return
         started = time.monotonic()
-        with self._inference_lock:
+        with self._inference_scope(started, timeout, cancelled):
             hidden, prompt_tokens = self._prepare_hidden(request)
             state_key = f"{self.name}:{uuid.uuid4().hex}"
             completion_ids: list[int] = []
