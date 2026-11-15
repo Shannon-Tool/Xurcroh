@@ -85,6 +85,7 @@ def test_image_ladder_verifier_compares_latents_and_public_sdk(
             worker.close()
 
 
+@pytest.mark.slow
 def test_video_ladder_verifier_compares_latents_and_public_sdk(
     tiny_llama_path: Path, tmp_path: Path, mtls_identities: dict[str, bytes]
 ) -> None:
