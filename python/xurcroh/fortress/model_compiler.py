@@ -15,6 +15,7 @@ from xurcroh.algebra.modulation import SignedPermutation
 from xurcroh.errors import ConfigurationError
 from xurcroh.fortress.combiner import FortressCombiner, FortressLayerMetadata
 from xurcroh.fortress.compiler import CompiledOperation, compile_operation
+from xurcroh.fortress.placement import Operation
 from xurcroh.shards.compiler import CheckpointReader
 
 
@@ -59,6 +60,74 @@ def _layer_family(names: list[str]) -> tuple[str, list[int]]:
         raise ConfigurationError("checkpoint contains no transformer layers")
     family = max(families, key=lambda name: len(families[name]))
     return family, sorted(families[family])
+
+
+def discover_fortress_operations(checkpoint: str | Path) -> list[Operation]:
+    reader = CheckpointReader(Path(checkpoint))
+    names = list(reader.tensor_names())
+    shapes = reader.tensor_shapes(names)
+    layer_family, layer_indices = _layer_family(names)
+    discovered: list[Operation] = []
+
+    def add(name: str) -> None:
+        tensor_name = name if name.endswith(".weight") else name + ".weight"
+        name = name.removesuffix(".weight")
+        if tensor_name not in shapes or len(shapes[tensor_name]) != 2:
+            return
+        if ".self_attn." in name:
+            kind = "attention"
+        elif ".experts." in name:
+            kind = "expert"
+        else:
+            kind = "feed_forward"
+        paired_with: str | tuple[str, ...] | None = None
+        if name.endswith(".q_proj"):
+            paired_with = name.removesuffix("q_proj") + "k_proj"
+        elif name.endswith(".k_proj"):
+            paired_with = name.removesuffix("k_proj") + "q_proj"
+        elif name.endswith((".gate_proj", ".up_proj", ".down_proj")):
+            prefix = name.rsplit(".", 1)[0]
+            paired_with = tuple(
+                f"{prefix}.{projection}"
+                for projection in ("gate_proj", "up_proj", "down_proj")
+                if f"{prefix}.{projection}" != name
+            )
+        discovered.append(Operation(name, len(discovered), kind, paired_with))
+
+    for index in layer_indices:
+        prefix = f"{layer_family}.{index}"
+        layer_names = [name for name in names if name.startswith(prefix + ".")]
+        attention_prefix = f"{prefix}.self_attn"
+        for projection in ("q_proj", "k_proj", "v_proj", "o_proj"):
+            add(f"{attention_prefix}.{projection}.weight")
+        mlp_prefix = f"{prefix}.mlp"
+        expert_indices = sorted(
+            {
+                int(match.group(1))
+                for name in layer_names
+                if (match := re.search(r"mlp\.experts\.(\d+)\.", name))
+            }
+        )
+        if expert_indices:
+            for expert in expert_indices:
+                for projection in ("gate_proj", "up_proj", "down_proj"):
+                    add(f"{mlp_prefix}.experts.{expert}.{projection}.weight")
+        else:
+            for projection in ("gate_proj", "up_proj", "down_proj"):
+                add(f"{mlp_prefix}.{projection}.weight")
+        selected = {operation.identifier + ".weight" for operation in discovered}
+        for name in layer_names:
+            operation_name = name.removesuffix(".weight")
+            if (
+                name.endswith(".weight")
+                and len(shapes[name]) == 2
+                and name not in selected
+                and ".per_layer_" not in name
+                and ".router." not in name
+                and name != f"{mlp_prefix}.gate.weight"
+            ):
+                add(operation_name)
+    return discovered
 
 
 def _derived_seed(seed: int, operation: str, purpose: str) -> bytes:
