@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
 
 
@@ -87,6 +88,7 @@ def place_operations(
         for replica in range(policy.replicas)
     ]
     search_nodes = 0
+    shuffle = secrets.SystemRandom().shuffle
 
     def search(position: int, previous_providers: set[str]) -> list[RoleAssignment] | None:
         nonlocal search_nodes
@@ -120,9 +122,7 @@ def place_operations(
                 and provider.provider_id not in previous_providers
                 and len(provider_units[provider.provider_id]) < maximum_units
             ]
-            candidates.sort(key=lambda provider: provider.provider_id)
-            rotation = epoch % len(candidates) if candidates else 0
-            candidates = candidates[rotation:] + candidates[:rotation]
+            shuffle(candidates)
             for provider in candidates:
                 search_nodes += 1
                 if search_nodes > 250_000:
