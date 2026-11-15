@@ -25,8 +25,8 @@ jobs:
         run: ./scripts/bootstrap-python.sh
       - name: Format and lint
         run: |
-          .venv/bin/ruff format --check python benchmarks tests
-          .venv/bin/ruff check python benchmarks tests
+          .venv/bin/ruff format --check python benchmarks tests examples
+          .venv/bin/ruff check python benchmarks tests examples
           .venv/bin/mypy
       - name: Build native transport bindings
         run: .venv/bin/maturin develop --manifest-path crates/transport/Cargo.toml --features python
