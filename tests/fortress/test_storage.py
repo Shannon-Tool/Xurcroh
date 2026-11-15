@@ -18,6 +18,15 @@ def test_aont_rs_reconstructs_with_every_threshold_subset() -> None:
         assert reconstruct_shard(bundle, slices, key_shares, lambda _: True) == plaintext
 
 
+def test_aont_rs_rejects_inconsistent_slice_lengths() -> None:
+    bundle = disperse_shard(b"secret model weights", threshold=3, slice_count=5)
+    slices = dict(bundle.slices)
+    slices[0] = slices[0][:-1]
+
+    with pytest.raises(StorageIntegrityError):
+        reconstruct_shard(bundle, slices, bundle.key_shares, lambda _: True)
+
+
 def test_aont_rs_detects_tampering_and_requires_threshold_and_attestation() -> None:
     bundle = disperse_shard(b"secret model weights", threshold=3, slice_count=5)
     slices = dict(bundle.slices)
