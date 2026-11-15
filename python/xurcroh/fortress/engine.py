@@ -5,7 +5,7 @@ import json
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -25,6 +25,7 @@ from xurcroh.models.vlm import GemmaAudioEmbedder, GemmaVisionEmbedder
 from xurcroh.requests import AudioContentPart, ImageContentPart, TextContentPart
 
 if TYPE_CHECKING:
+    from xurcroh.fortress.compiler import CompiledOperation
     from xurcroh.fortress.transport import (
         FortressGridRuntime,
         FortressRoleClient,
@@ -142,6 +143,39 @@ class FortressEngine:
             raise ConfigurationError(f"operation {operation_name!r} has no assigned Fortress roles")
         return roles
 
+    def _grid_clients(
+        self, operations: Mapping[str, CompiledOperation]
+    ) -> dict[str, FortressRoleClient]:
+        from xurcroh.fortress.transport import FortressGridRuntime
+
+        identity = self._identity()
+        frame_bytes = int(self.workers[0].labels.get("frame_bytes", 16_384))
+        cover_interval = float(self.workers[0].labels.get("cover_interval", 1.0))
+        seeded_activations = self.workers[0].labels.get(
+            "seeded_activations", "true"
+        ).lower() not in {"0", "false", "no"}
+        runtimes: dict[tuple[str, ...], FortressGridRuntime] = {}
+        clients: dict[str, FortressRoleClient] = {}
+        for name, operation in operations.items():
+            roles = self._roles(name)
+            group = tuple(role.provider_id for role in roles)
+            runtime = runtimes.get(group)
+            if runtime is None:
+                runtime = FortressGridRuntime(
+                    roles,
+                    identity,
+                    frame_bytes=frame_bytes,
+                    cover_interval=cover_interval,
+                    seeded_activations=seeded_activations,
+                    recover_role=self._recover_role,
+                )
+                runtimes[group] = runtime
+                self._grid_runtimes.append(runtime)
+                if self._grid_runtime is None:
+                    self._grid_runtime = runtime
+            clients[name] = runtime.client(operation, name)
+        return clients
+
     def _load(self) -> None:
         if self._closed:
             raise ModelLoadError(f"model {self.name!r} Fortress engine is closed")
@@ -202,33 +236,7 @@ class FortressEngine:
                 compiled = self._compiled
                 clients: dict[str, FortressRoleClient] = {}
                 if self.engine_name == "fortress-grid":
-                    from xurcroh.fortress.transport import FortressGridRuntime
-
-                    identity = self._identity()
-                    frame_bytes = int(self.workers[0].labels.get("frame_bytes", 16_384))
-                    cover_interval = float(self.workers[0].labels.get("cover_interval", 1.0))
-                    seeded_activations = self.workers[0].labels.get(
-                        "seeded_activations", "true"
-                    ).lower() not in {"0", "false", "no"}
-                    runtimes: dict[tuple[str, ...], FortressGridRuntime] = {}
-                    for name, operation in compiled.operations.items():
-                        roles = self._roles(name)
-                        group = tuple(role.provider_id for role in roles)
-                        runtime = runtimes.get(group)
-                        if runtime is None:
-                            runtime = FortressGridRuntime(
-                                roles,
-                                identity,
-                                frame_bytes=frame_bytes,
-                                cover_interval=cover_interval,
-                                seeded_activations=seeded_activations,
-                                recover_role=self._recover_role,
-                            )
-                            runtimes[group] = runtime
-                            self._grid_runtimes.append(runtime)
-                            if self._grid_runtime is None:
-                                self._grid_runtime = runtime
-                        clients[name] = runtime.client(operation, name)
+                    clients = self._grid_clients(compiled.operations)
                 self._clients = clients
                 if compiled.model is not None and clients:
                     from xurcroh.fortress.module import connect_grid_clients
