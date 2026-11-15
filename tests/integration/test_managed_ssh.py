@@ -375,7 +375,7 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
         layer_types=["full_attention", "full_attention"],
         num_kv_shared_layers=0,
         use_double_wide_mlp=False,
-        max_position_embeddings=128,
+        max_position_embeddings=512,
         eos_token_id=1,
         pad_token_id=0,
     )
@@ -385,7 +385,7 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
         num_hidden_layers=1,
         num_attention_heads=4,
         num_key_value_heads=4,
-        position_embedding_size=32,
+        position_embedding_size=48,
         patch_size=16,
         pooling_kernel_size=1,
         default_output_length=4,
