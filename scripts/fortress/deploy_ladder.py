@@ -251,7 +251,8 @@ def kill_workers(workers: list[Any], revision: str) -> None:
                 *options(worker),
                 f"{worker['ssh_user']}@{worker['host']}",
                 f"if test -f {root}/role.pid; then kill $(cat {root}/role.pid); fi; "
-                f"if test -f {root}/relay.pid; then kill $(cat {root}/relay.pid); fi",
+                f"for relay_pid in {root}/relay*.pid; do "
+                'if test -f "$relay_pid"; then kill $(cat "$relay_pid"); fi; done',
             ],
             check=False,
         )
