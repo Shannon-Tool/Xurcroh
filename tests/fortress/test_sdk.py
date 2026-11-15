@@ -139,3 +139,26 @@ def test_public_sdk_executes_remote_fortress_grid(
     finally:
         for worker in workers:
             worker.close()
+
+
+def test_fortress_inference_queue_honors_request_timeout(tiny_llama_path: Path) -> None:
+
+    import pytest
+
+    from xurcroh.errors import RequestTimeoutError
+
+    with Xurcroh(
+        model_path={"tiny": {"path": str(tiny_llama_path), "engine": "fortress"}}
+    ) as client:
+        engine = client._runtime._engine("tiny")
+        engine._inference_lock.acquire()
+        try:
+            with pytest.raises(RequestTimeoutError, match="inference queue"):
+                client.chat.completions.create(
+                    model="tiny",
+                    messages=[{"role": "user", "content": "hello"}],
+                    max_tokens=1,
+                    timeout=0.01,
+                )
+        finally:
+            engine._inference_lock.release()
