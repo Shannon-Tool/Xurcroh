@@ -54,7 +54,7 @@ Parallelism is validated before execution; pipeline degree cannot exceed worker 
 
 ## Chat completions
 
-`client.chat.completions.create` supports `model`, `messages`, `temperature`, `top_p`, `top_k`, `max_tokens`, `stream`, `timeout`, `request_id`, `seed`, and `stop`. Temperature zero selects greedy decoding. Responses use OpenAI-style `choices`, `message`, `usage`, and streaming `delta` objects. `execution` contains request ID, actual engine, worker IDs, duration, and security mode, never prompt contents.
+`client.chat.completions.create` supports `model`, `messages`, `temperature`, `top_p`, `top_k`, `max_tokens`, `stream`, `timeout`, `request_id`, `seed`, and `stop`. Temperature zero selects greedy decoding. Local, dense-stage, and Fortress engines accept generation-config EOS lists as well as single stop-token IDs. Responses use OpenAI-style `choices`, `message`, `usage`, and streaming `delta` objects. `execution` contains request ID, actual engine, worker IDs, duration, and security mode, never prompt contents.
 
 ```python
 stream = client.chat.completions.create(

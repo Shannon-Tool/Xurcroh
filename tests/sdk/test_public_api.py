@@ -141,3 +141,29 @@ async def test_async_close_before_initialization_stays_uninitialized(
     )
     await client.close()
     assert client._sync is None
+
+
+def test_generation_config_eos_list_stops_real_local_generation(
+    tiny_model_path: Path,
+) -> None:
+    import json
+
+    from safetensors import safe_open
+    from safetensors.torch import save_file
+
+    with safe_open(tiny_model_path / "model.safetensors", framework="pt") as handle:
+        tensors = {name: handle.get_tensor(name) for name in handle.keys()}  # noqa: SIM118
+    head_name = "lm_head.weight" if "lm_head.weight" in tensors else "transformer.wte.weight"
+    tensors[head_name].zero_()
+    tensors[head_name][2].fill_(10)
+    save_file(tensors, str(tiny_model_path / "model.safetensors"))
+    (tiny_model_path / "generation_config.json").write_text(json.dumps({"eos_token_id": [1, 2]}))
+    with make_client(tiny_model_path) as client:
+        response = client.chat.completions.create(
+            model="qwen-7b",
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0,
+            max_tokens=8,
+        )
+    assert response.choices[0].finish_reason == "stop"
+    assert 0 < response.usage.completion_tokens < 8
