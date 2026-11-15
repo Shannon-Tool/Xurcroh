@@ -51,6 +51,7 @@ class RoleEndpoint:
     recipient_public: bytes
     provider_id: str
     relay: RelayRoute | None = None
+    server_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -252,7 +253,7 @@ class _SharedRoleConnection:
                 self.client.close()
         self.client = xurcroh_quic.TensorClient.connect_mutual(
             self.role.relay.relay_address if self.role.relay is not None else self.role.address,
-            self.identity.server_name,
+            self.role.server_name or self.identity.server_name,
             self.identity.pinned_ca,
             list(self.identity.certificates),
             self.identity.private_key,
@@ -321,7 +322,7 @@ class _RoleTransport:
                 self.client.close()
         self.client = self._quic.TensorClient.connect_mutual(
             self.role.relay.relay_address if self.role.relay is not None else self.role.address,
-            identity.server_name,
+            self.role.server_name or identity.server_name,
             identity.pinned_ca,
             list(identity.certificates),
             identity.private_key,
