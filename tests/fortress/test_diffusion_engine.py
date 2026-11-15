@@ -50,7 +50,8 @@ def test_real_diffusers_pipeline_executes_with_fortress_linears(tmp_path: Path) 
         engine.close()
 
 
-def test_public_sdk_generates_image_with_fortress_diffusion(tmp_path: Path) -> None:
+@pytest.mark.parametrize("shares", [2, 3])
+def test_public_sdk_generates_image_with_fortress_diffusion(tmp_path: Path, shares: int) -> None:
     from Xurcroh import Xurcroh
 
     diffusers = pytest.importorskip("diffusers")
@@ -71,6 +72,7 @@ def test_public_sdk_generates_image_with_fortress_diffusion(tmp_path: Path) -> N
             "tiny-ddpm": {
                 "path": str(tmp_path),
                 "engine": "fortress",
+                "fortress_shares": shares,
             }
         }
     ) as client:
