@@ -99,11 +99,12 @@ def test_sdk_managed_image_generation_over_real_ssh(tmp_path: Path) -> None:
         assert len(response.execution.worker_ids) == 4
 
 
-def test_sdk_managed_moe_inference_over_real_ssh(tmp_path: Path) -> None:
+def test_sdk_managed_moe_inference_over_real_ssh(tiny_llama_path: Path, tmp_path: Path) -> None:
+    from tests.fortress.test_official_models import copy_tokenizer
     from transformers.models.qwen3_moe import Qwen3MoeConfig, Qwen3MoeForCausalLM
 
     config = Qwen3MoeConfig(
-        vocab_size=12,
+        vocab_size=64,
         hidden_size=16,
         intermediate_size=32,
         moe_intermediate_size=8,
@@ -116,6 +117,7 @@ def test_sdk_managed_moe_inference_over_real_ssh(tmp_path: Path) -> None:
     )
     checkpoint = tmp_path / "moe-model"
     Qwen3MoeForCausalLM(config).save_pretrained(checkpoint, safe_serialization=True)
+    copy_tokenizer(tiny_llama_path, checkpoint)
     with (
         ssh_testbed(tmp_path) as base,
         Xurcroh(
