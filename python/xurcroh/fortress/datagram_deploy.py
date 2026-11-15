@@ -112,14 +112,15 @@ def start_datagram_tunnels(
             root = shlex.quote(remote_root)
             address = Path(remote_root) / f"{tunnel_name}.address"
             pid_path = Path(remote_root) / f"{tunnel_name}.pid"
+            python = shlex.quote(str(worker.get("python_path", ".venv-cuda/bin/python")))
             start_detached(
                 worker,
-                f"cd {root} && setsid env .venv-cuda/bin/python -m "
+                f"cd {root} && setsid -f env {python} -m "
                 "xurcroh.fortress.datagram_tunnel server --listen-host 127.0.0.1 "
                 f"--listen-port 0 --target-host 127.0.0.1 --target-port {ports[index]} "
-                f"--address-file {shlex.quote(str(address))} </dev/null "
-                f">{root}/{shlex.quote(tunnel_name)}.log 2>&1 & "
-                f"echo $! >{shlex.quote(str(pid_path))}",
+                f"--address-file {shlex.quote(str(address))} "
+                f"--pid-file {shlex.quote(str(pid_path))} </dev/null "
+                f">{root}/{shlex.quote(tunnel_name)}.log 2>&1",
             )
             remote_port = wait_remote_port(worker, address)
             forward_port = free_tcp_port()

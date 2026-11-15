@@ -231,3 +231,36 @@ def test_multiple_models_share_managed_cluster_with_isolated_roles(
         assert [worker.endpoint for worker in moe_endpoints] == [
             f"quic://127.0.0.1:{10444 + index}" for index in range(4)
         ]
+
+
+def test_managed_datagram_tunnel_executes_real_fortress_inference(
+    tiny_llama_path: Path, tmp_path: Path
+) -> None:
+    with (
+        ssh_testbed(tmp_path) as base,
+        Xurcroh(
+            cluster={"workers": _cpu_workers(base), "datagram_tunnel": True},
+            model_path={
+                "tiny": {
+                    "path": str(tiny_llama_path),
+                    "engine": "fortress",
+                    "fortress_seed": 731,
+                }
+            },
+        ) as client,
+    ):
+        response = client.chat.completions.create(
+            model="tiny",
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0,
+            max_tokens=1,
+            timeout=120,
+        )
+        assert response.usage.completion_tokens == 1
+        endpoints = client._runtime._workers_for_model("tiny")
+        assert all(
+            worker.endpoint is not None
+            and worker.endpoint.startswith("quic://127.0.0.1:")
+            and not worker.endpoint.endswith(":9444")
+            for worker in endpoints
+        )
