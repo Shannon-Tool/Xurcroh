@@ -30,8 +30,9 @@ def test_public_sdk_executes_fortress_checkpoint(tiny_llama_path: Path, shares: 
     assert response.execution.worker_ids == ["local"]
 
 
+@pytest.mark.parametrize("shares", [2, 3])
 def test_public_sdk_executes_remote_fortress_grid(
-    tiny_llama_path: Path, tmp_path: Path, mtls_identities: dict[str, bytes]
+    tiny_llama_path: Path, tmp_path: Path, mtls_identities: dict[str, bytes], shares: int
 ) -> None:
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
     from cryptography.hazmat.primitives.serialization import (
@@ -45,11 +46,11 @@ def test_public_sdk_executes_remote_fortress_grid(
     from xurcroh.fortress.transport import encode_role_artifact
     from xurcroh.fortress.worker import FortressRoleWorker
 
-    compiled = compile_fortress_checkpoint(tiny_llama_path, seed=731)
+    compiled = compile_fortress_checkpoint(tiny_llama_path, seed=731, share_count=shares)
     workers: list[FortressRoleWorker] = []
     cluster = []
-    for activation_index in range(2):
-        for weight_index in range(2):
+    for activation_index in range(shares):
+        for weight_index in range(shares):
             private = X25519PrivateKey.generate()
             public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
             artifacts = {
@@ -98,6 +99,7 @@ def test_public_sdk_executes_remote_fortress_grid(
                     "revision": "a" * 40,
                     "engine": "fortress",
                     "fortress_seed": 731,
+                    "fortress_shares": shares,
                 }
             },
         ) as client:
@@ -109,34 +111,35 @@ def test_public_sdk_executes_remote_fortress_grid(
             )
             engine = client._runtime._engines["tiny"]
             grid = engine._grid_runtime
-            assert grid is not None and len(grid.connections) == 4
+            assert grid is not None and len(grid.connections) == shares**2
             operation_clients = list(engine._clients.values())
             shared_clients = {
                 id(transport.client)
                 for operation in operation_clients
                 for transport in operation._transports.values()
             }
-            assert len(shared_clients) == 4
+            assert len(shared_clients) == shares**2
             import torch
 
             from xurcroh.fortress.arithmetic import FIELD_MODULUS
 
             operation = operation_clients[0]
-            for cycle in range(65):
-                shares = [
+            cycles = 65 if shares == 2 else 1
+            for cycle in range(cycles):
+                activation_shares = [
                     torch.randint(
                         0,
                         FIELD_MODULUS,
                         (operation.operation.quantized.dimensions[1],),
                         dtype=torch.int64,
                     )
-                    for _ in range(2)
+                    for _ in range(shares)
                 ]
-                operation.execute(shares, request_id=f"shared-rotation:{cycle}")
-            assert all(connection.completed >= 65 for connection in grid.connections.values())
+                operation.execute(activation_shares, request_id=f"shared-rotation:{cycle}")
+            assert all(connection.completed >= cycles for connection in grid.connections.values())
         assert response.usage.completion_tokens == 1
         assert response.execution.engine == "fortress-grid"
-        assert len(response.execution.worker_ids) == 4
+        assert len(response.execution.worker_ids) == shares**2
         metrics = client.metrics()
         assert metrics["fortress_bytes_sent"] > 0
         assert metrics["fortress_bytes_received"] > 0
