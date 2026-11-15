@@ -2,13 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from Xurcroh import Xurcroh
 
 
-def test_public_sdk_executes_fortress_checkpoint(tiny_llama_path: Path) -> None:
+@pytest.mark.parametrize("shares", [2, 3])
+def test_public_sdk_executes_fortress_checkpoint(tiny_llama_path: Path, shares: int) -> None:
     with Xurcroh(
         model_path={
-            "tiny": {"path": str(tiny_llama_path), "engine": "fortress"},
+            "tiny": {
+                "path": str(tiny_llama_path),
+                "engine": "fortress",
+                "fortress_shares": shares,
+            },
         }
     ) as client:
         response = client.chat.completions.create(

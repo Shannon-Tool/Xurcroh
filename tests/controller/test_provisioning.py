@@ -141,7 +141,7 @@ def test_provisioning_requires_complete_role_grid(tiny_llama_path: Path, tmp_pat
 
 
 def test_provisioning_accepts_complete_three_share_role_grid(
-    tiny_llama_path: Path, tmp_path: Path
+    tiny_llama_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cluster = ClusterConfig.normalize(
         {
@@ -174,6 +174,16 @@ def test_provisioning_accepts_complete_three_share_role_grid(
     )
 
     deployment._validate()
+    monkeypatch.setattr(deployment, "_source_archive", lambda: b"source-archive")
+    deployment.start()
+    try:
+        roles = deployment.workers["tiny"]
+        assert len(roles) == 9
+        assert [
+            (worker.labels["activation_index"], worker.labels["weight_index"]) for worker in roles
+        ] == [(str(activation), str(weight)) for activation in range(3) for weight in range(3)]
+    finally:
+        deployment.close()
 
 
 def test_asyncssh_executor_scopes_credentials_and_validates_commands(
