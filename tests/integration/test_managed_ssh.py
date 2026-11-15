@@ -350,6 +350,7 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
         Gemma4AudioFeatureExtractor,
         Gemma4ImageProcessor,
         Gemma4Processor,
+        Gemma4VideoProcessor,
     )
     from transformers.models.gemma4.configuration_gemma4 import (
         Gemma4AudioConfig,
@@ -441,7 +442,7 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
         Gemma4AudioFeatureExtractor(),
         Gemma4ImageProcessor(),
         tokenizer,
-        video_processor=None,
+        video_processor=Gemma4VideoProcessor(),
         chat_template=template,
         image_seq_length=4,
         audio_seq_length=8,
