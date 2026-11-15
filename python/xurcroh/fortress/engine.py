@@ -98,6 +98,7 @@ class FortressEngine:
                     address=address,
                     recipient_public=recipient_public,
                     provider_id=worker.name,
+                    server_name=worker.labels.get("server_name"),
                 )
             )
         return roles
