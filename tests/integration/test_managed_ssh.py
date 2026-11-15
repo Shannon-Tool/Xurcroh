@@ -3,10 +3,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
 from tests.integration.test_ssh_executor import ssh_testbed
 
 from Xurcroh import Xurcroh
 from xurcroh.config import WorkerConfig
+
+pytestmark = pytest.mark.slow
 
 
 def _cpu_workers(base: WorkerConfig) -> list[WorkerConfig]:
