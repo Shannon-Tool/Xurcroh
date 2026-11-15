@@ -25,10 +25,16 @@ class CanaryTrip:
     tripped_at: str
 
 
+class CanaryRevocationError(RuntimeError):
+    pass
+
+
 @dataclass
 class _CanaryRecord:
     secret: bytearray = field(repr=False)
     observers: tuple[str, ...]
+    revoked: set[str] = field(default_factory=set)
+    revoking: set[str] = field(default_factory=set)
 
 
 class CanaryRegistry:
@@ -57,18 +63,39 @@ class CanaryRegistry:
     def observe(self, canary_id: str, observed_secret: bytes) -> bool:
         with self._lock:
             record = self._records.get(canary_id)
-            if record is None or canary_id in self._tripped:
+            if record is None:
                 return False
             expected = hashlib.sha256(record.secret).digest()
             actual = hashlib.sha256(observed_secret).digest()
             if not hmac.compare_digest(expected, actual):
                 return False
-            self._tripped.add(canary_id)
-            trip = CanaryTrip(canary_id, record.observers, datetime.now(UTC).isoformat())
-            self._trips[canary_id] = trip
-            observers = record.observers
+            observers = tuple(
+                observer
+                for observer in record.observers
+                if observer not in record.revoked and observer not in record.revoking
+            )
+            if canary_id in self._tripped and not observers:
+                return False
+            if canary_id not in self._tripped:
+                self._tripped.add(canary_id)
+                self._trips[canary_id] = CanaryTrip(
+                    canary_id, record.observers, datetime.now(UTC).isoformat()
+                )
+            record.revoking.update(observers)
+        failures: list[str] = []
         for observer in observers:
-            self._revoke(observer)
+            try:
+                self._revoke(observer)
+            except Exception as error:
+                failures.append(f"{observer} ({type(error).__name__})")
+            else:
+                with self._lock:
+                    record.revoked.add(observer)
+            finally:
+                with self._lock:
+                    record.revoking.discard(observer)
+        if failures:
+            raise CanaryRevocationError("failed to revoke canary observers: " + ", ".join(failures))
         return True
 
     def close(self) -> None:
