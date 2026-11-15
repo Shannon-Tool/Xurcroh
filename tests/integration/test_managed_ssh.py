@@ -401,6 +401,9 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
             image_token_id=8,
             boi_token_id=7,
             eoi_token_id=9,
+            audio_token_id=12,
+            boa_token_id=10,
+            eoa_token_index=11,
         )
     )
     model.save_pretrained(checkpoint, safe_serialization=True)
@@ -415,6 +418,9 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
         "<boi>": 7,
         "<image>": 8,
         "<eoi>": 9,
+        "<boa>": 10,
+        "<eoa>": 11,
+        "<audio>": 12,
     }
     backend = Tokenizer(WordLevel(vocabulary, unk_token="<pad>"))
     backend.pre_tokenizer = pre_tokenizers.Whitespace()
@@ -423,14 +429,20 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
         eos_token="<eos>",
         pad_token="<pad>",
         unk_token="<pad>",
-        additional_special_tokens=["<boi>", "<image>", "<eoi>"],
+        additional_special_tokens=["<boi>", "<image>", "<eoi>", "<boa>", "<eoa>", "<audio>"],
     )
     tokenizer.boi_token = "<boi>"
     tokenizer.eoi_token = "<eoi>"
     tokenizer.image_token = "<image>"
+    tokenizer.boa_token = "<boa>"
+    tokenizer.eoa_token = "<eoa>"
+    tokenizer.audio_token = "<audio>"
     tokenizer.boi_token_id = 7
     tokenizer.eoi_token_id = 9
     tokenizer.image_token_id = 8
+    tokenizer.boa_token_id = 10
+    tokenizer.eoa_token_id = 11
+    tokenizer.audio_token_id = 12
     template = (
         "{% for message in messages %}{{ message.role + ':' }}"
         "{% for part in message.content %}"
@@ -460,6 +472,12 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
             "boi_token": "<boi>",
             "eoi_token": "<eoi>",
             "image_token": "<image>",
+            "boa_token_id": 10,
+            "eoa_token_id": 11,
+            "audio_token_id": 12,
+            "boa_token": "<boa>",
+            "eoa_token": "<eoa>",
+            "audio_token": "<audio>",
         }
     )
     tokenizer_config.write_text(json.dumps(tokenizer_values))
