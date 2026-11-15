@@ -397,6 +397,7 @@ def test_seeded_activation_wire_format_expands_exact_share() -> None:
 
     worker = FortressRoleWorker.__new__(FortressRoleWorker)
     worker.artifacts = {"op": SimpleNamespace(matrix=torch.zeros(2, 3, dtype=torch.int64))}
+    worker._cuda_controller = None
     seed = bytes(range(32))
     payload = b"XF2\x01\x02\x00op" + seed
     name, activation = worker._decode_activation(payload)
