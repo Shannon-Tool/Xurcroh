@@ -24,7 +24,12 @@ from xurcroh.requests import (
     InputMessage,
     TextContentPart,
 )
-from xurcroh.runtime.generation import GenerationEvent, GenerationSummary, check_request_health
+from xurcroh.runtime.generation import (
+    GenerationEvent,
+    GenerationSummary,
+    bounded_execution,
+    check_request_health,
+)
 
 
 def _decode_image(url: str) -> Image.Image:
@@ -192,7 +197,7 @@ class LocalVisionLanguageEngine:
     ) -> Iterator[GenerationEvent]:
         self._load()
         started = time.monotonic()
-        with self._inference_lock:
+        with bounded_execution(self._inference_lock, cancelled, started, timeout, self.name):
             inputs, prompt_tokens = self._inputs(request)
             check_request_health(cancelled, started, timeout)
             if request.seed is not None:
