@@ -162,6 +162,7 @@ No tracked billable test instance remains. This does not assert that unrelated a
 5. Complete CUDA zero-on-free, KV-canary, stream-ordering, shared-memory/local-memory, and `compute-sanitizer` forensics. Process exit and low post-run memory are not complete memory-sanitization proof.
 6. Validate physical AMD/Intel/NVIDIA attestation, trust roots, freshness, artifact binding, and failure handling.
 7. Complete WAN/NAT failure injection, multi-user isolation, worker recovery, and side-channel evaluation.
+8. Integrate the standalone per-operation placement maps with SDK-managed deployment. Current managed grids assign every operation to all `N²` roles; the `PlacementMap` constraints and epoch reshuffling are not yet an execution-path control.
 
 Orthogonal transformations are computational obfuscation, not homomorphic encryption, cryptographic secret sharing, zero knowledge, or a non-reversibility proof. No production certification is issued by this report.
 
