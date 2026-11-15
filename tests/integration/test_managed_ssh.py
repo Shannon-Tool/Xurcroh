@@ -336,3 +336,149 @@ def test_managed_multimodal_boundary_inference_over_real_ssh(
         assert response.usage.completion_tokens == 1
         assert response.execution.engine == "fortress-grid"
         assert len(response.execution.worker_ids) == 4
+
+
+def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path) -> None:
+    import base64
+    import io
+
+    from PIL import Image
+    from tokenizers import Tokenizer, pre_tokenizers
+    from tokenizers.models import WordLevel
+    from transformers import PreTrainedTokenizerFast
+    from transformers.models.gemma4 import (
+        Gemma4AudioFeatureExtractor,
+        Gemma4ImageProcessor,
+        Gemma4Processor,
+    )
+    from transformers.models.gemma4.configuration_gemma4 import (
+        Gemma4AudioConfig,
+        Gemma4Config,
+        Gemma4TextConfig,
+        Gemma4VisionConfig,
+    )
+    from transformers.models.gemma4.modeling_gemma4 import Gemma4ForConditionalGeneration
+
+    checkpoint = tmp_path / "gemma-vlm"
+    text = Gemma4TextConfig(
+        vocab_size=64,
+        hidden_size=16,
+        intermediate_size=32,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=1,
+        head_dim=4,
+        global_head_dim=4,
+        vocab_size_per_layer_input=64,
+        hidden_size_per_layer_input=4,
+        layer_types=["full_attention", "full_attention"],
+        num_kv_shared_layers=0,
+        use_double_wide_mlp=False,
+        max_position_embeddings=128,
+        eos_token_id=1,
+        pad_token_id=0,
+    )
+    vision = Gemma4VisionConfig(
+        hidden_size=16,
+        intermediate_size=32,
+        num_hidden_layers=1,
+        num_attention_heads=4,
+        num_key_value_heads=4,
+        position_embedding_size=16,
+        patch_size=4,
+        pooling_kernel_size=1,
+        default_output_length=4,
+    )
+    audio = Gemma4AudioConfig(
+        hidden_size=16, num_hidden_layers=1, num_attention_heads=2, output_proj_dims=16
+    )
+    model = Gemma4ForConditionalGeneration(
+        Gemma4Config(
+            text_config=text,
+            vision_config=vision,
+            audio_config=audio,
+            image_token_id=8,
+            boi_token_id=7,
+            eoi_token_id=9,
+        )
+    )
+    model.save_pretrained(checkpoint, safe_serialization=True)
+    vocabulary = {
+        "<pad>": 0,
+        "<eos>": 1,
+        "hello": 2,
+        "world": 3,
+        "system": 4,
+        "user": 5,
+        "assistant": 6,
+        "<boi>": 7,
+        "<image>": 8,
+        "<eoi>": 9,
+    }
+    backend = Tokenizer(WordLevel(vocabulary, unk_token="<pad>"))
+    backend.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer = PreTrainedTokenizerFast(
+        tokenizer_object=backend,
+        eos_token="<eos>",
+        pad_token="<pad>",
+        unk_token="<pad>",
+        additional_special_tokens=["<boi>", "<image>", "<eoi>"],
+    )
+    tokenizer.boi_token = "<boi>"
+    tokenizer.eoi_token = "<eoi>"
+    tokenizer.image_token = "<image>"
+    tokenizer.boi_token_id = 7
+    tokenizer.eoi_token_id = 9
+    tokenizer.image_token_id = 8
+    template = (
+        "{% for message in messages %}{{ message.role + ':' }}"
+        "{% for part in message.content %}"
+        "{% if part.type == 'text' %}{{ part.text }}"
+        "{% elif part.type == 'image_url' %}{{ '<image>' }}{% endif %}"
+        "{% endfor %}{{ '\\n' }}{% endfor %}assistant:"
+    )
+    processor = Gemma4Processor(
+        Gemma4AudioFeatureExtractor(),
+        Gemma4ImageProcessor(),
+        tokenizer,
+        video_processor=None,
+        chat_template=template,
+        image_seq_length=4,
+        audio_seq_length=8,
+    )
+    processor.save_pretrained(checkpoint)
+    image = Image.new("RGB", (32, 32), (20, 40, 60))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    image_url = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+    with (
+        ssh_testbed(tmp_path) as base,
+        Xurcroh(
+            cluster=_cpu_workers(base),
+            model_path={
+                "gemma-vlm": {
+                    "path": str(checkpoint),
+                    "engine": "fortress",
+                    "modality": "vlm",
+                    "fortress_seed": 731,
+                }
+            },
+        ) as client,
+    ):
+        response = client.chat.completions.create(
+            model="gemma-vlm",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "hello"},
+                        {"type": "image_url", "image_url": {"url": image_url}},
+                    ],
+                }
+            ],
+            temperature=0,
+            max_tokens=1,
+            timeout=120,
+        )
+        assert response.usage.completion_tokens == 1
+        assert response.execution.engine == "fortress-grid"
