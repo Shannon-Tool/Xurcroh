@@ -4,7 +4,7 @@ import json
 import threading
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -37,10 +37,17 @@ from xurcroh.requests import CompletionRequest
 
 
 class FortressEngine:
-    def __init__(self, name: str, definition: ModelDefinition, workers: list[WorkerConfig]) -> None:
+    def __init__(
+        self,
+        name: str,
+        definition: ModelDefinition,
+        workers: list[WorkerConfig],
+        recover_role: Callable[[str], None] | None = None,
+    ) -> None:
         self.name = name
         self.definition = definition
         self.workers = workers
+        self._recover_role = recover_role
         self.worker_id = workers[0].name
         self.worker_ids = [worker.name for worker in workers]
         self.engine_name = (
@@ -201,6 +208,7 @@ class FortressEngine:
                         frame_bytes=frame_bytes,
                         cover_interval=cover_interval,
                         seeded_activations=seeded_activations,
+                        recover_role=self._recover_role,
                     )
                     clients = {
                         name: self._grid_runtime.client(operation, name)

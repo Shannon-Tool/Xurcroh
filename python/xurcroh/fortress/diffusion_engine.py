@@ -4,6 +4,7 @@ import base64
 import inspect
 import io
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -28,8 +29,14 @@ from xurcroh.types import (
 
 
 class FortressDiffusionEngine(FortressEngine):
-    def __init__(self, name: str, definition: ModelDefinition, workers: list[WorkerConfig]) -> None:
-        super().__init__(name, definition, workers)
+    def __init__(
+        self,
+        name: str,
+        definition: ModelDefinition,
+        workers: list[WorkerConfig],
+        recover_role: Callable[[str], None] | None = None,
+    ) -> None:
+        super().__init__(name, definition, workers, recover_role)
         self.engine_name = (
             "fortress-diffusion-local"
             if workers[0].endpoint == "local://cpu"
@@ -75,6 +82,7 @@ class FortressDiffusionEngine(FortressEngine):
                         cover_interval=float(labels.get("cover_interval", 1.0)),
                         seeded_activations=labels.get("seeded_activations", "true").lower()
                         not in {"0", "false", "no"},
+                        recover_role=self._recover_role,
                     )
                     clients = {
                         name: self._grid_runtime.client(operation, name)

@@ -397,6 +397,11 @@ class FortressDeployment:
         device = role.worker.labels.get("device", "cuda")
         if device not in {"cpu", "cuda"}:
             raise ConfigurationError(f"unsupported Fortress worker device: {device}")
+        self._executor.run(
+            role.worker,
+            f"rm -f {shlex.quote(str(ready))} {shlex.quote(str(role_root / 'role.exit'))} "
+            f"{shlex.quote(str(role_root / 'role.pid'))}",
+        )
         command = (
             f"cd {shlex.quote(self._remote_root)} && setsid -f env HF_HUB_OFFLINE=1 "
             "TRANSFORMERS_OFFLINE=1 "
@@ -564,6 +569,21 @@ class FortressDeployment:
                     f"Fortress role {role.service_name!r} required forced termination"
                 )
             time.sleep(0.2)
+
+    def restart_role(self, provider_id: str) -> None:
+        with self._lock:
+            if self._closed or not self._started:
+                raise ClusterUnavailableError(
+                    f"cannot restart Fortress role {provider_id!r} before startup or after close"
+                )
+            matches = [
+                role for role in self._roles if f"{role.worker.name}-{role.model}" == provider_id
+            ]
+            if len(matches) != 1:
+                raise ClusterUnavailableError(f"unknown managed Fortress role: {provider_id}")
+            role = matches[0]
+        self._stop_role(role)
+        self._start_role(role)
 
     def close(self) -> None:
         with self._lock:
