@@ -158,9 +158,27 @@ class RuntimeService:
             if engine is None:
                 if definition.engine == "fortress":
                     if definition.modality in {"image", "video"}:
-                        engine = FortressDiffusionEngine(name, definition, workers)
+                        engine = FortressDiffusionEngine(
+                            name,
+                            definition,
+                            workers,
+                            recover_role=(
+                                self._deployment.restart_role
+                                if self._deployment is not None
+                                else None
+                            ),
+                        )
                     else:
-                        engine = FortressEngine(name, definition, workers)
+                        engine = FortressEngine(
+                            name,
+                            definition,
+                            workers,
+                            recover_role=(
+                                self._deployment.restart_role
+                                if self._deployment is not None
+                                else None
+                            ),
+                        )
                 elif definition.manifest_path is not None and definition.modality in {
                     "image",
                     "video",

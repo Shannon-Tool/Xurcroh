@@ -8,6 +8,7 @@ import secrets
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
@@ -235,9 +236,15 @@ def native_compiled_weight_share(weight: WeightShare) -> Any:
 
 
 class _SharedRoleConnection:
-    def __init__(self, role: RoleEndpoint, identity: MutualTLSIdentity) -> None:
+    def __init__(
+        self,
+        role: RoleEndpoint,
+        identity: MutualTLSIdentity,
+        recover: Callable[[str], None] | None = None,
+    ) -> None:
         self.role = role
         self.identity = identity
+        self.recover_callback = recover
         self.client: Any = None
         self.session = ClientStageSession(role.weight_index, role.recipient_public)
         self.completed = 0
@@ -258,6 +265,15 @@ class _SharedRoleConnection:
             list(self.identity.certificates),
             self.identity.private_key,
         )
+
+    def recover(self) -> None:
+        try:
+            self.connect()
+        except ValueError:
+            if self.recover_callback is None:
+                raise
+            self.recover_callback(self.role.provider_id)
+            self.connect()
 
     def close(self) -> None:
         with self.call_lock:
@@ -349,7 +365,11 @@ class _RoleTransport:
                 ):
                     raise
                 self.reconnect_count += 1
-                self._connect()
+                if self._connection is not None:
+                    self._connection.recover()
+                    self.client = self._connection.client
+                else:
+                    self._connect()
                 result = self._execute(activation, request_id, sequence, activation_seed)
         self.observations.append((time.perf_counter() - started, cover))
         return result
@@ -547,12 +567,15 @@ class FortressGridRuntime:
         frame_bytes: int = DEFAULT_FRAME_BYTES,
         cover_interval: float = 1.0,
         seeded_activations: bool = True,
+        recover_role: Callable[[str], None] | None = None,
     ) -> None:
         if not roles or cover_interval <= 0:
             raise ValueError("a Fortress grid requires roles and a positive cover interval")
         self.executor = ThreadPoolExecutor(max_workers=len(roles))
         self.connections = {
-            (role.activation_index, role.weight_index): _SharedRoleConnection(role, identity)
+            (role.activation_index, role.weight_index): _SharedRoleConnection(
+                role, identity, recover_role
+            )
             for role in roles
         }
         self.rotation_interval = rotation_interval
