@@ -27,4 +27,16 @@ def test_managed_gemma_example_rejects_incomplete_grid() -> None:
         check=False,
     )
     assert result.returncode == 2
-    assert "exactly four" in result.stderr
+    assert "exactly 4" in result.stderr
+
+
+def test_managed_gemma_example_computes_larger_grid_size() -> None:
+    example = Path(__file__).parents[2] / "examples" / "managed_gemma.py"
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(example), "--shares", "3", "--host", "localhost"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "exactly 9" in result.stderr

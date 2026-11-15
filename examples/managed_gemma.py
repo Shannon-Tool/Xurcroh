@@ -14,16 +14,25 @@ def main() -> None:
         "--host",
         action="append",
         required=True,
-        help="SSH worker hostname or IP; repeat exactly four times for the default grid",
+        help="SSH worker hostname or IP; repeat shares^2 times (four by default)",
     )
     parser.add_argument("--ssh-user", default="ubuntu")
     parser.add_argument("--ssh-key", default="~/.ssh/id_ed25519")
     parser.add_argument("--prompt", default="Hello!")
     parser.add_argument("--max-tokens", type=int, default=128)
+    parser.add_argument(
+        "--shares",
+        type=int,
+        default=2,
+        help="shares per grid dimension; requires shares^2 worker hosts",
+    )
     parser.add_argument("--datagram-tunnel", action="store_true")
     args = parser.parse_args()
-    if len(args.host) != 4:
-        parser.error("the default Fortress grid requires exactly four --host values")
+    if args.shares < 2:
+        parser.error("--shares must be at least 2")
+    expected = args.shares**2
+    if len(args.host) != expected:
+        parser.error(f"this grid requires exactly {expected} --host values")
     cluster = {
         "workers": [
             {
@@ -42,6 +51,7 @@ def main() -> None:
                 "path": MODEL_ID,
                 "revision": REVISION,
                 "engine": "fortress",
+                "fortress_shares": args.shares,
                 "allow_download": True,
             }
         },
