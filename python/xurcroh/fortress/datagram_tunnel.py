@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -193,6 +194,8 @@ async def serve(args: argparse.Namespace) -> None:
         relay = await UdpDatagramRelay.bind(
             args.listen_host, args.listen_port, args.target_host, args.target_port
         )
+    if args.pid_file is not None:
+        args.pid_file.write_text(f"{os.getpid()}\n")
     if args.address_file is not None:
         args.address_file.write_text(f"{relay.port}\n")
     try:
@@ -209,6 +212,7 @@ def main() -> None:
     parser.add_argument("--target-host", required=True)
     parser.add_argument("--target-port", required=True, type=int)
     parser.add_argument("--address-file", type=Path)
+    parser.add_argument("--pid-file", type=Path)
     args = parser.parse_args()
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(serve(args))

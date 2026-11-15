@@ -474,6 +474,7 @@ class FortressDeployment:
             "ssh_port": worker.ssh.port,
             "ssh_key": worker.ssh.key_path,
             "known_hosts": worker.ssh.known_hosts_path,
+            "python_path": worker.labels.get("python_path", ".venv-cuda/bin/python"),
         }
 
     def _enable_tunnels(self) -> None:
