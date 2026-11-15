@@ -583,6 +583,9 @@ class FortressGridRuntime:
     ) -> None:
         if not roles or cover_interval <= 0:
             raise ValueError("a Fortress grid requires roles and a positive cover interval")
+        coordinates = {(role.activation_index, role.weight_index) for role in roles}
+        if len(coordinates) != len(roles):
+            raise ValueError("a Fortress grid cannot contain duplicate role coordinates")
         self.executor = ThreadPoolExecutor(max_workers=len(roles))
         self.connections = {
             (role.activation_index, role.weight_index): _SharedRoleConnection(

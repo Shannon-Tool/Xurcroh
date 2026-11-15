@@ -70,24 +70,7 @@ class FortressDiffusionEngine(FortressEngine):
                 )
                 clients: dict[str, FortressRoleClient] = {}
                 if self.engine_name == "fortress-diffusion-grid":
-                    from xurcroh.fortress.transport import FortressGridRuntime
-
-                    identity = self._identity()
-                    roles = self._roles()
-                    labels = self.workers[0].labels
-                    self._grid_runtime = FortressGridRuntime(
-                        roles,
-                        identity,
-                        frame_bytes=int(labels.get("frame_bytes", 16_384)),
-                        cover_interval=float(labels.get("cover_interval", 1.0)),
-                        seeded_activations=labels.get("seeded_activations", "true").lower()
-                        not in {"0", "false", "no"},
-                        recover_role=self._recover_role,
-                    )
-                    clients = {
-                        name: self._grid_runtime.client(operation, name)
-                        for name, operation in operations.items()
-                    }
+                    clients = self._grid_clients(operations)
                 self._clients = clients
                 replace_linear_layers(
                     module,

@@ -64,6 +64,21 @@ def test_seeded_role_artifact_expands_without_storing_the_weight_matrix() -> Non
     assert "storage" in final
 
 
+def test_grid_runtime_rejects_duplicate_role_coordinates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xurcroh.fortress import transport
+
+    monkeypatch.setattr(transport, "_SharedRoleConnection", lambda *args: object())
+    identity = MutualTLSIdentity(certificates=(b"ca",), private_key=b"key", pinned_ca=b"ca")
+    roles = [
+        RoleEndpoint(0, 0, "127.0.0.1:9444", bytes(32), "duplicate"),
+        RoleEndpoint(0, 0, "127.0.0.1:9445", bytes(32), "duplicate"),
+    ]
+    with pytest.raises(ValueError, match="duplicate role coordinates"):
+        transport.FortressGridRuntime(roles, identity)
+
+
 def test_real_grid_transport_is_exact_and_isolates_duplicate_request_ids(
     mtls_identities: MutualTLSIdentities,
 ) -> None:
