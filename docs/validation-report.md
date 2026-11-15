@@ -28,7 +28,7 @@ The latest standard local suite at `b8d16b8` reports **412 passed, 33 deselected
 | Rust formatting, Clippy, RustSec | Passed; no known advisories |
 | Frontend interaction tests | **32 passed** |
 | Frontend typecheck, lint, production build, content validation | Passed; 22 sections, equations, links, and Mermaid syntax validated |
-| ProVerif model and protocol fuzzing | Passed in the hosted run above; newer runs are blocked before startup |
+| ProVerif model and protocol fuzzing | ProVerif passed in the hosted run above; all three fuzz targets passed locally at `5bcdab3` with 2,230,999 frame, 393,608 AEAD, and 33,264 HPKE runs; newer hosted runs are blocked before startup |
 | Clean reproducible wheel builds | Matched locally at `b8d16b8fe088953ede4b67af485c80d7a78f64d2`; current hosted rebuild is billing-blocked |
 | `pip-audit` | No known vulnerabilities in audited dependencies |
 | `npm audit` | 0 vulnerabilities |
