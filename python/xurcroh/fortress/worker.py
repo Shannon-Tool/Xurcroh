@@ -142,9 +142,8 @@ class FortressRoleWorker:
             thread.start()
 
     def _decode_activation(self, payload: bytes) -> tuple[str, torch.Tensor]:
-        batched = payload.startswith(b"XF3")
-        seeded = payload.startswith(b"XF2\x01") or (batched and payload[3:4] == b"\x01")
-        header = 4 if seeded or batched else 0
+        seeded = payload.startswith(b"XF2\x01")
+        header = 4 if seeded else 0
         if len(payload) < header + 2:
             raise ProtocolError("Fortress operation header is truncated")
         name_length = int.from_bytes(payload[header : header + 2], "little")
@@ -164,33 +163,6 @@ class FortressRoleWorker:
         activation_payload = payload[name_end:]
         if input_features > MAX_ACTIVATION_ELEMENTS:
             raise ProtocolError("Fortress activation dimensions are invalid")
-        if batched:
-            if len(activation_payload) < 4:
-                raise ProtocolError("Fortress batch row count is truncated")
-            rows = int.from_bytes(activation_payload[:4], "little")
-            activation_payload = activation_payload[4:]
-            if rows < 1 or rows * input_features > MAX_ACTIVATION_ELEMENTS:
-                raise ProtocolError("Fortress batch dimensions are invalid")
-            if seeded:
-                if len(activation_payload) != rows * 32:
-                    raise ProtocolError("seeded Fortress batch has invalid seed dimensions")
-                return name, torch.stack(
-                    [
-                        _seeded_uniform(
-                            activation_payload[index * 32 : (index + 1) * 32],
-                            (input_features,),
-                        )
-                        for index in range(rows)
-                    ]
-                )
-            if len(activation_payload) != rows * input_features * 4:
-                raise ProtocolError("raw Fortress batch has invalid dimensions")
-            activation = torch.from_numpy(
-                np.frombuffer(activation_payload, dtype=np.uint32).astype(np.int64)
-            ).reshape(rows, input_features)
-            if bool(torch.any((activation < 0) | (activation >= FIELD_MODULUS))):
-                raise ProtocolError("Fortress activation must contain canonical field elements")
-            return name, activation
         if seeded:
             if len(activation_payload) != 32:
                 raise ProtocolError("seeded Fortress activation requires a 32-byte seed")
@@ -205,8 +177,6 @@ class FortressRoleWorker:
         return name, activation
 
     def _execute_activation(self, name: str, activation: torch.Tensor) -> list[int]:
-        if activation.ndim == 2:
-            return [value for row in activation for value in self._execute_activation(name, row)]
         if self._cuda_controller is None:
             return [
                 int(value)

@@ -25,7 +25,7 @@ from xurcroh.fortress.arithmetic import (
 from xurcroh.fortress.compiler import CompiledOperation
 from xurcroh.fortress.grid import RoleExecutionError, WeightShare
 from xurcroh.fortress.storage import DispersedShard, reconstruct_shard
-from xurcroh.runtime.stage_sessions import SESSION_ENVELOPE_BYTES, ClientStageSession
+from xurcroh.runtime.stage_sessions import ClientStageSession
 
 
 @dataclass(frozen=True)
@@ -358,7 +358,7 @@ class _RoleTransport:
         sequence: int,
         *,
         cover: bool = False,
-        activation_seed: bytes | list[bytes] | None = None,
+        activation_seed: bytes | None = None,
     ) -> tuple[list[int], int, int]:
         started = time.perf_counter()
         with self._execution_lock:
@@ -391,7 +391,7 @@ class _RoleTransport:
         activation: torch.Tensor,
         request_id: str,
         sequence: int,
-        activation_seed: bytes | list[bytes] | None = None,
+        activation_seed: bytes | None = None,
     ) -> tuple[list[int], int, int]:
         request_hash = hashlib.sha256(request_id.encode()).digest()[:16]
         canonical = (
@@ -402,29 +402,7 @@ class _RoleTransport:
             .to(torch.int32)
             .contiguous()
         )
-        if isinstance(activation_seed, list) or activation.ndim == 2:
-            rows = activation.shape[0]
-            if rows < 1:
-                raise ValueError("Fortress batches require at least one row")
-            if isinstance(activation_seed, list):
-                if len(activation_seed) != rows or any(len(seed) != 32 for seed in activation_seed):
-                    raise ValueError("Fortress batches require one 32-byte seed per row")
-                mode = 1
-                row_payload = b"".join(activation_seed)
-            else:
-                if activation_seed is not None:
-                    raise ValueError("batched activations require a seed list")
-                mode = 0
-                row_payload = canonical.numpy().tobytes()
-            operation_payload = (
-                b"XF3"
-                + bytes([mode])
-                + len(self._operation_name).to_bytes(2, "little")
-                + self._operation_name
-                + rows.to_bytes(4, "little")
-                + row_payload
-            )
-        elif activation_seed is not None:
+        if activation_seed is not None:
             if len(activation_seed) != 32:
                 raise ValueError("seeded activation transport requires a 32-byte seed")
             operation_payload = (
@@ -782,10 +760,8 @@ class FortressRoleClient:
         sequence: int,
         *,
         cover: bool = False,
-        activation_seed: bytes | list[bytes] | None = None,
+        activation_seed: bytes | None = None,
     ) -> torch.Tensor:
-        if isinstance(activation_seed, list):
-            raise ValueError("single-row execution requires one row seed")
         futures = {
             key: self._executor.submit(
                 self._transports[key].execute,
@@ -823,58 +799,6 @@ class FortressRoleClient:
                 self._quarantined = self._quarantined or error
             raise
 
-    def _execute_batch(
-        self,
-        activation_shares: list[torch.Tensor],
-        request_id: str,
-        sequence: int,
-        row_seeds: list[bytes] | None,
-    ) -> torch.Tensor:
-        rows = activation_shares[0].shape[0]
-        futures = {}
-        for key, transport in self._transports.items():
-            seeds = row_seeds
-            if seeds is not None and key[0] < len(activation_shares) - 1:
-                seeds = [seeded_share_seed(seed, key[0]) for seed in seeds]
-            elif seeds is not None:
-                seeds = None
-            futures[key] = self._executor.submit(
-                transport.execute,
-                activation_shares[key[0]],
-                request_id,
-                sequence,
-                activation_seed=seeds,
-            )
-        results: dict[tuple[int, int], list[int]] = {}
-        for key, future in futures.items():
-            result, sent, received = future.result()
-            results[key] = result
-            with self._lock:
-                self.request_count += rows
-                self.bytes_sent += sent
-                self.bytes_received += received
-        output_size = self.operation.quantized.dimensions[0]
-        outputs = []
-        try:
-            for row in range(rows):
-                row_results = {
-                    key: result[row * output_size : (row + 1) * output_size]
-                    for key, result in results.items()
-                }
-                outputs.append(
-                    combine_role_results(
-                        [share[row] for share in activation_shares],
-                        self.operation.shares,
-                        row_results,
-                        self._providers,
-                    )
-                )
-        except RoleExecutionError as error:
-            with self._lock:
-                self._quarantined = self._quarantined or error
-            raise
-        return torch.stack(outputs)
-
     def _cover_loop(self) -> None:
         features = self.operation.quantized.dimensions[1]
         while not self._cover_stop.wait(self._cover_interval):
@@ -894,7 +818,7 @@ class FortressRoleClient:
         activation_shares: list[torch.Tensor],
         *,
         request_id: str | None = None,
-        activation_seed: bytes | list[bytes] | None = None,
+        activation_seed: bytes | None = None,
     ) -> torch.Tensor:
         if activation_seed is not None and (
             not self.seeded_activations or len(activation_seed) != 32
@@ -921,45 +845,20 @@ class FortressRoleClient:
         rows = rows_by_share[0]
         if any(share.shape != rows.shape for share in rows_by_share):
             raise ValueError("activation share shapes must match")
-        if isinstance(activation_seed, list):
-            raise ValueError("execute() expects one base seed, not a row-seed list")
-        if self._runtime is None or rows.shape[0] == 1:
-            outputs = [
-                self._execute_token(
-                    [share[row] for share in rows_by_share],
-                    correlation_id,
-                    row,
-                    activation_seed=(
-                        activation_row_seed(activation_seed, row)
-                        if activation_seed is not None
-                        else None
-                    ),
-                )
-                for row in range(rows.shape[0])
-            ]
-            return outputs[0] if vector_input else torch.stack(outputs)
-        per_row = 32 if activation_seed is not None else rows.shape[1] * 4
-        operation_name = self._transports[next(iter(self._transports))]._operation_name
-        available = self._runtime.frame_bytes - SESSION_ENVELOPE_BYTES - 256 - len(operation_name)
-        batch_size = max(1, min(rows.shape[0], available // per_row))
-        batches = []
-        for start in range(0, rows.shape[0], batch_size):
-            stop = min(start + batch_size, rows.shape[0])
-            row_seeds = (
-                [activation_row_seed(activation_seed, row) for row in range(start, stop)]
-                if activation_seed is not None
-                else None
+        outputs = [
+            self._execute_token(
+                [share[row] for share in rows_by_share],
+                correlation_id,
+                row,
+                activation_seed=(
+                    activation_row_seed(activation_seed, row)
+                    if activation_seed is not None
+                    else None
+                ),
             )
-            batches.append(
-                self._execute_batch(
-                    [share[start:stop] for share in rows_by_share],
-                    correlation_id,
-                    start,
-                    row_seeds,
-                )
-            )
-        result = torch.cat(batches)
-        return result[0] if vector_input else result
+            for row in range(rows.shape[0])
+        ]
+        return outputs[0] if vector_input else torch.stack(outputs)
 
     def close(self) -> None:
         with self._lock:
