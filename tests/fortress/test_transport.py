@@ -402,3 +402,20 @@ def test_seeded_activation_wire_format_expands_exact_share() -> None:
     name, activation = worker._decode_activation(payload)
     assert name == "op"
     assert torch.equal(activation, _seeded_uniform(seed, (3,)))
+
+
+def test_seeded_batch_wire_format_expands_each_row_exactly() -> None:
+    from types import SimpleNamespace
+
+    from xurcroh.fortress.arithmetic import _seeded_uniform
+
+    worker = FortressRoleWorker.__new__(FortressRoleWorker)
+    worker.artifacts = {"op": SimpleNamespace(matrix=torch.zeros(2, 3, dtype=torch.int64))}
+    seeds = [bytes(range(32)), bytes(reversed(range(32)))]
+    payload = b"XF3\x01\x02\x00op" + (2).to_bytes(4, "little") + b"".join(seeds)
+    name, activation = worker._decode_activation(payload)
+    assert name == "op"
+    assert torch.equal(
+        activation,
+        torch.stack([_seeded_uniform(seed, (3,)) for seed in seeds]),
+    )
