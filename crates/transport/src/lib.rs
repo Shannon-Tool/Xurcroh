@@ -4,9 +4,10 @@ use std::{
     fmt::Display,
     net::SocketAddr,
     sync::{Arc, OnceLock},
+    time::Duration,
 };
 
-use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
+use quinn::{ClientConfig, Connection, Endpoint, ServerConfig, TransportConfig};
 use rcgen::generate_simple_self_signed;
 use rustls::{
     pki_types::{CertificateDer, PrivatePkcs8KeyDer},
@@ -17,6 +18,31 @@ use xurcroh_protocol::{DataType, FrameKind, TensorFrame, HEADER_LEN, MAX_PAYLOAD
 
 pub const CHUNK_PAYLOAD_LEN: usize = 1024 * 1024;
 pub const MAX_STREAM_PAYLOAD_LEN: usize = 16 * 1024 * 1024 * 1024;
+
+async fn establish_connection(
+    endpoint: &Endpoint,
+    address: SocketAddr,
+    server_name: &str,
+) -> Result<Connection, TransportError> {
+    let pending = endpoint
+        .connect(address, server_name)
+        .map_err(connection_error)?;
+    tokio::time::timeout(Duration::from_secs(30), pending)
+        .await
+        .map_err(|_| TransportError::Connection("handshake timed out".to_string()))?
+        .map_err(connection_error)
+}
+
+fn transport_config() -> TransportConfig {
+    let mut config = TransportConfig::default();
+    config.max_idle_timeout(Some(
+        Duration::from_secs(900)
+            .try_into()
+            .expect("900 seconds fits Quinn's idle timeout"),
+    ));
+    config.keep_alive_interval(Some(Duration::from_secs(1)));
+    config
+}
 
 #[derive(Debug, Error)]
 pub enum TransportError {
@@ -71,9 +97,10 @@ impl TensorServer {
             .with_single_cert(vec![certificate], key.into())
             .map_err(setup)?;
         crypto.alpn_protocols = vec![b"xurcroh-v1".to_vec()];
-        let config = ServerConfig::with_crypto(Arc::new(
+        let mut config = ServerConfig::with_crypto(Arc::new(
             quinn::crypto::rustls::QuicServerConfig::try_from(crypto).map_err(setup)?,
         ));
+        config.transport = Arc::new(transport_config());
         let socket: SocketAddr = address.parse().map_err(setup)?;
         let endpoint = Endpoint::server(config, socket).map_err(setup)?;
         Ok(Self { endpoint })
@@ -98,9 +125,10 @@ impl TensorServer {
             .with_single_cert(certificates, key.into())
             .map_err(setup)?;
         crypto.alpn_protocols = vec![b"xurcroh-v1".to_vec()];
-        let config = ServerConfig::with_crypto(Arc::new(
+        let mut config = ServerConfig::with_crypto(Arc::new(
             quinn::crypto::rustls::QuicServerConfig::try_from(crypto).map_err(setup)?,
         ));
+        config.transport = Arc::new(transport_config());
         let socket: SocketAddr = address.parse().map_err(setup)?;
         let endpoint = Endpoint::server(config, socket).map_err(setup)?;
         Ok(Self { endpoint })
@@ -314,17 +342,14 @@ impl TensorClient {
             .with_root_certificates(roots)
             .with_no_client_auth();
         crypto.alpn_protocols = vec![b"xurcroh-v1".to_vec()];
-        let config = ClientConfig::new(Arc::new(
+        let mut config = ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(crypto).map_err(setup)?,
         ));
+        config.transport_config(Arc::new(transport_config()));
         let socket: SocketAddr = "0.0.0.0:0".parse().map_err(setup)?;
         let mut endpoint = Endpoint::client(socket).map_err(setup)?;
         endpoint.set_default_client_config(config);
-        let connection = endpoint
-            .connect(address, server_name)
-            .map_err(connection_error)?
-            .await
-            .map_err(connection_error)?;
+        let connection = establish_connection(&endpoint, address, server_name).await?;
         Ok(Self {
             endpoint,
             connection,
@@ -347,17 +372,14 @@ impl TensorClient {
             .with_client_auth_cert(client_certificates, client_key.into())
             .map_err(setup)?;
         crypto.alpn_protocols = vec![b"xurcroh-v1".to_vec()];
-        let config = ClientConfig::new(Arc::new(
+        let mut config = ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(crypto).map_err(setup)?,
         ));
+        config.transport_config(Arc::new(transport_config()));
         let socket: SocketAddr = "0.0.0.0:0".parse().map_err(setup)?;
         let mut endpoint = Endpoint::client(socket).map_err(setup)?;
         endpoint.set_default_client_config(config);
-        let connection = endpoint
-            .connect(address, server_name)
-            .map_err(connection_error)?
-            .await
-            .map_err(connection_error)?;
+        let connection = establish_connection(&endpoint, address, server_name).await?;
         Ok(Self {
             endpoint,
             connection,
