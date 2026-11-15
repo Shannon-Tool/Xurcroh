@@ -174,15 +174,13 @@ def preflight_checkpoint(
             for activation in range(definition.fortress_shares)
             for weight in range(definition.fortress_shares)
         }
-        actual: list[tuple[int, int]] = []
+        groups: dict[str, list[tuple[int, int]]] = {}
         recipients: list[str] = []
         for worker in workers:
             try:
-                actual.append(
-                    (
-                        int(worker.labels["activation_index"]),
-                        int(worker.labels["weight_index"]),
-                    )
+                role = (
+                    int(worker.labels["activation_index"]),
+                    int(worker.labels["weight_index"]),
                 )
                 recipient = worker.labels["recipient_public"]
                 if len(bytes.fromhex(recipient)) != 32:
@@ -190,17 +188,27 @@ def preflight_checkpoint(
                 recipients.append(recipient)
             except (KeyError, ValueError) as error:
                 issues.append(f"worker {worker.name} has invalid Fortress role metadata: {error}")
+            else:
+                assigned = {
+                    name.strip() for name in worker.labels.get("operations", "*").split(",")
+                }
+                for operation in assigned:
+                    groups.setdefault(operation, []).append(role)
             if worker.endpoint is None or not worker.endpoint.startswith("quic://"):
                 issues.append(f"worker {worker.name} requires a quic:// Fortress endpoint")
             for label in ("client_certificate_path", "client_key_path", "ca_path"):
                 value = worker.labels.get(label)
                 if value is None or not Path(value).expanduser().is_file():
                     issues.append(f"worker {worker.name} lacks a readable {label}")
-        if len(actual) != len(expected) or set(actual) != expected:
-            issues.append(
-                f"Fortress roles must form one complete {definition.fortress_shares}-by-"
-                f"{definition.fortress_shares} grid without duplicates"
-            )
+        if not groups:
+            groups["*"] = []
+        for operation, actual in groups.items():
+            if len(actual) != len(expected) or set(actual) != expected:
+                issues.append(
+                    f"Fortress operation {operation!r} roles must form one complete "
+                    f"{definition.fortress_shares}-by-{definition.fortress_shares} grid "
+                    "without duplicates"
+                )
         if len(recipients) != len(set(recipients)):
             issues.append("Fortress recipient public keys must be unique per role")
     return CheckpointPreflight(

@@ -104,6 +104,38 @@ def test_inference_fails_preflight_before_engine_creation(tiny_llama_path: Path)
         )
 
 
+def test_remote_fortress_preflight_accepts_operation_specific_grids(
+    tiny_llama_path: Path, tmp_path: Path
+) -> None:
+    for name in ("client.crt", "client.key", "ca.crt"):
+        (tmp_path / name).write_bytes(b"test")
+    workers = []
+    for operation in ("operation-a", "operation-b"):
+        for index in range(4):
+            activation, weight = divmod(index, 2)
+            workers.append(
+                WorkerConfig(
+                    name=f"{operation}-{index}",
+                    endpoint=f"quic://worker-{operation}-{index}:9444",
+                    gpu={"model": "test-gpu", "memory_gb": 80},
+                    labels={
+                        "activation_index": str(activation),
+                        "weight_index": str(weight),
+                        "recipient_public": (bytes([len(workers) + 1]) * 32).hex(),
+                        "operations": operation,
+                        "client_certificate_path": str(tmp_path / "client.crt"),
+                        "client_key_path": str(tmp_path / "client.key"),
+                        "ca_path": str(tmp_path / "ca.crt"),
+                    },
+                )
+            )
+    report = preflight_checkpoint(
+        "tiny", ModelDefinition(path=str(tiny_llama_path), engine="fortress"), workers
+    )
+
+    assert report.supported is True
+
+
 def test_remote_fortress_preflight_rejects_incomplete_role_grid(
     tiny_llama_path: Path,
 ) -> None:
