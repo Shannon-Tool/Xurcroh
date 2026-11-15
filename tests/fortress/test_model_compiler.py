@@ -40,6 +40,24 @@ def test_real_checkpoint_compiles_without_retaining_full_client_weights(
     combiner.drop_request("compiled-request")
 
 
+def test_operation_discovery_matches_compiler_without_loading_weights(
+    tiny_llama_path: Path,
+) -> None:
+    from xurcroh.fortress.model_compiler import discover_fortress_operations
+
+    compiled = compile_fortress_checkpoint(tiny_llama_path, load_model=False)
+    discovered = discover_fortress_operations(tiny_llama_path)
+
+    assert [operation.identifier for operation in discovered] == list(compiled.operations)
+    by_name = {operation.identifier: operation for operation in discovered}
+    for prefix in ("model.layers.0", "model.layers.1"):
+        assert by_name[f"{prefix}.self_attn.q_proj"].paired_with == f"{prefix}.self_attn.k_proj"
+        assert by_name[f"{prefix}.mlp.down_proj"].paired_with == (
+            f"{prefix}.mlp.gate_proj",
+            f"{prefix}.mlp.up_proj",
+        )
+
+
 def test_remote_client_compilation_discards_worker_weight_matrices(
     tiny_llama_path: Path,
 ) -> None:
@@ -153,6 +171,11 @@ def test_moe_checkpoint_keeps_router_local_and_compiles_each_expert(tmp_path: Pa
 
     compiled = compile_fortress_checkpoint(tmp_path)
     assert len(compiled.operations) == 10
+    from xurcroh.fortress.model_compiler import discover_fortress_operations
+
+    discovered = discover_fortress_operations(tmp_path)
+    assert [operation.identifier for operation in discovered] == list(compiled.operations)
+    assert all(".gate.weight" not in operation.identifier for operation in discovered)
     assert compiled.layers[0].router is not None
     combiner = compiled.combiner()
     hidden = torch.tensor([[0.2, -0.1, 0.3, 0.4], [0.1, 0.5, -0.2, 0.2]], dtype=torch.float64)

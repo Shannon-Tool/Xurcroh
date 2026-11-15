@@ -121,6 +121,19 @@ class CheckpointReader:
                     tensors[name] = handle.get_tensor(name)
         return tensors
 
+    def tensor_shapes(self, names: list[str]) -> dict[str, tuple[int, ...]]:
+        grouped: dict[str, list[str]] = {}
+        for name in names:
+            if name not in self.weight_map:
+                raise ModelLoadError(f"checkpoint tensor is missing: {name}")
+            grouped.setdefault(self.weight_map[name], []).append(name)
+        shapes: dict[str, tuple[int, ...]] = {}
+        for filename, requested in grouped.items():
+            with safe_open(self.root / filename, framework="pt") as handle:
+                for name in requested:
+                    shapes[name] = tuple(handle.get_slice(name).get_shape())
+        return shapes
+
 
 def partition_layers(layer_indices: list[int], stage_count: int) -> list[list[int]]:
     if not layer_indices or stage_count > len(layer_indices):
