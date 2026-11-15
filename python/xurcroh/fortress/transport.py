@@ -274,6 +274,9 @@ class _SharedRoleConnection:
                 raise
             self.recover_callback(self.role.provider_id)
             self.connect()
+        self.session = ClientStageSession(self.role.weight_index, self.role.recipient_public)
+        self.completed = 0
+        self.used = False
 
     def close(self) -> None:
         with self.call_lock:
@@ -308,7 +311,7 @@ class _RoleTransport:
         self._operation_name = operation_name.encode("ascii")
         if not self._operation_name or len(self._operation_name) > 1024:
             raise ValueError("operation name must contain 1-1024 ASCII bytes")
-        self.session = (
+        self._session = (
             connection.session
             if connection is not None
             else ClientStageSession(role.weight_index, role.recipient_public)
@@ -326,6 +329,10 @@ class _RoleTransport:
         self._frame_sizes: set[int] = set()
         self.reconnect_count = 0
         self.observations: list[tuple[float, bool]] = []
+
+    @property
+    def session(self) -> ClientStageSession:
+        return self._connection.session if self._connection is not None else self._session
 
     def _connect(self) -> None:
         if self._connection is not None:
@@ -370,6 +377,11 @@ class _RoleTransport:
                     self.client = self._connection.client
                 else:
                     self._connect()
+                    self._session = ClientStageSession(
+                        self.role.weight_index, self.role.recipient_public
+                    )
+                    self._completed = 0
+                    self._used = False
                 result = self._execute(activation, request_id, sequence, activation_seed)
         self.observations.append((time.perf_counter() - started, cover))
         return result
