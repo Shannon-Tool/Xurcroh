@@ -289,6 +289,11 @@ class _SharedRoleConnection:
                     response_id, _, _, kind, _, _, _ = self.client.receive()
                     if response_id != session_id or kind != "complete":
                         raise ProtocolError("role cancellation was not acknowledged")
+            except ValueError as error:
+                if not any(
+                    marker in str(error).lower() for marker in ("closed", "connection", "timed out")
+                ):
+                    raise
             finally:
                 self.client.close()
                 self.client = None
