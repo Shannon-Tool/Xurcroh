@@ -22,7 +22,7 @@ At `59ff7af`, the public SDK also completed real managed SSH inference with 12 C
 
 At `e66bef0`, managed Diffusers image generation through the same placed 12-role SSH path passed in 70.77 seconds. The run exposed and corrected a divergence where diffusion previously built an unplaced all-worker grid; text and diffusion now share the same grid-builder, and duplicate role coordinates are rejected. This remains loopback evidence.
 
-Placed managed MoE and official miniature Gemma VLM image inference also passed in 68.37 and 92.71 seconds respectively. At `84a4a53`, three direct four-role QUIC recovery runs passed after connection loss, with coordinated restart and bounded rebinding. Generation-aware recovery and a global worker-shutdown deadline were added through `8f25c3f`. The full managed SIGKILL recovery test still exceeds its 300-second limit in some runs; the latest attempt failed during startup with `EADDRINUSE` after the bind retry window. No managed recovery pass is claimed.
+Placed managed MoE and official miniature Gemma VLM image inference also passed in 68.37 and 92.71 seconds respectively. At `84a4a53`, three direct four-role QUIC recovery runs passed after connection loss, with coordinated restart and bounded rebinding. Generation-aware recovery and a global worker-shutdown deadline were added through `8f25c3f`. Earlier attempts timed out or failed with `EADDRINUSE`. At `87f457d`, a 30-second native receive deadline allowed hard UDP failure detection and recovery to proceed; the full managed SIGKILL recovery test then passed in 160.03 seconds with clean teardown.
 
 | Check | Actual result |
 |---|---|
