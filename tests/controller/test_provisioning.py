@@ -240,7 +240,7 @@ def test_asyncssh_executor_reports_remote_failure(monkeypatch: pytest.MonkeyPatc
             return None
 
         async def run(self, command, **kwargs):
-            return types.SimpleNamespace(exit_status=17, stdout="")
+            return types.SimpleNamespace(exit_status=17, stdout="", stderr=b"permission denied")
 
     module = types.ModuleType("asyncssh")
     module.connect = lambda **options: Connection()
@@ -252,7 +252,7 @@ def test_asyncssh_executor_reports_remote_failure(monkeypatch: pytest.MonkeyPatc
     with pytest.raises(ClusterUnavailableError, match="MISSING"):
         AsyncSSHExecutor().run(worker, "true")
     monkeypatch.setenv("MISSING", "secret")
-    with pytest.raises(ClusterUnavailableError, match="status 17"):
+    with pytest.raises(ClusterUnavailableError, match=r"status 17.*permission denied"):
         AsyncSSHExecutor().run(worker, "true")
 
 

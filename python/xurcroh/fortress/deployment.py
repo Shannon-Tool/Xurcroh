@@ -116,8 +116,11 @@ class AsyncSSHExecutor:
                 await operation if timeout is None else await asyncio.wait_for(operation, timeout)
             )
         if result.exit_status not in (0, None):
+            stderr = result.stderr or ""
+            details = stderr.decode(errors="replace") if isinstance(stderr, bytes) else stderr
+            suffix = f": {details.strip()[-1000:]}" if details.strip() else ""
             raise ClusterUnavailableError(
-                f"remote command on {worker.name!r} failed with status {result.exit_status}"
+                f"remote command on {worker.name!r} failed with status {result.exit_status}{suffix}"
             )
         output = result.stdout or ""
         return output.decode() if isinstance(output, bytes) else output
