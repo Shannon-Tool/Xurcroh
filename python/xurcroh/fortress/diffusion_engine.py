@@ -34,7 +34,7 @@ class FortressDiffusionEngine(FortressEngine):
         name: str,
         definition: ModelDefinition,
         workers: list[WorkerConfig],
-        recover_role: Callable[[str], None] | None = None,
+        recover_role: Callable[[str, int], int] | None = None,
     ) -> None:
         super().__init__(name, definition, workers, recover_role)
         self.engine_name = (

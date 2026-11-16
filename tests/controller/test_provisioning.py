@@ -349,6 +349,8 @@ def test_concurrent_role_recovery_restarts_each_role_once(
             thread.join(timeout=5)
         assert all(not thread.is_alive() for thread in threads)
         assert calls == ["stop", "start"]
+        assert deployment.restart_role(provider_id, generation=0) == 1
+        assert calls == ["stop", "start"]
     finally:
         release.set()
         for thread in threads:
