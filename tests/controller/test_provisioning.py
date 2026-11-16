@@ -360,6 +360,40 @@ def test_concurrent_role_recovery_restarts_each_role_once(
         deployment.close()
 
 
+def test_managed_role_startup_runs_in_parallel(
+    tiny_llama_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+    import time
+
+    deployment = FortressDeployment(
+        provisioned_cluster(),
+        (("tiny", ModelDefinition(path=str(tiny_llama_path), engine="fortress")),),
+        workspace=tmp_path / "deployment",
+        executor_factory=RecordingExecutor,
+    )
+    monkeypatch.setattr(deployment, "_source_archive", lambda: b"source-archive")
+    lock = threading.Lock()
+    active = 0
+    peak = 0
+
+    def start(role) -> None:
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.05)
+        with lock:
+            active -= 1
+
+    monkeypatch.setattr(deployment, "_start_role", start)
+    try:
+        deployment.start()
+        assert peak > 1
+    finally:
+        deployment.close()
+
+
 def test_failed_remote_cleanup_retains_recovery_state_and_can_retry(
     tiny_llama_path: Path, tmp_path: Path
 ) -> None:
