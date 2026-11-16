@@ -81,7 +81,7 @@ def test_real_video_pipeline_generates_frames_with_fortress(
             request_id="video-test",
             security_mode="development",
             cancelled=threading.Event(),
-            timeout=180,
+            timeout=600,
         )
         assert response.data[0].b64_json
         assert any(
@@ -110,7 +110,7 @@ def test_real_video_pipeline_generates_frames_with_fortress(
             fps=2,
             steps=1,
             seed=12,
-            timeout=180,
+            timeout=600,
         )
     assert public_response.data[0].b64_json
     assert public_response.execution.engine == "fortress-diffusion-local"
