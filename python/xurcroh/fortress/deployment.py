@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -580,8 +581,8 @@ class FortressDeployment:
             try:
                 self._validate()
                 self._executor = self.executor_factory()
-                for worker in self.cluster.workers:
-                    self._executor.discover(worker)
+                with ThreadPoolExecutor(max_workers=min(32, len(self.cluster.workers))) as pool:
+                    list(pool.map(self._executor.discover, self.cluster.workers))
                 for name, definition in self.models:
                     report = preflight_checkpoint(
                         name,
@@ -600,12 +601,17 @@ class FortressDeployment:
                     {role.service_name: [role.worker.host or ""] for role in self._roles},
                 )
                 archive = self._source_archive()
-                for worker in self.cluster.workers:
-                    self._prepare_machine(worker, archive)
-                for role in self._roles:
-                    self._prepare_role(role)
-                for role in self._roles:
-                    self._start_role(role)
+                with ThreadPoolExecutor(max_workers=min(32, len(self.cluster.workers))) as pool:
+                    list(
+                        pool.map(
+                            lambda worker: self._prepare_machine(worker, archive),
+                            self.cluster.workers,
+                        )
+                    )
+                with ThreadPoolExecutor(max_workers=min(32, len(self._roles))) as pool:
+                    list(pool.map(self._prepare_role, self._roles))
+                with ThreadPoolExecutor(max_workers=min(32, len(self._roles))) as pool:
+                    list(pool.map(self._start_role, self._roles))
                 self._publish_workers()
                 self._enable_tunnels()
                 self._started = True
