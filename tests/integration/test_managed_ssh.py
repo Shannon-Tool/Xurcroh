@@ -233,6 +233,7 @@ def test_multiple_models_share_managed_cluster_with_isolated_roles(
                     "path": str(moe_checkpoint),
                     "engine": "fortress",
                     "fortress_seed": 732,
+                    "fortress_max_provider_fraction": 1.0,
                 },
             },
         ) as client,
