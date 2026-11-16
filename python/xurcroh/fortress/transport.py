@@ -53,6 +53,7 @@ class RoleEndpoint:
     provider_id: str
     relay: RelayRoute | None = None
     server_name: str | None = None
+    generation: int = 0
 
 
 @dataclass(frozen=True)
@@ -240,11 +241,12 @@ class _SharedRoleConnection:
         self,
         role: RoleEndpoint,
         identity: MutualTLSIdentity,
-        recover: Callable[[str], None] | None = None,
+        recover: Callable[[str, int], int] | None = None,
     ) -> None:
         self.role = role
         self.identity = identity
         self.recover_callback = recover
+        self.generation = role.generation
         self.client: Any = None
         self.session = ClientStageSession(role.weight_index, role.recipient_public)
         self.completed = 0
@@ -272,7 +274,7 @@ class _SharedRoleConnection:
         except ValueError:
             if self.recover_callback is None:
                 raise
-            self.recover_callback(self.role.provider_id)
+            self.generation = self.recover_callback(self.role.provider_id, self.generation)
             self.connect()
         self.session = ClientStageSession(self.role.weight_index, self.role.recipient_public)
         self.completed = 0
@@ -584,7 +586,7 @@ class FortressGridRuntime:
         frame_bytes: int = DEFAULT_FRAME_BYTES,
         cover_interval: float = 1.0,
         seeded_activations: bool = True,
-        recover_role: Callable[[str], None] | None = None,
+        recover_role: Callable[[str, int], int] | None = None,
     ) -> None:
         if not roles or cover_interval <= 0:
             raise ValueError("a Fortress grid requires roles and a positive cover interval")

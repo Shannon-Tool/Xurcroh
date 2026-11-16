@@ -43,7 +43,7 @@ class FortressEngine:
         name: str,
         definition: ModelDefinition,
         workers: list[WorkerConfig],
-        recover_role: Callable[[str], None] | None = None,
+        recover_role: Callable[[str, int], int] | None = None,
     ) -> None:
         self.name = name
         self.definition = definition
@@ -137,6 +137,7 @@ class FortressEngine:
                     recipient_public=recipient_public,
                     provider_id=worker.name,
                     server_name=worker.labels.get("server_name"),
+                    generation=int(worker.labels.get("restart_generation", "0")),
                 )
             )
         if operation_name is not None and not roles:

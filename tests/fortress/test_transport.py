@@ -116,9 +116,10 @@ def test_direct_grid_recovers_after_role_connection_loss(
         worker.start()
         record.update(worker=worker, address=worker.address)
 
-    def recover(provider_id: str) -> None:
+    def recover(provider_id: str, generation: int) -> int:
         recovered.append(provider_id)
         start(records[0])
+        return generation + 1
 
     for activation_index in range(2):
         for weight_index in range(2):

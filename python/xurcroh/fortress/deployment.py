@@ -220,6 +220,7 @@ class FortressDeployment:
         self._lock = threading.RLock()
         self._restart_condition = threading.Condition(self._lock)
         self._restarting: set[str] = set()
+        self._role_generations: dict[str, int] = {}
 
     @property
     def workers(self) -> Mapping[str, list[WorkerConfig]]:
@@ -661,14 +662,16 @@ class FortressDeployment:
                 reports[role.service_name] = f"role.log unavailable: {error}"
         return reports
 
-    def restart_role(self, provider_id: str) -> None:
+    def restart_role(self, provider_id: str, generation: int = 0) -> int:
         with self._restart_condition:
-            coalesced = False
+            current = self._role_generations.get(provider_id, 0)
+            if current > generation:
+                return current
             while provider_id in self._restarting:
-                coalesced = True
                 self._restart_condition.wait()
-            if coalesced:
-                return
+            current = self._role_generations.get(provider_id, 0)
+            if current > generation:
+                return current
             if self._closed or not self._started:
                 raise ClusterUnavailableError(
                     f"cannot restart Fortress role {provider_id!r} before startup or after close"
@@ -683,10 +686,17 @@ class FortressDeployment:
         try:
             self._stop_role(role)
             self._start_role(role)
-        finally:
+        except BaseException:
             with self._restart_condition:
                 self._restarting.remove(provider_id)
                 self._restart_condition.notify_all()
+            raise
+        with self._restart_condition:
+            current = self._role_generations.get(provider_id, 0) + 1
+            self._role_generations[provider_id] = current
+            self._restarting.remove(provider_id)
+            self._restart_condition.notify_all()
+            return current
 
     def close(self) -> None:
         with self._restart_condition:
