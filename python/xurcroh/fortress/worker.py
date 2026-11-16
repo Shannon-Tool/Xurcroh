@@ -314,16 +314,17 @@ class FortressRoleWorker:
         if self._closed.is_set():
             return
         self._closed.set()
+        deadline = time.monotonic() + 10
         self.server.close()
         if self._accept_thread.is_alive():
-            self._accept_thread.join(timeout=10)
+            self._accept_thread.join(timeout=max(0.0, deadline - time.monotonic()))
         with self._lock:
             threads = list(self._threads)
             self._requests.clear()
             self._session_completed.clear()
             self._active_sessions.clear()
         for thread in threads:
-            thread.join(timeout=10)
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
         self.sessions.close()
         for weights in self._cuda_weights.values():
             weights.zero_()
