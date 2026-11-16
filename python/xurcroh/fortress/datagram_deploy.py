@@ -114,6 +114,8 @@ def start_datagram_tunnels(
         instance_name = f"{tunnel_name}-{index}"
         address = Path(remote_root) / f"{instance_name}.address"
         pid_path = Path(remote_root) / f"{instance_name}.pid"
+        worker["datagram_tunnel"] = {"remote_pid_path": str(pid_path)}
+        started.append(worker)
         python = shlex.quote(str(worker.get("python_path", ".venv-cuda/bin/python")))
         start_detached(
             worker,
@@ -180,7 +182,6 @@ def start_datagram_tunnels(
             configured.endpoint = endpoint
         else:
             configured["endpoint"] = endpoint
-        started.append(worker)
 
     try:
         with ThreadPoolExecutor(max_workers=min(8, len(workers))) as pool:
@@ -196,5 +197,20 @@ def close_datagram_tunnels(workers: list[dict[str, Any]]) -> None:
         if not isinstance(tunnel, dict):
             continue
         for key in ("local_relay_pid", "ssh_forward_pid"):
+            if key not in tunnel:
+                continue
             with contextlib.suppress(ProcessLookupError):
                 os.kill(int(tunnel[key]), signal.SIGTERM)
+        remote_pid = tunnel.get("remote_pid_path")
+        if isinstance(remote_pid, str) and remote_pid:
+            subprocess.run(  # noqa: S603
+                [
+                    SSH_PATH,
+                    *options(worker),
+                    f"{worker['ssh_user']}@{worker['host']}",
+                    f"if test -f {shlex.quote(remote_pid)}; then "
+                    f"kill $(cat {shlex.quote(remote_pid)}) 2>/dev/null || true; fi",
+                ],
+                check=False,
+                capture_output=True,
+            )
