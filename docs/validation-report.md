@@ -24,6 +24,8 @@ At `e66bef0`, managed Diffusers image generation through the same placed 12-role
 
 Placed managed MoE and official miniature Gemma VLM image inference also passed in 68.37 and 92.71 seconds respectively. At `84a4a53`, three direct four-role QUIC recovery runs passed after connection loss, with coordinated restart and bounded rebinding. Generation-aware recovery and a global worker-shutdown deadline were added through `8f25c3f`. Earlier attempts timed out or failed with `EADDRINUSE`. At `87f457d`, a 30-second native receive deadline allowed hard UDP failure detection and recovery to proceed; the full managed SIGKILL recovery test then passed in 160.03 seconds with clean teardown.
 
+At `1f25f69`, the custom managed multimodal image/audio boundary test also passed in 59.00 seconds after placement and lifecycle changes.
+
 The two-model managed test has not completed on this host. At `90a99a6`, its 24 simultaneous role processes exhausted the available 6 GiB RAM, leaving approximately 47 MiB before the test was stopped and cleaned up. A larger validation host or lower-memory worker packaging is required; no multi-model managed pass is claimed. At `51ecfa9`, deployment began aggregating discovered host memory across assigned roles and rejecting insufficient capacity before archive transfer or role launch.
 
 | Check | Actual result |
