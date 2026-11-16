@@ -1,6 +1,7 @@
 use std::{
     fmt::Display,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 mod fortress;
@@ -575,8 +576,18 @@ impl TensorClient {
                 .ok_or_else(|| value_error("client is closed"))?
                 .clone()
         };
-        let frame = Python::attach(|py| py.detach(|| runtime().block_on(client.receive_frame())))
-            .map_err(value_error)?;
+        let frame = Python::attach(|py| {
+            py.detach(|| {
+                runtime().block_on(async {
+                    tokio::time::timeout(Duration::from_secs(30), client.receive_frame())
+                        .await
+                        .map_err(|_| {
+                            crate::TransportError::Connection("receive timed out".to_string())
+                        })?
+                })
+            })
+        })
+        .map_err(value_error)?;
         frame_result(frame)
     }
 
