@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import threading
 
+import pytest
 import xurcroh_quic
 from tests.fortress.conftest import MutualTLSIdentities
 
@@ -52,6 +53,38 @@ def test_datagram_relays_carry_real_mutual_tls_quic(
         assert not thread.is_alive()
 
     asyncio.run(exercise())
+
+
+def test_failed_relay_start_cleans_up_the_remote_process(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xurcroh.fortress import datagram_deploy
+
+    commands: list[list[str]] = []
+    monkeypatch.setattr(datagram_deploy, "start_detached", lambda worker, command: None)
+    monkeypatch.setattr(
+        datagram_deploy,
+        "wait_remote_port",
+        lambda worker, path: (_ for _ in ()).throw(TimeoutError("not ready")),
+    )
+    monkeypatch.setattr(
+        datagram_deploy.subprocess,
+        "run",
+        lambda command, **kwargs: commands.append(command),
+    )
+    worker = {
+        "name": "worker",
+        "host": "127.0.0.1",
+        "ssh_user": "root",
+        "ssh_port": 22,
+    }
+
+    with pytest.raises(TimeoutError):
+        datagram_deploy.start_datagram_tunnels(
+            [worker], str(tmp_path / "remote"), {"cluster": [{}]}, tmp_path
+        )
+
+    assert any("kill" in " ".join(command) for command in commands)
 
 
 def test_tcp_relay_treats_clean_disconnect_as_normal() -> None:
