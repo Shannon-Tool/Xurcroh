@@ -4,6 +4,7 @@ import base64
 import logging
 import os
 import threading
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -103,9 +104,20 @@ class FortressRoleWorker:
                 name: artifact.matrix.remainder(FIELD_MODULUS).to(torch.int32).T.contiguous().cuda()
                 for name, artifact in self.artifacts.items()
             }
-        self.server = xurcroh_quic.TensorServer.bind_mutual(
-            address, list(certificates), private_key, client_ca
-        )
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                self.server = xurcroh_quic.TensorServer.bind_mutual(
+                    address, list(certificates), private_key, client_ca
+                )
+                break
+            except ValueError as error:
+                if (
+                    "address already in use" not in str(error).lower()
+                    or time.monotonic() >= deadline
+                ):
+                    raise
+                time.sleep(0.05)
         self.address = self.server.local_addr()
         self._closed = threading.Event()
         self._threads: list[threading.Thread] = []

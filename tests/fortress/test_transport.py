@@ -79,6 +79,76 @@ def test_grid_runtime_rejects_duplicate_role_coordinates(
         transport.FortressGridRuntime(roles, identity)
 
 
+def test_direct_grid_recovers_after_role_connection_loss(
+    mtls_identities: MutualTLSIdentities,
+) -> None:
+    from xurcroh.fortress.transport import FortressGridRuntime
+
+    operation = compile_operation(
+        torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
+    )
+    identity = MutualTLSIdentity(
+        certificates=(mtls_identities["client_certificate"], mtls_identities["ca"]),
+        private_key=mtls_identities["client_key"],
+        pinned_ca=mtls_identities["ca"],
+        server_name="localhost",
+    )
+    records = []
+    roles = []
+    recovered = []
+
+    def start(record) -> None:
+        if "recipient_key" not in record:
+            private = X25519PrivateKey.generate()
+            record["recipient_key"] = private.private_bytes(
+                Encoding.Raw, PrivateFormat.Raw, NoEncryption()
+            )
+            record["public"] = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        artifact = encode_role_artifact(operation, record["weight_index"], record["public"])
+        worker = FortressRoleWorker(
+            {"recovery": artifact},
+            record["recipient_key"],
+            certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
+            private_key=mtls_identities["server_key"],
+            client_ca=mtls_identities["ca"],
+            address=record.get("address", "127.0.0.1:0"),
+        )
+        worker.start()
+        record.update(worker=worker, address=worker.address)
+
+    def recover(provider_id: str) -> None:
+        recovered.append(provider_id)
+        start(records[0])
+
+    for activation_index in range(2):
+        for weight_index in range(2):
+            record = {"weight_index": weight_index}
+            start(record)
+            records.append(record)
+            roles.append(
+                RoleEndpoint(
+                    activation_index,
+                    weight_index,
+                    record["address"],
+                    record["public"],
+                    f"role-{weight_index}",
+                )
+            )
+    runtime = FortressGridRuntime(roles, identity, cover_interval=60, recover_role=recover)
+    try:
+        client = runtime.client(operation, "recovery")
+        shares = split_secret(torch.tensor([5, 7]), count=2).shares
+        expected = client.execute(shares, request_id="before")
+        records[0]["worker"].close()
+        actual = client.execute(shares, request_id="after")
+        assert torch.equal(actual, expected)
+        assert recovered == ["role-0"]
+    finally:
+        runtime.close()
+        for record in records:
+            record["worker"].close()
+
+
 def test_real_grid_transport_is_exact_and_isolates_duplicate_request_ids(
     mtls_identities: MutualTLSIdentities,
 ) -> None:
