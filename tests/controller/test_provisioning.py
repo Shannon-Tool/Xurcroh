@@ -394,6 +394,50 @@ def test_managed_role_startup_runs_in_parallel(
         deployment.close()
 
 
+def test_provisioning_rejects_insufficient_aggregate_host_memory(
+    tiny_llama_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cluster = ClusterConfig.normalize(
+        {
+            "workers": [
+                {
+                    "name": f"cpu-{index}",
+                    "host": "127.0.0.1",
+                    "ssh": {"username": "root"},
+                    "labels": {"device": "cpu", "host_memory_bytes": str(1024**3)},
+                    "resources": {"max_host_memory_gb": 1},
+                    "provider": {
+                        "country": "us" if index % 2 else "de",
+                        "cpu_vendor": "amd" if index % 2 else "intel",
+                    },
+                }
+                for index in range(12)
+            ],
+            "provision_workers": True,
+        }
+    )
+    deployment = FortressDeployment(
+        cluster,
+        (
+            (
+                "tiny",
+                ModelDefinition(
+                    path=str(tiny_llama_path),
+                    engine="fortress",
+                    fortress_max_provider_fraction=1.0,
+                ),
+            ),
+        ),
+        workspace=tmp_path / "deployment",
+        executor_factory=RecordingExecutor,
+    )
+    monkeypatch.setattr(deployment, "_source_archive", lambda: b"source-archive")
+
+    with pytest.raises(ConfigurationError, match="larger host"):
+        deployment.start()
+    assert not any("worker_cli" in command for _, command in deployment._executor.commands)
+
+
 def test_failed_remote_cleanup_retains_recovery_state_and_can_retry(
     tiny_llama_path: Path, tmp_path: Path
 ) -> None:
