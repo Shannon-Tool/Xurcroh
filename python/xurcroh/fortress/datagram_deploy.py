@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -107,79 +108,83 @@ def start_datagram_tunnels(
         raise ValueError("datagram tunnel requires valid per-worker ports and a simple name")
     output.mkdir(parents=True, exist_ok=True)
     started: list[dict[str, Any]] = []
-    try:
-        for index, worker in enumerate(workers):
-            root = shlex.quote(remote_root)
-            instance_name = f"{tunnel_name}-{index}"
-            address = Path(remote_root) / f"{instance_name}.address"
-            pid_path = Path(remote_root) / f"{instance_name}.pid"
-            python = shlex.quote(str(worker.get("python_path", ".venv-cuda/bin/python")))
-            start_detached(
-                worker,
-                f"cd {root} && setsid -f env {python} -m "
-                "xurcroh.fortress.datagram_tunnel server --listen-host 127.0.0.1 "
-                f"--listen-port 0 --target-host 127.0.0.1 --target-port {ports[index]} "
-                f"--address-file {shlex.quote(str(address))} "
-                f"--pid-file {shlex.quote(str(pid_path))} </dev/null "
-                f">{root}/{shlex.quote(instance_name)}.log 2>&1",
+
+    def start_worker(index: int, worker: dict[str, Any]) -> None:
+        root = shlex.quote(remote_root)
+        instance_name = f"{tunnel_name}-{index}"
+        address = Path(remote_root) / f"{instance_name}.address"
+        pid_path = Path(remote_root) / f"{instance_name}.pid"
+        python = shlex.quote(str(worker.get("python_path", ".venv-cuda/bin/python")))
+        start_detached(
+            worker,
+            f"cd {root} && setsid -f env {python} -m "
+            "xurcroh.fortress.datagram_tunnel server --listen-host 127.0.0.1 "
+            f"--listen-port 0 --target-host 127.0.0.1 --target-port {ports[index]} "
+            f"--address-file {shlex.quote(str(address))} "
+            f"--pid-file {shlex.quote(str(pid_path))} </dev/null "
+            f">{root}/{shlex.quote(instance_name)}.log 2>&1",
+        )
+        remote_port = wait_remote_port(worker, address)
+        forward_port = free_tcp_port()
+        log_path = output / f"{worker['name']}-ssh.log"
+        with log_path.open("wb") as log:
+            forward = subprocess.Popen(  # noqa: S603
+                [
+                    SSH_PATH,
+                    "-N",
+                    "-L",
+                    f"127.0.0.1:{forward_port}:127.0.0.1:{remote_port}",
+                    *options(worker),
+                    f"{worker['ssh_user']}@{worker['host']}",
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
             )
-            remote_port = wait_remote_port(worker, address)
-            forward_port = free_tcp_port()
-            log_path = output / f"{worker['name']}-ssh.log"
-            with log_path.open("wb") as log:
-                forward = subprocess.Popen(  # noqa: S603
-                    [
-                        SSH_PATH,
-                        "-N",
-                        "-L",
-                        f"127.0.0.1:{forward_port}:127.0.0.1:{remote_port}",
-                        *options(worker),
-                        f"{worker['ssh_user']}@{worker['host']}",
-                    ],
-                    stdin=subprocess.DEVNULL,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
-                )
-            wait_tcp_forward(forward_port, forward)
-            local_address = output / f"{worker['name']}.address"
-            with (output / f"{worker['name']}.log").open("wb") as log:
-                local = subprocess.Popen(  # noqa: S603
-                    [
-                        sys.executable,
-                        "-m",
-                        "xurcroh.fortress.datagram_tunnel",
-                        "client",
-                        "--listen-host",
-                        "127.0.0.1",
-                        "--listen-port",
-                        "0",
-                        "--target-host",
-                        "127.0.0.1",
-                        "--target-port",
-                        str(forward_port),
-                        "--address-file",
-                        str(local_address),
-                    ],
-                    stdin=subprocess.DEVNULL,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
-                )
-            local_port = wait_local_port(local_address, local)
-            worker["datagram_tunnel"] = {
-                "ssh_forward_pid": forward.pid,
-                "local_relay_pid": local.pid,
-                "local_endpoint": f"127.0.0.1:{local_port}",
-                "remote_pid_path": str(pid_path),
-            }
-            configured = sdk["cluster"][index]
-            endpoint = f"quic://127.0.0.1:{local_port}"
-            if isinstance(configured, WorkerConfig):
-                configured.endpoint = endpoint
-            else:
-                configured["endpoint"] = endpoint
-            started.append(worker)
+        wait_tcp_forward(forward_port, forward)
+        local_address = output / f"{worker['name']}.address"
+        with (output / f"{worker['name']}.log").open("wb") as log:
+            local = subprocess.Popen(  # noqa: S603
+                [
+                    sys.executable,
+                    "-m",
+                    "xurcroh.fortress.datagram_tunnel",
+                    "client",
+                    "--listen-host",
+                    "127.0.0.1",
+                    "--listen-port",
+                    "0",
+                    "--target-host",
+                    "127.0.0.1",
+                    "--target-port",
+                    str(forward_port),
+                    "--address-file",
+                    str(local_address),
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        local_port = wait_local_port(local_address, local)
+        worker["datagram_tunnel"] = {
+            "ssh_forward_pid": forward.pid,
+            "local_relay_pid": local.pid,
+            "local_endpoint": f"127.0.0.1:{local_port}",
+            "remote_pid_path": str(pid_path),
+        }
+        configured = sdk["cluster"][index]
+        endpoint = f"quic://127.0.0.1:{local_port}"
+        if isinstance(configured, WorkerConfig):
+            configured.endpoint = endpoint
+        else:
+            configured["endpoint"] = endpoint
+        started.append(worker)
+
+    try:
+        with ThreadPoolExecutor(max_workers=min(8, len(workers))) as pool:
+            list(pool.map(lambda item: start_worker(*item), enumerate(workers)))
     except Exception:
         close_datagram_tunnels(started)
         raise
