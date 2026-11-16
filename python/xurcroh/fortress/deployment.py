@@ -417,6 +417,14 @@ class FortressDeployment:
             if definition.fortress_seed is None:
                 object.__setattr__(definition, "fortress_seed", model_seed)
 
+    def _machine_workers(self) -> list[WorkerConfig]:
+        machines: dict[tuple[str | None, str, int], WorkerConfig] = {}
+        for worker in self.cluster.workers:
+            ssh = worker.ssh
+            key = (worker.host, ssh.username if ssh else "", ssh.port if ssh else 0)
+            machines.setdefault(key, worker)
+        return list(machines.values())
+
     def _prepare_machine(self, worker: WorkerConfig, archive: bytes) -> None:
         assert self._executor is not None
         root = shlex.quote(self._remote_root)
@@ -604,11 +612,12 @@ class FortressDeployment:
                     {role.service_name: [role.worker.host or ""] for role in self._roles},
                 )
                 archive = self._source_archive()
-                with ThreadPoolExecutor(max_workers=min(8, len(self.cluster.workers))) as pool:
+                machines = self._machine_workers()
+                with ThreadPoolExecutor(max_workers=min(8, len(machines))) as pool:
                     list(
                         pool.map(
                             lambda worker: self._prepare_machine(worker, archive),
-                            self.cluster.workers,
+                            machines,
                         )
                     )
                 with ThreadPoolExecutor(max_workers=min(8, len(self._roles))) as pool:
