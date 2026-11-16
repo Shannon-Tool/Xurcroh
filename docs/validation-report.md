@@ -26,6 +26,8 @@ Placed managed MoE and official miniature Gemma VLM image inference also passed 
 
 At `1f25f69`, the custom managed multimodal image/audio boundary test also passed in 59.00 seconds after placement and lifecycle changes.
 
+At `1b1fbee`, a real single-worker SSH datagram deployment carried an authenticated QUIC request through the remote and local relays and cleaned up in 6.73 seconds. This validates the deployed relay path itself; a full 12-role relay inference pass is not claimed.
+
 The current managed video run exceeded its 900-second limit and was terminated; its test-owned workers and SSH process were removed. No managed video pass is claimed for the current placement implementation.
 
 The two-model managed test has not completed on this host. At `90a99a6`, its 24 simultaneous role processes exhausted the available 6 GiB RAM, leaving approximately 47 MiB before the test was stopped and cleaned up. A larger validation host or lower-memory worker packaging is required; no multi-model managed pass is claimed. At `51ecfa9`, deployment began aggregating discovered host memory across assigned roles and rejecting insufficient capacity before archive transfer or role launch.
