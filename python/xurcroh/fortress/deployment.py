@@ -138,6 +138,16 @@ class AsyncSSHExecutor:
     def discover(self, worker: WorkerConfig) -> None:
         if worker.labels.get("device") == "cpu":
             worker.gpu = None
+            output = self.run(worker, "awk '/^MemTotal:/ {print $2}' /proc/meminfo")
+            try:
+                memory_kib = int(output.strip())
+            except ValueError as error:
+                raise ClusterUnavailableError(
+                    f"worker {worker.name!r} returned invalid host memory metadata"
+                ) from error
+            if memory_kib <= 0:
+                raise ClusterUnavailableError("host memory must be positive")
+            worker.labels["host_memory_bytes"] = str(memory_kib * 1024)
             return
         output = self.run(
             worker,
@@ -218,6 +228,7 @@ class FortressDeployment:
         self._roles: list[RoleDeployment] = []
         self._workers: dict[str, list[WorkerConfig]] = {}
         self._placements: dict[str, PlacementMap] = {}
+        self._role_estimates: dict[str, int] = {}
         self._tunnel_workers: list[list[dict[str, Any]]] = []
         self._started = False
         self._closed = False
@@ -425,6 +436,30 @@ class FortressDeployment:
             machines.setdefault(key, worker)
         return list(machines.values())
 
+    def _validate_host_memory(self) -> None:
+        required: dict[tuple[str | None, str, int], int] = {}
+        owners: dict[tuple[str | None, str, int], WorkerConfig] = {}
+        for role in self._roles:
+            worker = role.worker
+            ssh = worker.ssh
+            key = (worker.host, ssh.username if ssh else "", ssh.port if ssh else 0)
+            owners[key] = worker
+            required[key] = required.get(key, 0) + self._role_estimates[role.model]
+        for key, required_bytes in required.items():
+            worker = owners[key]
+            if worker.labels.get("host_memory_bytes") is not None:
+                available = int(worker.labels["host_memory_bytes"])
+            elif worker.resources.max_host_memory_gb is not None:
+                available = int(worker.resources.max_host_memory_gb * 1024**3)
+            else:
+                continue
+            if required_bytes > available:
+                raise ConfigurationError(
+                    f"machine {worker.name!r} requires approximately "
+                    f"{required_bytes / 1024**3:.2f} GiB for assigned roles but has "
+                    f"{available / 1024**3:.2f} GiB; use a larger host or fewer roles"
+                )
+
     def _prepare_machine(self, worker: WorkerConfig, archive: bytes) -> None:
         assert self._executor is not None
         root = shlex.quote(self._remote_root)
@@ -606,7 +641,9 @@ class FortressDeployment:
                         raise ConfigurationError(
                             f"model {name!r} preflight failed: " + "; ".join(report.issues)
                         )
+                    self._role_estimates[name] = report.estimated_role_worker_bytes
                 self._create_roles()
+                self._validate_host_memory()
                 generate_mutual_tls(
                     self._workspace / "tls",
                     {role.service_name: [role.worker.host or ""] for role in self._roles},
