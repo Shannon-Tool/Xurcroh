@@ -32,6 +32,8 @@ class RecordingExecutor:
         self.commands.append((worker.name, command))
         if self.fail_cleanup and "rm -rf" in command:
             raise ClusterUnavailableError("SSH connection lost")
+        if "cat" in command and "/ready" in command:
+            return "127.0.0.1:9444\n"
         if "role.exit" in command and "ready" not in command:
             return "exited\n"
         return "ready\n" if "test -f" in command else ""

@@ -33,6 +33,16 @@ def _cpu_workers(base: WorkerConfig) -> list[WorkerConfig]:
     ]
 
 
+def _assert_unique_dynamic_ports(workers: list[WorkerConfig]) -> None:
+    ports = []
+    for worker in workers:
+        assert worker.endpoint is not None
+        port = int(worker.endpoint.rsplit(":", maxsplit=1)[1])
+        assert port > 0
+        ports.append(port)
+    assert len(set(ports)) == len(workers)
+
+
 def test_sdk_managed_fortress_inference_over_real_ssh(
     tiny_llama_path: Path, tmp_path: Path
 ) -> None:
@@ -60,9 +70,7 @@ def test_sdk_managed_fortress_inference_over_real_ssh(
             assert response.execution.engine == "fortress-grid"
             assert len(response.execution.worker_ids) == 12
             endpoints = client._runtime._workers_for_model("tiny")
-            assert [worker.endpoint for worker in endpoints] == [
-                f"quic://127.0.0.1:{9444 + index}" for index in range(12)
-            ]
+            _assert_unique_dynamic_ports(endpoints)
 
 
 def test_sdk_managed_image_generation_over_real_ssh(tmp_path: Path) -> None:
@@ -240,9 +248,9 @@ def test_multiple_models_share_managed_cluster_with_isolated_roles(
             assert response.usage.completion_tokens == 1
             assert len(response.execution.worker_ids) == 12
         moe_endpoints = client._runtime._workers_for_model("moe")
-        assert [worker.endpoint for worker in moe_endpoints] == [
-            f"quic://127.0.0.1:{10444 + index}" for index in range(12)
-        ]
+        _assert_unique_dynamic_ports(moe_endpoints)
+        tiny_endpoints = client._runtime._workers_for_model("tiny")
+        _assert_unique_dynamic_ports(tiny_endpoints)
 
 
 def test_managed_datagram_tunnel_executes_real_fortress_inference(

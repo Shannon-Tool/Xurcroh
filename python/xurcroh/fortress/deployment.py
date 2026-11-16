@@ -342,14 +342,7 @@ class FortressDeployment:
                 for assignment in placement.assignments
             }
             model_roles: list[RoleDeployment] = []
-            host_slots: dict[str, int] = {}
             for index, worker in enumerate(placed_workers):
-                host = worker.host or worker.name
-                host_slot = host_slots.get(host, 0)
-                host_slots[host] = host_slot + 1
-                port_number = 9444 + model_index * 1000 + host_slot
-                if port_number > 65535:
-                    raise ConfigurationError("Fortress role port allocation exceeds 65535")
                 first_assignment = next(
                     assignment
                     for assignment in placement.assignments
@@ -373,7 +366,7 @@ class FortressDeployment:
                         recipient_key=key_path,
                         package=model_root / f"role-{index}",
                         service_name=f"model-{model_index}-{worker.name}",
-                        port_number=port_number,
+                        port_number=0,
                     )
                 )
             self._roles.extend(model_roles)
@@ -493,6 +486,18 @@ class FortressDeployment:
                 f"elif test -f {exit_file}; then echo exited; fi",
             ).strip()
             if status == "ready":
+                address = self._executor.run(role.worker, f"cat {shlex.quote(str(ready))}").strip()
+                try:
+                    port = int(address.rsplit(":", maxsplit=1)[1])
+                except (IndexError, ValueError) as error:
+                    raise ClusterUnavailableError(
+                        f"Fortress role {role.service_name!r} reported an invalid ready address"
+                    ) from error
+                if not 1 <= port <= 65535:
+                    raise ClusterUnavailableError(
+                        f"Fortress role {role.service_name!r} reported an invalid port"
+                    )
+                object.__setattr__(role, "port_number", port)
                 return
             if status == "exited":
                 try:
