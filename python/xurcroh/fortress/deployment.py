@@ -466,7 +466,7 @@ class FortressDeployment:
         )
         command = (
             f"cd {shlex.quote(self._remote_root)} && setsid -f env HF_HUB_OFFLINE=1 "
-            "TRANSFORMERS_OFFLINE=1 "
+            "TRANSFORMERS_OFFLINE=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 "
             "LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:"
             f"/usr/local/cuda/lib64 {python} -m xurcroh.fortress.worker_cli "
             f"--artifact-dir {remote}/artifacts --recipient-key {remote}/recipient.key "
@@ -581,7 +581,7 @@ class FortressDeployment:
             try:
                 self._validate()
                 self._executor = self.executor_factory()
-                with ThreadPoolExecutor(max_workers=min(32, len(self.cluster.workers))) as pool:
+                with ThreadPoolExecutor(max_workers=min(8, len(self.cluster.workers))) as pool:
                     list(pool.map(self._executor.discover, self.cluster.workers))
                 for name, definition in self.models:
                     report = preflight_checkpoint(
@@ -601,16 +601,16 @@ class FortressDeployment:
                     {role.service_name: [role.worker.host or ""] for role in self._roles},
                 )
                 archive = self._source_archive()
-                with ThreadPoolExecutor(max_workers=min(32, len(self.cluster.workers))) as pool:
+                with ThreadPoolExecutor(max_workers=min(8, len(self.cluster.workers))) as pool:
                     list(
                         pool.map(
                             lambda worker: self._prepare_machine(worker, archive),
                             self.cluster.workers,
                         )
                     )
-                with ThreadPoolExecutor(max_workers=min(32, len(self._roles))) as pool:
+                with ThreadPoolExecutor(max_workers=min(8, len(self._roles))) as pool:
                     list(pool.map(self._prepare_role, self._roles))
-                with ThreadPoolExecutor(max_workers=min(32, len(self._roles))) as pool:
+                with ThreadPoolExecutor(max_workers=min(8, len(self._roles))) as pool:
                     list(pool.map(self._start_role, self._roles))
                 self._publish_workers()
                 self._enable_tunnels()
