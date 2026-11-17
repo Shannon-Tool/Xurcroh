@@ -12,10 +12,12 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from tests.fortress.test_ladder import manifest_mapping
 
-from xurcroh.fortress.diffusers_loader import compile_diffusers_component
+from xurcroh.config import ModelDefinition
 from xurcroh.fortress.ladder import LadderRung
 from xurcroh.fortress.ladder_deployment import sdk_configuration
 from xurcroh.fortress.ladder_verifier import verify_ladder
+from xurcroh.fortress.media_adapter import MediaArchitectureAdapter
+from xurcroh.fortress.media_components import compile_media_checkpoint
 from xurcroh.fortress.transport import encode_role_artifact
 from xurcroh.fortress.worker import FortressRoleWorker
 
@@ -40,14 +42,18 @@ def test_image_ladder_verifier_compares_latents_and_public_sdk(
     mutable["model"] = "tiny-image"
     mutable["modality"] = "image"
     rung = LadderRung.from_mapping(mutable)
-    operations = compile_diffusers_component(tmp_path / "model", component="unet", seed=731)
+    definition = ModelDefinition(
+        path=str(tmp_path / "model"), modality="image", engine="fortress", fortress_seed=731
+    )
+    adapter = MediaArchitectureAdapter.from_checkpoint(definition.path, "image")
+    operations = compile_media_checkpoint(definition, adapter)["unet"]
     workers: list[FortressRoleWorker] = []
     try:
         for index, placement in enumerate(rung.workers):
             private = X25519PrivateKey.generate()
             public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
             artifacts = {
-                name: encode_role_artifact(operation, placement.weight_index, public)
+                f"unet:{name}": encode_role_artifact(operation, placement.weight_index, public)
                 for name, operation in operations.items()
             }
             worker = FortressRoleWorker(
@@ -145,7 +151,14 @@ def test_video_ladder_verifier_compares_latents_and_public_sdk(
         }
     )
     rung = LadderRung.from_mapping(mutable)
-    operations = compile_diffusers_component(tmp_path / "video-model", component="unet", seed=731)
+    definition = ModelDefinition(
+        path=str(tmp_path / "video-model"),
+        modality="video",
+        engine="fortress",
+        fortress_seed=731,
+    )
+    adapter = MediaArchitectureAdapter.from_checkpoint(definition.path, "video")
+    operations = compile_media_checkpoint(definition, adapter)["unet"]
     workers: list[FortressRoleWorker] = []
     try:
         for index, placement in enumerate(rung.workers):
@@ -153,7 +166,7 @@ def test_video_ladder_verifier_compares_latents_and_public_sdk(
             public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
             worker = FortressRoleWorker(
                 {
-                    name: encode_role_artifact(operation, placement.weight_index, public)
+                    f"unet:{name}": encode_role_artifact(operation, placement.weight_index, public)
                     for name, operation in operations.items()
                 },
                 private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),

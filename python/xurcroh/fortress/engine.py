@@ -146,7 +146,7 @@ class FortressEngine:
         return roles
 
     def _grid_clients(
-        self, operations: Mapping[str, CompiledOperation]
+        self, operations: Mapping[str, CompiledOperation], *, namespace: str | None = None
     ) -> dict[str, FortressRoleClient]:
         from xurcroh.fortress.transport import FortressGridRuntime
 
@@ -159,7 +159,8 @@ class FortressEngine:
         runtimes: dict[tuple[str, ...], FortressGridRuntime] = {}
         clients: dict[str, FortressRoleClient] = {}
         for name, operation in operations.items():
-            roles = self._roles(name)
+            qualified = name if namespace is None else f"{namespace}:{name}"
+            roles = self._roles(qualified)
             group = tuple(role.provider_id for role in roles)
             runtime = runtimes.get(group)
             if runtime is None:
@@ -175,7 +176,7 @@ class FortressEngine:
                 self._grid_runtimes.append(runtime)
                 if self._grid_runtime is None:
                     self._grid_runtime = runtime
-            clients[name] = runtime.client(operation, name)
+            clients[name] = runtime.client(operation, qualified)
         return clients
 
     def _load(self) -> None:

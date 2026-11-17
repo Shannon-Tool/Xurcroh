@@ -4,14 +4,13 @@ import base64
 import inspect
 import io
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import torch
 
 from xurcroh.config import ModelDefinition, WorkerConfig
 from xurcroh.errors import CapabilityError, ModelLoadError
-from xurcroh.fortress.diffusers_loader import compile_diffusers_component
 from xurcroh.fortress.engine import FortressEngine
 from xurcroh.fortress.module import replace_linear_layers
 from xurcroh.requests import ImageGenerationRequest, VideoGenerationRequest
@@ -26,6 +25,12 @@ from xurcroh.types import (
     ImageGenerationResponse,
     VideoGenerationResponse,
 )
+
+
+def _accepts_parameter(parameters: Mapping[str, inspect.Parameter], name: str) -> bool:
+    return name in parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+    )
 
 
 class FortressDiffusionEngine(FortressEngine):
@@ -57,26 +62,28 @@ class FortressDiffusionEngine(FortressEngine):
             if self._boundary is not None:
                 return
             try:
+                from xurcroh.fortress.media_adapter import MediaArchitectureAdapter
+                from xurcroh.fortress.media_components import compile_media_checkpoint
                 from xurcroh.runtime.media_boundary import DiffusionMediaBoundary
 
                 boundary = DiffusionMediaBoundary.from_definition(self.definition)
-                component = "transformer" if hasattr(boundary.pipeline, "transformer") else "unet"
-                module = getattr(boundary.pipeline, component)
-                operations = compile_diffusers_component(
-                    self.definition.path,
-                    component=component,
-                    seed=self.definition.fortress_seed,
-                    share_count=self.definition.fortress_shares,
+                adapter = MediaArchitectureAdapter.from_pipeline(
+                    boundary.pipeline, self.definition.modality
                 )
+                compiled = compile_media_checkpoint(self.definition, adapter)
                 clients: dict[str, FortressRoleClient] = {}
-                if self.engine_name == "fortress-diffusion-grid":
-                    clients = self._grid_clients(operations)
+                for component, operations in compiled.items():
+                    component_clients: dict[str, FortressRoleClient] = {}
+                    if self.engine_name == "fortress-diffusion-grid":
+                        component_clients = self._grid_clients(operations, namespace=component)
+                    for name, client in component_clients.items():
+                        clients[f"{component}:{name}"] = client
+                    replace_linear_layers(
+                        getattr(boundary.pipeline, component),
+                        operations,
+                        grid_clients=component_clients or None,
+                    )
                 self._clients = clients
-                replace_linear_layers(
-                    module,
-                    operations,
-                    grid_clients=clients or None,
-                )
                 self._boundary = boundary
             except Exception:
                 self.close()
@@ -126,6 +133,15 @@ class FortressDiffusionEngine(FortressEngine):
         if request.image is not None:
             parameters["image"] = _decode_image(request.image)
             parameters["strength"] = request.strength
+        if request.mask is not None:
+            signature = inspect.signature(self._boundary.pipeline.__call__).parameters
+            mask_parameter = next(
+                (name for name in ("mask_image", "mask") if _accepts_parameter(signature, name)),
+                None,
+            )
+            if mask_parameter is None:
+                raise CapabilityError("image editing pipeline does not accept a mask")
+            parameters[mask_parameter] = _decode_image(request.mask)
 
         def health(_pipeline: Any, _index: int, _timestep: Any, kwargs: Any) -> Any:
             check_request_health(cancelled, started, timeout)
@@ -133,7 +149,11 @@ class FortressDiffusionEngine(FortressEngine):
 
         parameters["callback_on_step_end"] = health
         signature = inspect.signature(self._boundary.pipeline.__call__).parameters
-        parameters = {key: value for key, value in parameters.items() if key in signature}
+        if request.image is not None and not _accepts_parameter(signature, "image"):
+            raise CapabilityError("image pipeline does not support image conditioning")
+        parameters = {
+            key: value for key, value in parameters.items() if _accepts_parameter(signature, key)
+        }
         result = self._boundary.pipeline(**parameters)
         if supports_latent_decode:
             encoded = self._boundary.decode(result.images, request)
@@ -156,15 +176,12 @@ class FortressDiffusionEngine(FortressEngine):
         timeout: float,
     ) -> VideoGenerationResponse:
         from xurcroh.runtime.generation import check_request_health
+        from xurcroh.runtime.vlm import _decode_image
 
         self._load()
         assert self._boundary is not None
         started = time.monotonic()
         seed = self._seed(request)
-        if request.image is not None:
-            raise CapabilityError(
-                "Fortress image-to-video requires a video-specific source adapter"
-            )
 
         def health(_pipeline: Any, _index: int, _timestep: Any, kwargs: Any) -> Any:
             check_request_health(cancelled, started, timeout)
@@ -182,8 +199,14 @@ class FortressDiffusionEngine(FortressEngine):
             "output_type": "latent",
             "callback_on_step_end": health,
         }
+        if request.image is not None:
+            parameters["image"] = _decode_image(request.image)
         signature = inspect.signature(self._boundary.pipeline.__call__).parameters
-        parameters = {key: value for key, value in parameters.items() if key in signature}
+        if request.image is not None and not _accepts_parameter(signature, "image"):
+            raise CapabilityError("video pipeline does not support image-to-video conditioning")
+        parameters = {
+            key: value for key, value in parameters.items() if _accepts_parameter(signature, key)
+        }
         result = self._boundary.pipeline(**parameters)
         frames = getattr(result, "frames", None)
         if frames is None:
