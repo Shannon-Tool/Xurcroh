@@ -44,7 +44,9 @@ def open_checkpoint(path: str | Path, source_format: str = "auto") -> TensorRead
 
         return SafetensorsReader(Path(path).expanduser())
     if selected == "gguf":
-        raise CapabilityError("GGUF reader support is not installed yet")
+        from xurcroh.formats.gguf import GGUFReader
+
+        return GGUFReader(Path(path).expanduser())
     if selected in {"exl2", "exl3"}:
         raise CapabilityError(f"{selected.upper()} reader support is not installed yet")
     raise ModelLoadError(f"unknown checkpoint format: {selected}")
