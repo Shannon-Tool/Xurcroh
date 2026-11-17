@@ -8,7 +8,7 @@ import torch
 from safetensors import safe_open
 
 from xurcroh.errors import ModelLoadError
-from xurcroh.formats.base import TensorReader, fingerprint_source
+from xurcroh.formats.base import CheckpointFormat, TensorReader, fingerprint_source
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -33,7 +33,7 @@ def _read_json(path: Path, description: str) -> dict[str, Any]:
 
 
 class SafetensorsReader(TensorReader):
-    source_format = "safetensors"
+    source_format: CheckpointFormat = "safetensors"
 
     def __init__(self, root: Path) -> None:
         super().__init__()
