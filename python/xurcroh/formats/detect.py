@@ -4,7 +4,7 @@ from pathlib import Path
 
 from safetensors import safe_open
 
-from xurcroh.errors import CapabilityError, ModelLoadError
+from xurcroh.errors import ModelLoadError
 from xurcroh.formats.base import CheckpointFormat, TensorReader
 
 
@@ -47,6 +47,12 @@ def open_checkpoint(path: str | Path, source_format: str = "auto") -> TensorRead
         from xurcroh.formats.gguf import GGUFReader
 
         return GGUFReader(Path(path).expanduser())
-    if selected in {"exl2", "exl3"}:
-        raise CapabilityError(f"{selected.upper()} reader support is not installed yet")
+    if selected == "exl2":
+        from xurcroh.formats.exl2 import EXL2Reader
+
+        return EXL2Reader(Path(path).expanduser())
+    if selected == "exl3":
+        from xurcroh.formats.exl3 import EXL3Reader
+
+        return EXL3Reader(Path(path).expanduser())
     raise ModelLoadError(f"unknown checkpoint format: {selected}")
