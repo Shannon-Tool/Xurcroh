@@ -143,6 +143,35 @@ def _metric(report: Mapping[str, Any], name: str) -> float:
 
 def validate_rung_evidence(rung: LadderRung, report: Mapping[str, Any]) -> None:
     hardware = rung.rung not in {"F0", "M0"}
+    version = report.get("evidence_version", 1)
+    if version not in {1, 2}:
+        raise LadderEvidenceError("unsupported evidence version")
+    if version == 2:
+        if report.get("source_format") not in {"safetensors", "gguf", "exl2", "exl3"}:
+            raise LadderEvidenceError("source_format is required and unsupported")
+        _hex(str(report.get("source_digest", "")), 64, "source_digest")
+        _string(report, "architecture_adapter")
+        if not isinstance(report.get("decoder_identity"), dict) or not report["decoder_identity"]:
+            raise LadderEvidenceError("decoder_identity must be a non-empty object")
+        if _metric(report, "source_decoder_max_abs_error") < 0:
+            raise LadderEvidenceError("source decoder error cannot be negative")
+        if hardware and report.get("official_decoder_validated") is not True:
+            raise LadderEvidenceError("official decoder validation is required for hardware rungs")
+        _string(report, "workflow")
+        if not isinstance(report.get("client_resources"), dict):
+            raise LadderEvidenceError("client_resources must be an object")
+        if not isinstance(report.get("role_resources"), dict):
+            raise LadderEvidenceError("role_resources must be an object")
+        phase_seconds = report.get("phase_seconds")
+        if not isinstance(phase_seconds, dict) or not phase_seconds:
+            raise LadderEvidenceError("phase_seconds must contain measured phases")
+        for phase, value in phase_seconds.items():
+            if not math.isfinite(float(value)) or float(value) < 0:
+                raise LadderEvidenceError(f"phase duration is invalid: {phase}")
+        if report.get("relay_mode") not in {"direct", "datagram"}:
+            raise LadderEvidenceError("relay_mode must be direct or datagram")
+        if report.get("result") != "pass":
+            raise LadderEvidenceError("only passing rungs can be accepted as evidence")
     if report.get("hardware_validated") is not hardware:
         raise LadderEvidenceError("hardware validation status is inconsistent with the rung")
     if report.get("production_accepted") is not False:
@@ -210,12 +239,22 @@ def write_rung_evidence(
     report: Mapping[str, Any],
     *,
     signing_key: Ed25519PrivateKey,
+    format_version: int | None = None,
 ) -> None:
-    validate_rung_evidence(rung, report)
+    selected_version = format_version or int(report.get("evidence_version", 1))
+    if selected_version not in {1, 2}:
+        raise LadderEvidenceError("unsupported evidence version")
+    if (
+        format_version is not None
+        and int(report.get("evidence_version", selected_version)) != selected_version
+    ):
+        raise LadderEvidenceError("report and document evidence versions conflict")
+    signed_report = {**report, "evidence_version": selected_version}
+    validate_rung_evidence(rung, signed_report)
     document = {
-        "format": "xurcroh-rung-evidence-v1",
+        "format": f"xurcroh-rung-evidence-v{selected_version}",
         "rung": asdict(rung),
-        "report": dict(report),
+        "report": signed_report,
     }
     document["signature"] = signing_key.sign(_canonical(document)).hex()
     destination = Path(path)
@@ -229,7 +268,10 @@ def verify_rung_evidence(
     path: str | Path, *, public_key: Ed25519PublicKey
 ) -> tuple[LadderRung, dict[str, Any]]:
     document = json.loads(Path(path).read_text())
-    if not isinstance(document, dict) or document.get("format") != "xurcroh-rung-evidence-v1":
+    if not isinstance(document, dict) or document.get("format") not in {
+        "xurcroh-rung-evidence-v1",
+        "xurcroh-rung-evidence-v2",
+    }:
         raise LadderEvidenceError("unsupported rung evidence format")
     signature = document.pop("signature", None)
     if not isinstance(signature, str):
