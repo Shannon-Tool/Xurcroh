@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -10,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from safetensors import safe_open
 
 from xurcroh.algebra.attention import (
     AttentionWeights,
@@ -20,7 +18,8 @@ from xurcroh.algebra.attention import (
 )
 from xurcroh.algebra.feedforward import FeedForwardWeights, conjugate_feedforward
 from xurcroh.algebra.rmsnorm import absorb_rms_gain
-from xurcroh.errors import ConfigurationError, ModelLoadError
+from xurcroh.errors import ConfigurationError
+from xurcroh.formats.safetensors import SafetensorsReader
 from xurcroh.shards.format import write_shard
 from xurcroh.shards.memory import release_host_memory
 from xurcroh.shards.recipients import StageRecipient, manifest_digest, seal_stage_key
@@ -74,65 +73,7 @@ class CompilationResult:
     key_envelopes: tuple[Path, ...]
 
 
-class CheckpointReader:
-    def __init__(self, root: Path) -> None:
-        self.root = root
-        if not root.is_dir():
-            raise ModelLoadError(f"checkpoint directory does not exist: {root}")
-        config_path = root / "config.json"
-        try:
-            self.config_bytes = config_path.read_bytes()
-            self.config = json.loads(self.config_bytes)
-        except (OSError, json.JSONDecodeError) as error:
-            raise ModelLoadError(f"cannot read checkpoint config: {config_path}") from error
-        index_path = root / "model.safetensors.index.json"
-        if index_path.is_file():
-            index = json.loads(index_path.read_text())
-            self.weight_map = dict(index["weight_map"])
-            self._index_bytes = index_path.read_bytes()
-        elif (root / "model.safetensors").is_file():
-            self.weight_map = {}
-            with safe_open(root / "model.safetensors", framework="pt") as handle:
-                tensor_names = handle.keys()
-                for name in tensor_names:
-                    self.weight_map[name] = "model.safetensors"
-            self._index_bytes = b""
-        else:
-            raise ModelLoadError("strict compiler requires safetensors checkpoint files")
-        self._index_bytes = self.config_bytes + self._index_bytes
-
-    @property
-    def fingerprint(self) -> str:
-        return hashlib.sha256(self._index_bytes).hexdigest()
-
-    def tensor_names(self) -> tuple[str, ...]:
-        return tuple(self.weight_map)
-
-    def read_tensors(self, names: list[str]) -> dict[str, torch.Tensor]:
-        grouped: dict[str, list[str]] = {}
-        for name in names:
-            if name not in self.weight_map:
-                raise ModelLoadError(f"checkpoint tensor is missing: {name}")
-            grouped.setdefault(self.weight_map[name], []).append(name)
-        tensors: dict[str, torch.Tensor] = {}
-        for filename, requested in grouped.items():
-            with safe_open(self.root / filename, framework="pt") as handle:
-                for name in requested:
-                    tensors[name] = handle.get_tensor(name)
-        return tensors
-
-    def tensor_shapes(self, names: list[str]) -> dict[str, tuple[int, ...]]:
-        grouped: dict[str, list[str]] = {}
-        for name in names:
-            if name not in self.weight_map:
-                raise ModelLoadError(f"checkpoint tensor is missing: {name}")
-            grouped.setdefault(self.weight_map[name], []).append(name)
-        shapes: dict[str, tuple[int, ...]] = {}
-        for filename, requested in grouped.items():
-            with safe_open(self.root / filename, framework="pt") as handle:
-                for name in requested:
-                    shapes[name] = tuple(handle.get_slice(name).get_shape())
-        return shapes
+CheckpointReader = SafetensorsReader
 
 
 def partition_layers(layer_indices: list[int], stage_count: int) -> list[list[int]]:

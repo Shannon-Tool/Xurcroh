@@ -206,6 +206,7 @@ class ClusterConfig(StrictModel):
 class ModelDefinition(StrictModel):
     path: str
     revision: str | None = None
+    source_format: Literal["auto", "safetensors", "gguf", "exl2", "exl3"] = "auto"
     engine: Literal[
         "auto", "reference", "transformers", "vllm", "sglang", "diffusion", "xdit", "fortress"
     ] = "auto"

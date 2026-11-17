@@ -9,29 +9,28 @@ from pathlib import Path
 
 from xurcroh.config import ModelDefinition, WorkerConfig
 from xurcroh.errors import ConfigurationError
-from xurcroh.shards.compiler import CheckpointReader
+from xurcroh.formats import ModelSupportReport, open_checkpoint
 
 MIB = 1024**2
 
 
 @dataclass(frozen=True)
-class CheckpointPreflight:
-    model: str
-    checkpoint: str
-    supported: bool
+class CheckpointPreflight(ModelSupportReport):
+    source_digest: str
     checkpoint_bytes: int
     checkpoint_layout_digest: str
     estimated_client_peak_bytes: int
     estimated_role_worker_bytes: int
     estimated_grid_weight_bytes: int
     revision_pinned: bool
-    issues: tuple[str, ...]
 
 
 def checkpoint_storage_bytes(path: Path) -> int:
-    files = sorted(path.rglob("*.safetensors"))
+    if path.is_file():
+        return path.stat().st_size
+    files = sorted([*path.rglob("*.safetensors"), *path.rglob("*.gguf")])
     if not files:
-        raise ConfigurationError(f"checkpoint contains no safetensors weights: {path}")
+        raise ConfigurationError(f"checkpoint contains no supported weights: {path}")
     return sum(path.stat().st_size for path in files if path.is_file())
 
 
@@ -52,12 +51,12 @@ def checkpoint_value_bytes(config: dict[str, object]) -> int:
 
 def ensure_checkpoint(name: str, definition: ModelDefinition) -> Path:
     checkpoint = Path(definition.path).expanduser()
-    if checkpoint.is_dir():
+    if checkpoint.is_dir() or checkpoint.is_file():
         return checkpoint
     if not definition.allow_download:
         raise ConfigurationError(
-            f"model {name!r} checkpoint directory is unavailable: {checkpoint}; "
-            "provide a local safetensors checkpoint or set allow_download=true"
+            f"model {name!r} checkpoint is unavailable: {checkpoint}; "
+            "provide a local checkpoint or set allow_download=true"
         )
     try:
         from huggingface_hub import HfApi, snapshot_download
@@ -99,6 +98,14 @@ def detect_modality(definition: ModelDefinition) -> str:
     return definition.modality
 
 
+def _adapter_available(architecture: str) -> bool:
+    if not architecture or architecture == "unknown":
+        return False
+    from transformers.models.auto.configuration_auto import CONFIG_MAPPING
+
+    return architecture in CONFIG_MAPPING
+
+
 def preflight_checkpoint(
     name: str,
     definition: ModelDefinition,
@@ -120,25 +127,38 @@ def preflight_checkpoint(
                 f"model {name!r} has no readable Diffusers model_index.json"
             ) from error
         layout_digest = hashlib.sha256(index_bytes).hexdigest()
+        source_format = "safetensors"
+        source_digest = layout_digest
+        architecture = str(config.get("_class_name", "unknown"))
+        encodings: tuple[str, ...] = ()
     else:
-        reader = CheckpointReader(checkpoint)
-        config = reader.config
-        layout_digest = reader.fingerprint
-        text = {**config, **config.get("text_config", {})}
-        aliases = {
-            "hidden_size": "n_embd",
-            "num_attention_heads": "n_head",
-            "num_hidden_layers": "n_layer",
-        }
-        for field, alias in aliases.items():
-            try:
-                valid = int(text.get(field, text.get(alias, 0))) > 0
-            except (TypeError, ValueError):
-                valid = False
-            if not valid:
-                issues.append(f"checkpoint is missing a valid {field}")
-        if not reader.tensor_names():
-            issues.append("checkpoint contains no tensor metadata")
+        with open_checkpoint(checkpoint, definition.source_format) as reader:
+            config = reader.config
+            layout_digest = reader.fingerprint
+            source_digest = layout_digest
+            source_format = reader.source_format
+            architecture = reader.architecture
+            encodings = reader.encodings
+            text = {**config, **config.get("text_config", {})}
+            aliases = {
+                "hidden_size": "n_embd",
+                "num_attention_heads": "n_head",
+                "num_hidden_layers": "n_layer",
+            }
+            for field, alias in aliases.items():
+                try:
+                    valid = int(text.get(field, text.get(alias, 0))) > 0
+                except (TypeError, ValueError):
+                    valid = False
+                if not valid:
+                    issues.append(f"checkpoint is missing a valid {field}")
+            if not reader.tensor_names():
+                issues.append("checkpoint contains no tensor metadata")
+        if definition.engine == "fortress" and not _adapter_available(architecture):
+            issues.append(
+                f"architecture {architecture!r} has no Fortress semantic adapter; "
+                "unknown model graphs are rejected rather than guessed"
+            )
     storage_bytes = checkpoint_storage_bytes(checkpoint)
     value_bytes = checkpoint_value_bytes(config)
     parameter_estimate = storage_bytes / value_bytes
@@ -222,12 +242,17 @@ def preflight_checkpoint(
     return CheckpointPreflight(
         model=name,
         checkpoint=str(checkpoint),
+        source_format=source_format,
+        architecture=architecture,
+        encodings=encodings,
         supported=not issues,
+        issues=tuple(issues),
+        required_adapter=architecture,
+        source_digest=source_digest,
         checkpoint_bytes=storage_bytes,
         checkpoint_layout_digest=layout_digest,
         estimated_client_peak_bytes=client_peak,
         estimated_role_worker_bytes=role_worker_bytes,
         estimated_grid_weight_bytes=role_worker_bytes * definition.fortress_shares,
         revision_pinned=revision_pinned,
-        issues=tuple(issues),
     )
