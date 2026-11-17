@@ -8,7 +8,7 @@ import torch
 from safetensors.torch import save_file
 
 from xurcroh.config import ModelDefinition, WorkerConfig
-from xurcroh.errors import CapabilityError, ModelLoadError
+from xurcroh.errors import ModelLoadError
 from xurcroh.formats import detect_checkpoint_format, open_checkpoint
 from xurcroh.preflight import ensure_checkpoint, preflight_checkpoint
 
@@ -35,10 +35,10 @@ def test_quantized_safetensors_encoding_is_detected(tmp_path: Path) -> None:
     assert detect_checkpoint_format(tmp_path) == "exl2"
 
 
-def test_unimplemented_reader_fails_closed(tmp_path: Path) -> None:
+def test_incomplete_gguf_reader_input_fails_closed(tmp_path: Path) -> None:
     checkpoint = tmp_path / "weights.gguf"
     checkpoint.write_bytes(b"GGUF" + (3).to_bytes(4, "little"))
-    with pytest.raises(CapabilityError, match="GGUF reader"):
+    with pytest.raises(ModelLoadError, match="truncated"):
         open_checkpoint(checkpoint)
 
 
