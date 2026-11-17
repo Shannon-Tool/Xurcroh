@@ -190,7 +190,8 @@ class EXL3Reader(SafetensorsReader):
     def _decode_named(self, name: str, columns: slice | None = None) -> torch.Tensor:
         prefix = name.removesuffix(".weight").removesuffix(".trellis")
         if f"{prefix}.trellis" not in self.weight_map:
-            return super().read_operation(name, columns)
+            tensor = SafetensorsReader.read_tensors(self, [name])[name]
+            return tensor if columns is None else tensor[columns, :]
         names = [
             raw
             for raw in self.weight_map

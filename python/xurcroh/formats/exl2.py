@@ -136,7 +136,8 @@ class EXL2Reader(SafetensorsReader):
     def _decode_named(self, name: str, columns: slice | None = None) -> torch.Tensor:
         quantized = self._quantized_prefix(name)
         if quantized is None:
-            return super().read_operation(name, columns)
+            tensor = SafetensorsReader.read_tensors(self, [name])[name]
+            return tensor if columns is None else tensor[columns, :]
         prefix, kind = quantized
         names = [
             raw

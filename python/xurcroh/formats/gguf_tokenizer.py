@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from xurcroh.errors import ModelLoadError
 
 if TYPE_CHECKING:
-    from xurcroh.formats.gguf import GGUFReader
+    from xurcroh.formats import TensorReader
 
 
 def _write_private(path: Path, content: str) -> None:
@@ -20,7 +20,7 @@ def _write_private(path: Path, content: str) -> None:
         stream.write(content)
 
 
-def materialize_client_tokenizer(reader: GGUFReader, trusted_dir: str | Path) -> Path:
+def materialize_client_tokenizer(reader: TensorReader, trusted_dir: str | Path) -> Path:
     reader._ensure_open()
     serialized = reader.metadata.get("tokenizer.huggingface.json")
     if not isinstance(serialized, str):

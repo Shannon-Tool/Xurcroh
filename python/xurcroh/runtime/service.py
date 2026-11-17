@@ -149,6 +149,10 @@ class RuntimeService:
         | FortressDiffusionEngine
     ):
         definition = self.models.get(name)
+        if definition.source_format == "auto":
+            from xurcroh.preflight import detect_modality
+
+            detect_modality(definition)
         workers = self._workers_for_model(name)
         if definition.engine == "fortress":
             self._require_preflight(name)
