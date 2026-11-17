@@ -87,7 +87,9 @@ def detect_modality(definition: ModelDefinition) -> str:
     checkpoint = Path(definition.path).expanduser()
     try:
         source_format = (
-            detect_checkpoint_format(checkpoint)
+            "safetensors"
+            if (checkpoint / "model_index.json").is_file()
+            else detect_checkpoint_format(checkpoint)
             if definition.source_format == "auto"
             else definition.source_format
         )

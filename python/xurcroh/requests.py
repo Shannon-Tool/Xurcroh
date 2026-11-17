@@ -80,6 +80,7 @@ class ImageGenerationRequest(RequestModel):
     prompt: str = Field(min_length=1)
     size: str = Field(default="1024x1024", pattern=r"^[1-9][0-9]*x[1-9][0-9]*$")
     image: str | None = None
+    mask: str | None = None
     strength: float = Field(default=0.75, gt=0, le=1)
     steps: int = Field(default=30, ge=1, le=1000)
     seed: int | None = Field(default=None, ge=0)

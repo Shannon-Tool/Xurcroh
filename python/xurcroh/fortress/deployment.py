@@ -27,9 +27,10 @@ from cryptography.hazmat.primitives.serialization import (
 from xurcroh.config import ClusterConfig, GPUConfig, ModelDefinition, WorkerConfig
 from xurcroh.errors import ClusterUnavailableError, ConfigurationError
 from xurcroh.fortress.compiler import CompiledOperation
-from xurcroh.fortress.diffusers_loader import (
-    compile_diffusers_component,
-    discover_diffusers_operations,
+from xurcroh.fortress.media_adapter import MediaArchitectureAdapter
+from xurcroh.fortress.media_components import (
+    compile_media_checkpoint,
+    discover_media_operations,
 )
 from xurcroh.fortress.model_compiler import (
     compile_fortress_checkpoint,
@@ -327,10 +328,8 @@ class FortressDeployment:
             for worker in self.cluster.workers
         ]
         if definition.modality in {"image", "video"}:
-            component = (
-                "transformer" if (Path(definition.path) / "transformer").is_dir() else "unet"
-            )
-            operations = discover_diffusers_operations(definition.path, component=component)
+            adapter = MediaArchitectureAdapter.from_checkpoint(definition.path, definition.modality)
+            operations = discover_media_operations(definition.path, adapter)
         else:
             operations = discover_fortress_operations(definition.path)
         placement = place_operations(
@@ -407,16 +406,11 @@ class FortressDeployment:
                     )
 
             if definition.modality in {"image", "video"}:
-                component = (
-                    "transformer" if (Path(definition.path) / "transformer").is_dir() else "unet"
+                adapter = MediaArchitectureAdapter.from_checkpoint(
+                    definition.path, definition.modality
                 )
-                compile_diffusers_component(
-                    definition.path,
-                    component=component,
-                    seed=model_seed,
-                    share_count=definition.fortress_shares,
-                    operation_sink=sink,
-                )
+                media_definition = definition.model_copy(update={"fortress_seed": model_seed})
+                compile_media_checkpoint(media_definition, adapter, operation_sink=sink)
             else:
                 compile_fortress_checkpoint(
                     definition.path,

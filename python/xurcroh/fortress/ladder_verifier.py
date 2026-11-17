@@ -162,26 +162,24 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
     import inspect
 
     from xurcroh.config import ModelDefinition
-    from xurcroh.fortress.diffusers_loader import compile_diffusers_component
+    from xurcroh.fortress.media_adapter import MediaArchitectureAdapter
+    from xurcroh.fortress.media_components import compile_media_checkpoint
     from xurcroh.fortress.module import replace_linear_layers
     from xurcroh.requests import ImageGenerationRequest, VideoGenerationRequest
     from xurcroh.runtime.media_boundary import DiffusionMediaBoundary
 
     sdk = deployment["sdk"]
-    definition = ModelDefinition.model_validate(sdk["model_path"][rung.model])
-    component = str(
-        deployment["rung"].get(
-            "diffusion_component",
-            "transformer" if (Path(definition.path) / "transformer").is_dir() else "unet",
-        )
+    definition = ModelDefinition.model_validate(sdk["model_path"][rung.model]).model_copy(
+        update={"fortress_shares": rung.share_count}
     )
+    adapter = MediaArchitectureAdapter.from_checkpoint(definition.path, rung.modality)
     started = time.perf_counter()
-    operations = compile_diffusers_component(
-        definition.path,
-        component=component,
-        seed=definition.fortress_seed,
-        share_count=rung.share_count,
-    )
+    compiled = compile_media_checkpoint(definition, adapter)
+    operations = {
+        f"{component}:{name}": operation
+        for component, component_operations in compiled.items()
+        for name, operation in component_operations.items()
+    }
     cluster = sdk["cluster"]
     identity = _identity(cluster)
     roles = _roles(cluster)
@@ -205,8 +203,17 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
 
     def boundary(grid: dict[str, FortressRoleClient] | None) -> Any:
         result = DiffusionMediaBoundary.from_definition(definition)
-        module = getattr(result.pipeline, component)
-        replace_linear_layers(module, operations, grid_clients=grid)
+        for component, component_operations in compiled.items():
+            component_clients = None
+            if grid is not None:
+                component_clients = {
+                    name: grid[f"{component}:{name}"] for name in component_operations
+                }
+            replace_linear_layers(
+                getattr(result.pipeline, component),
+                component_operations,
+                grid_clients=component_clients,
+            )
         return result
 
     try:
