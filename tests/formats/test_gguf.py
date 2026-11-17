@@ -174,3 +174,96 @@ def test_gguf_version_one_container(tmp_path: Path) -> None:
     )
     with open_checkpoint(path) as reader:
         torch.testing.assert_close(reader.read_operation("weight"), expected)
+
+
+def _big_endian_payload(kind: int, payload: bytes) -> bytes:
+    layouts = {
+        2: ((0, 2, 2),),
+        3: ((0, 4, 2),),
+        6: ((0, 2, 2),),
+        7: ((0, 4, 2),),
+        8: ((0, 2, 2),),
+        9: ((0, 4, 2),),
+        10: ((80, 84, 2),),
+        11: ((108, 110, 2),),
+        12: ((0, 4, 2),),
+        13: ((0, 4, 2),),
+        14: ((208, 210, 2),),
+        15: ((0, 4, 4), (260, 292, 2)),
+        16: ((0, 2, 2), (2, 66, 4)),
+        17: ((0, 2, 2), (2, 66, 2)),
+        18: ((0, 2, 2), (2, 98, 4)),
+        19: ((0, 2, 2), (34, 50, 2)),
+        20: ((0, 2, 2),),
+        21: ((0, 2, 2),),
+        22: ((0, 2, 2),),
+        23: ((0, 4, 2),),
+        29: ((48, 56, 2),),
+        30: ((0, 2, 2),),
+        34: ((52, 54, 2),),
+        35: ((64, 66, 2),),
+        41: ((0, 2, 2),),
+        42: ((0, 2, 2),),
+    }
+    _, width = gguf.GGML_QUANT_SIZES.get(kind, (1, len(payload)))
+    rows = len(payload) // width
+    result = np.frombuffer(payload, dtype=np.uint8).copy().reshape(rows, width)
+    for start, stop, word in layouts.get(kind, ()):
+        dtype = np.dtype(f"u{word}")
+        for row in result:
+            row[start:stop] = row[start:stop].view(dtype).byteswap().view(np.uint8)
+    if kind == 0:
+        result = result.view(np.float32).byteswap().view(np.uint8)
+    elif kind == 1:
+        result = result.view(np.float16).byteswap().view(np.uint8)
+    return result.tobytes()
+
+
+@pytest.mark.parametrize("kind", SUPPORTED_BY_UPSTREAM, ids=lambda kind: kind.name)
+def test_gguf_big_endian_quantized_matches_little_endian_reference(
+    kind: gguf.GGMLQuantizationType, tmp_path: Path
+) -> None:
+    block, width = gguf.GGML_QUANT_SIZES[kind]
+    logical_shape = (2, block)
+    source = np.linspace(-1, 1, num=np.prod(logical_shape), dtype=np.float32).reshape(logical_shape)
+    try:
+        payload = gguf.quantize(source, kind).tobytes()
+    except NotImplementedError:
+        payload = (
+            np.random.default_rng(kind.value)
+            .integers(0, 256, size=np.prod(logical_shape) // block * width, dtype=np.uint8)
+            .tobytes()
+        )
+    big_payload = _big_endian_payload(kind.value, payload)
+    path = write_gguf(
+        tmp_path / "big-quant.gguf",
+        [("weight", logical_shape, kind.value, big_payload)],
+        endian=">",
+    )
+    with open_checkpoint(path) as reader:
+        actual = reader.read_operation("weight").numpy()
+    expected = gguf.dequantize(np.frombuffer(payload, dtype=np.uint8).reshape(2, width), kind)
+    np.testing.assert_array_equal(actual, expected)
+
+
+def test_gguf_big_endian_q1_q2_f8(tmp_path: Path) -> None:
+    q1 = np.array([1.0], dtype=np.float16).tobytes() + bytes([0b01010101] * 16)
+    q2 = np.array([1.0], dtype=np.float16).tobytes() + bytes([0b11100100] * 16)
+    f8 = bytes([0x00, 0x38, 0xB8, 0x7F])
+    path = write_gguf(
+        tmp_path / "big-new.gguf",
+        [
+            ("q1", (1, 128), 41, _big_endian_payload(41, q1)),
+            ("q2", (1, 64), 42, _big_endian_payload(42, q2)),
+            ("f8", (1, 4), 43, f8),
+        ],
+        endian=">",
+    )
+    with open_checkpoint(path) as reader:
+        q1_values = reader.read_operation("q1").numpy()
+        q2_values = reader.read_operation("q2").numpy()
+        f8_values = reader.read_operation("f8").numpy()
+    np.testing.assert_array_equal(q1_values[0, :4], [1, -1, 1, -1])
+    np.testing.assert_array_equal(q2_values[0, :4], [-1, 0, 1, 2])
+    np.testing.assert_array_equal(f8_values[0, :3], [0, 1, -1])
+    assert math.isnan(f8_values[0, 3])

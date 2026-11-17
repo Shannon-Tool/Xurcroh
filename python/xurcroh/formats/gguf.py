@@ -249,6 +249,47 @@ def _parse_file(path: Path) -> tuple[dict[str, Any], list[_Tensor], np.memmap]:
         raise
 
 
+_MULTIBYTE_FIELDS: dict[GGUFEncoding, tuple[tuple[int, int, int], ...]] = {
+    GGUFEncoding.BF16: ((0, 2, 2),),
+    GGUFEncoding.Q4_0: ((0, 2, 2),),
+    GGUFEncoding.Q4_1: ((0, 4, 2),),
+    GGUFEncoding.Q5_0: ((0, 2, 2),),
+    GGUFEncoding.Q5_1: ((0, 4, 2),),
+    GGUFEncoding.Q8_0: ((0, 2, 2),),
+    GGUFEncoding.Q8_1: ((0, 4, 2),),
+    GGUFEncoding.Q2_K: ((80, 84, 2),),
+    GGUFEncoding.Q3_K: ((108, 110, 2),),
+    GGUFEncoding.Q4_K: ((0, 4, 2),),
+    GGUFEncoding.Q5_K: ((0, 4, 2),),
+    GGUFEncoding.Q6_K: ((208, 210, 2),),
+    GGUFEncoding.Q8_K: ((0, 4, 4), (260, 292, 2)),
+    GGUFEncoding.IQ2_XXS: ((0, 2, 2), (2, 66, 4)),
+    GGUFEncoding.IQ2_XS: ((0, 2, 2), (2, 66, 2)),
+    GGUFEncoding.IQ3_XXS: ((0, 2, 2), (2, 98, 4)),
+    GGUFEncoding.IQ1_S: ((0, 2, 2), (34, 50, 2)),
+    GGUFEncoding.IQ4_NL: ((0, 2, 2),),
+    GGUFEncoding.IQ3_S: ((0, 2, 2),),
+    GGUFEncoding.IQ2_S: ((0, 2, 2),),
+    GGUFEncoding.IQ4_XS: ((0, 4, 2),),
+    GGUFEncoding.IQ1_M: ((48, 56, 2),),
+    GGUFEncoding.TQ1_0: ((52, 54, 2),),
+    GGUFEncoding.TQ2_0: ((64, 66, 2),),
+    GGUFEncoding.Q1_0: ((0, 2, 2),),
+    GGUFEncoding.Q2_0: ((0, 2, 2),),
+}
+
+
+def _normalize_endian(raw: np.ndarray, encoding: GGUFEncoding) -> np.ndarray:
+    normalized = raw.copy()
+    for start, stop, width in _MULTIBYTE_FIELDS.get(encoding, ()):
+        if stop > normalized.shape[1]:
+            raise ModelLoadError("GGUF quantized block is shorter than its declared layout")
+        dtype = np.dtype(f"u{width}")
+        for row in normalized:
+            row[start:stop] = row[start:stop].view(dtype).byteswap().view(np.uint8)
+    return normalized
+
+
 class GGUFReader(TensorReader):
     source_format = "gguf"
 
@@ -370,7 +411,7 @@ class GGUFReader(TensorReader):
         byte_shape = (*selected_shape[:-1], selected_shape[-1] // block * width)
         raw = raw.reshape(byte_shape)
         if tensor.byte_order == ">":
-            raise CapabilityError("big-endian quantized GGUF tensors are not supported yet")
+            raw = _normalize_endian(raw, encoding)
         values = self._dequantize(raw, encoding)
         return torch.from_numpy(np.asarray(values).reshape(selected_shape).copy())
 
