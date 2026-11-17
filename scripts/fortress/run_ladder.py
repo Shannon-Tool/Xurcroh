@@ -23,13 +23,30 @@ from xurcroh.fortress.ladder_verifier import verify_ladder
 from xurcroh.providers.vast import StateStore
 
 
+def load_rung_manifest(path: Path, model: str | None) -> dict[str, Any]:
+    document = yaml.safe_load(path.read_text())
+    if not isinstance(document, dict):
+        raise ValueError("ladder template must be an object")
+    if "rungs" not in document:
+        return document
+    rungs = document["rungs"]
+    if not isinstance(rungs, list):
+        raise ValueError("ladder rungs must be a list")
+    if model is None:
+        raise ValueError("multi-model ladder manifests require --model")
+    selected = [rung for rung in rungs if isinstance(rung, dict) and rung.get("model") == model]
+    if len(selected) != 1:
+        raise ValueError(f"manifest does not contain exactly one model named {model!r}")
+    return {**{key: value for key, value in document.items() if key != "rungs"}, **selected[0]}
+
+
 def run(args: argparse.Namespace) -> Path:
-    manifest = args.manifest
+    template = load_rung_manifest(args.manifest, args.model)
+    args.output.mkdir(parents=True, exist_ok=True)
+    manifest = args.output / "manifest-template.yaml"
+    manifest.write_text(yaml.safe_dump(template, sort_keys=True))
     store = StateStore(args.state)
     if args.provisioned_config is not None:
-        template = yaml.safe_load(args.manifest.read_text())
-        if not isinstance(template, dict):
-            raise ValueError("ladder template must be an object")
         provisioned = json.loads(args.provisioned_config.read_text())
         manifest = materialize_ladder_manifest(
             template, provisioned, store, args.output / "manifest.json"
@@ -66,7 +83,7 @@ def run(args: argparse.Namespace) -> Path:
     report = run_ladder_rung(rung, execute=execute, teardown=teardown)
     signing_key = Ed25519PrivateKey.from_private_bytes(args.signing_key.read_bytes())
     destination = args.output / "evidence.json"
-    write_rung_evidence(destination, rung, report, signing_key=signing_key)
+    write_rung_evidence(destination, rung, report, signing_key=signing_key, format_version=2)
     print(destination)
     return destination
 
@@ -74,6 +91,7 @@ def run(args: argparse.Namespace) -> Path:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Execute and attest one Fortress ladder rung")
     parser.add_argument("manifest", type=Path)
+    parser.add_argument("--model")
     parser.add_argument("--provisioned-config", type=Path)
     parser.add_argument("--existing-deployment", type=Path)
     parser.add_argument("--state", type=Path, default=Path("artifacts/vast/state.json"))

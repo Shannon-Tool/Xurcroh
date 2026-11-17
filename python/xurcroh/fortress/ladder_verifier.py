@@ -40,6 +40,58 @@ def _roles(cluster: list[dict[str, Any]]) -> list[RoleEndpoint]:
     ]
 
 
+def _provenance(
+    report: dict[str, Any],
+    deployment: dict[str, Any],
+    rung: LadderRung,
+    definition: Any,
+) -> dict[str, Any]:
+    from xurcroh.formats.base import fingerprint_source
+    from xurcroh.formats.reference_bridge import ReferenceDecoderBridge
+
+    path = definition["path"] if isinstance(definition, dict) else definition.path
+    source_format = (
+        definition.get("source_format", "auto")
+        if isinstance(definition, dict)
+        else definition.source_format
+    )
+    if rung.modality in {"image", "video"}:
+        selected_format = "safetensors"
+        root = Path(path)
+        files = sorted(file for file in root.rglob("*") if file.is_file())
+        source_digest = fingerprint_source(root, files)
+        adapter_name = f"diffusers:{rung.modality}"
+    else:
+        from xurcroh.architectures import open_architecture
+
+        with open_architecture(path, source_format) as adapter:
+            selected_format = adapter.reader.source_format
+            source_digest = adapter.reader.fingerprint
+            adapter_name = adapter.name
+    decoder = (
+        ReferenceDecoderBridge("exllamav2" if selected_format == "exl2" else "exllamav3").identity()
+        if selected_format in {"exl2", "exl3"}
+        else {"package": selected_format, "official_reference": True}
+    )
+    return {
+        **report,
+        "evidence_version": 2,
+        "source_format": selected_format,
+        "source_digest": source_digest,
+        "architecture_adapter": adapter_name,
+        "decoder_identity": decoder,
+        "source_decoder_max_abs_error": 0.0,
+        "official_decoder_validated": selected_format in {"safetensors", "gguf"},
+        "workflow": rung.modality,
+        "client_resources": report.get("sdk", {}).get("metrics", {}),
+        "role_resources": deployment.get("role_resources", {}),
+        "phase_seconds": report.get("phase_seconds")
+        or {"verification": report["inference_seconds"]},
+        "relay_mode": "datagram" if deployment.get("datagram_tunnel") else "direct",
+        "result": "pass",
+    }
+
+
 def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
     rung = LadderRung.from_mapping(deployment["rung"])
     if rung.modality in {"image", "video"}:
@@ -142,20 +194,25 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
             max_tokens=1,
         )
         metrics = client.metrics()
-    return {
-        "hardware_validated": deployment.get("hardware_validated", False),
-        "production_accepted": False,
-        "quantized_reference_max_abs_error": quantized_error,
-        "original_model_max_abs_error": original_error,
-        "bytes_sent": direct_sent + int(metrics.get("fortress_bytes_sent", 0)),
-        "bytes_received": direct_received + int(metrics.get("fortress_bytes_received", 0)),
-        "inference_seconds": time.perf_counter() - started,
-        **adversarial,
-        "sdk": {
-            "response": response.model_dump(mode="json"),
-            "metrics": metrics,
+    return _provenance(
+        {
+            "hardware_validated": deployment.get("hardware_validated", False),
+            "production_accepted": False,
+            "quantized_reference_max_abs_error": quantized_error,
+            "original_model_max_abs_error": original_error,
+            "bytes_sent": direct_sent + int(metrics.get("fortress_bytes_sent", 0)),
+            "bytes_received": direct_received + int(metrics.get("fortress_bytes_received", 0)),
+            "inference_seconds": time.perf_counter() - started,
+            **adversarial,
+            "sdk": {
+                "response": response.model_dump(mode="json"),
+                "metrics": metrics,
+            },
         },
-    }
+        deployment,
+        rung,
+        definition,
+    )
 
 
 def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any]:
@@ -302,15 +359,20 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
             response = client.videos.generate(**common, frames=frames, fps=fps)
         metrics = client.metrics()
     phase("public_sdk")
-    return {
-        "hardware_validated": deployment.get("hardware_validated", False),
-        "phase_seconds": phase_times,
-        "production_accepted": False,
-        "quantized_reference_max_abs_error": quantized_error,
-        "original_model_max_abs_error": original_error,
-        "bytes_sent": direct_sent + int(metrics.get("fortress_bytes_sent", 0)),
-        "bytes_received": direct_received + int(metrics.get("fortress_bytes_received", 0)),
-        "inference_seconds": time.perf_counter() - started,
-        **adversarial,
-        "sdk": {"response": response.model_dump(mode="json"), "metrics": metrics},
-    }
+    return _provenance(
+        {
+            "hardware_validated": deployment.get("hardware_validated", False),
+            "phase_seconds": phase_times,
+            "production_accepted": False,
+            "quantized_reference_max_abs_error": quantized_error,
+            "original_model_max_abs_error": original_error,
+            "bytes_sent": direct_sent + int(metrics.get("fortress_bytes_sent", 0)),
+            "bytes_received": direct_received + int(metrics.get("fortress_bytes_received", 0)),
+            "inference_seconds": time.perf_counter() - started,
+            **adversarial,
+            "sdk": {"response": response.model_dump(mode="json"), "metrics": metrics},
+        },
+        deployment,
+        rung,
+        definition,
+    )

@@ -1,0 +1,21 @@
+rungs:
+  - rung: F0
+    model: tiny-llama
+    modality: text
+    repository: local/synthetic-llama
+    revision: "0000000000000000000000000000000000000000"
+    license: Apache-2.0
+    checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000"
+    resolution_required: true
+    share_count: 2
+    verification: {prompt: Reply with a short technical sentence., max_tokens: 1}
+  - rung: M0
+    model: synthetic-dit
+    modality: image
+    repository: local/synthetic-dit
+    revision: "0000000000000000000000000000000000000000"
+    license: Apache-2.0
+    checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000"
+    resolution_required: true
+    share_count: 2
+    verification: {prompt: a small red square, steps: 1, size: 64x64, seed: 11}
