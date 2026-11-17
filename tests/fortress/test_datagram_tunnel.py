@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 import pytest
+import torch
 import xurcroh_quic
 from tests.fortress.conftest import MutualTLSIdentities
 from tests.integration.test_ssh_executor import ssh_testbed
@@ -176,3 +177,81 @@ def test_single_ssh_datagram_tunnel_executes_and_cleans_up(
             close_datagram_tunnels([worker])
             target.close()
             thread.join(timeout=5)
+
+
+def test_four_role_datagram_grid_returns_exact_product(
+    mtls_identities: MutualTLSIdentities,
+) -> None:
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding,
+        NoEncryption,
+        PrivateFormat,
+        PublicFormat,
+    )
+
+    from xurcroh.fortress.arithmetic import PRIME_MODULUS, split_secret
+    from xurcroh.fortress.compiler import compile_operation
+    from xurcroh.fortress.datagram_tunnel import TcpDatagramRelay, UdpDatagramRelay
+    from xurcroh.fortress.transport import (
+        FortressRoleClient,
+        MutualTLSIdentity,
+        RoleEndpoint,
+        encode_role_artifact,
+    )
+    from xurcroh.fortress.worker import FortressRoleWorker
+
+    operation = compile_operation(
+        torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
+    )
+    identity = MutualTLSIdentity(
+        certificates=(mtls_identities["client_certificate"], mtls_identities["ca"]),
+        private_key=mtls_identities["client_key"],
+        pinned_ca=mtls_identities["ca"],
+    )
+
+    async def exercise() -> None:
+        workers = []
+        relays = []
+        roles = []
+        try:
+            for activation in range(2):
+                for weight in range(2):
+                    recipient = X25519PrivateKey.generate()
+                    public = recipient.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+                    worker = FortressRoleWorker(
+                        encode_role_artifact(operation, weight, public),
+                        recipient.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                        certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
+                        private_key=mtls_identities["server_key"],
+                        client_ca=mtls_identities["ca"],
+                    )
+                    worker.start()
+                    workers.append(worker)
+                    host, port = worker.address.rsplit(":", 1)
+                    tcp = await TcpDatagramRelay.bind(host, 0, host, int(port))
+                    udp = await UdpDatagramRelay.bind(host, 0, host, tcp.port)
+                    relays.extend((tcp, udp))
+                    roles.append(
+                        RoleEndpoint(
+                            activation, weight, udp.address, public, f"role-{activation}-{weight}"
+                        )
+                    )
+
+            def request() -> None:
+                client = FortressRoleClient(operation, roles, identity, cover_interval=60)
+                shares = split_secret(torch.tensor([5, 7], dtype=torch.int64), count=2).shares
+                expected = (operation.quantized.values @ torch.tensor([5, 7])).remainder(
+                    PRIME_MODULUS
+                )
+                assert torch.equal(client.execute(shares), expected)
+                client.close()
+
+            await asyncio.to_thread(request)
+        finally:
+            for relay in reversed(relays):
+                relay.close()
+            for worker in workers:
+                worker.close()
+
+    asyncio.run(exercise())
