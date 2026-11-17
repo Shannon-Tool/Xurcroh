@@ -55,6 +55,7 @@ class FortressEngine:
             "fortress-local" if workers[0].endpoint == "local://cpu" else "fortress-grid"
         )
         self._tokenizer: Any = None
+        self._tokenizer_tempdir: Any = None
         self._processor: Any = None
         self._stop_token_ids: set[int] = set()
         self._compiled: FortressCheckpoint | None = None
@@ -193,10 +194,24 @@ class FortressEngine:
                     "trust_remote_code": False,
                     "revision": self.definition.revision,
                 }
-                self._tokenizer = AutoTokenizer.from_pretrained(self.definition.path, **options)
+                tokenizer_path = self.definition.path
+                if self.definition.source_format == "gguf":
+                    import tempfile
+
+                    from xurcroh.formats import open_checkpoint
+                    from xurcroh.formats.gguf_tokenizer import materialize_client_tokenizer
+
+                    self._tokenizer_tempdir = tempfile.TemporaryDirectory(
+                        prefix="xurcroh-gguf-tokenizer-"
+                    )
+                    with open_checkpoint(self.definition.path) as source:
+                        tokenizer_path = materialize_client_tokenizer(
+                            source, self._tokenizer_tempdir.name
+                        ).as_posix()
+                self._tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, **options)
                 try:
                     generation = GenerationConfig.from_pretrained(
-                        self.definition.path,
+                        tokenizer_path,
                         local_files_only=not self.definition.allow_download,
                         trust_remote_code=False,
                         revision=self.definition.revision or "main",
@@ -211,9 +226,15 @@ class FortressEngine:
                     for value in (eos_ids if isinstance(eos_ids, list) else [eos_ids])
                     if value is not None
                 }
-                checkpoint_config = json.loads(
-                    (Path(self.definition.path) / "config.json").read_text()
-                )
+                if self.definition.source_format == "gguf":
+                    from xurcroh.formats import open_checkpoint
+
+                    with open_checkpoint(self.definition.path) as source:
+                        checkpoint_config = source.config
+                else:
+                    checkpoint_config = json.loads(
+                        (Path(self.definition.path) / "config.json").read_text()
+                    )
                 official_vlm = self.definition.modality == "vlm" and checkpoint_config.get(
                     "model_type"
                 ) in {"gemma4", "qwen3_5"}
@@ -615,5 +636,8 @@ class FortressEngine:
         self._combiner = None
         self._compiled = None
         self._tokenizer = None
+        if self._tokenizer_tempdir is not None:
+            self._tokenizer_tempdir.cleanup()
+            self._tokenizer_tempdir = None
         self._processor = None
         self._stop_token_ids.clear()

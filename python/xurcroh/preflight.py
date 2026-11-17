@@ -81,9 +81,33 @@ def ensure_checkpoint(name: str, definition: ModelDefinition) -> Path:
 
 
 def detect_modality(definition: ModelDefinition) -> str:
+    from xurcroh.errors import ModelLoadError
+    from xurcroh.formats import detect_checkpoint_format
+
+    checkpoint = Path(definition.path).expanduser()
+    try:
+        source_format = (
+            detect_checkpoint_format(checkpoint)
+            if definition.source_format == "auto"
+            else definition.source_format
+        )
+    except ModelLoadError:
+        if not definition.allow_download or checkpoint.exists():
+            raise
+        source_format = "safetensors"
+    definition.source_format = source_format
+    if source_format != "safetensors":
+        if definition.engine not in {"auto", "fortress"}:
+            raise ConfigurationError(
+                f"{source_format.upper()} checkpoints require the Fortress engine; "
+                "plaintext worker engines are not a compatible fallback"
+            )
+        definition.engine = "fortress"
+        if definition.modality == "auto":
+            definition.modality = "text"
     if definition.modality != "auto":
         return definition.modality
-    index = Path(definition.path).expanduser() / "model_index.json"
+    index = checkpoint / "model_index.json"
     if index.is_file():
         try:
             document = json.loads(index.read_text())

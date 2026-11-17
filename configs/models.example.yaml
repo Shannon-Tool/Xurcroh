@@ -1,0 +1,13 @@
+models:
+  llama-q4:
+    path: /models/llama-q4.gguf
+  qwen-exl2:
+    path: /models/qwen-exl2
+    source_format: exl2
+  qwen-exl3:
+    path: /models/qwen-exl3
+    source_format: exl3
+cluster:
+  workers:
+    - name: local
+      endpoint: local://cpu

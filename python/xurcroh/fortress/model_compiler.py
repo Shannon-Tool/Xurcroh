@@ -13,10 +13,10 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from xurcroh.algebra.modulation import SignedPermutation
 from xurcroh.errors import ConfigurationError
+from xurcroh.formats import TensorReader
 from xurcroh.fortress.combiner import FortressCombiner, FortressLayerMetadata
 from xurcroh.fortress.compiler import CompiledOperation, compile_operation
 from xurcroh.fortress.placement import Operation
-from xurcroh.shards.compiler import CheckpointReader
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,7 @@ class FortressCheckpoint:
         )
 
 
-def _text_config(reader: CheckpointReader) -> dict[str, Any]:
+def _text_config(reader: TensorReader) -> dict[str, Any]:
     return {**reader.config, **reader.config.get("text_config", {})}
 
 
@@ -63,7 +63,10 @@ def _layer_family(names: list[str]) -> tuple[str, list[int]]:
 
 
 def discover_fortress_operations(checkpoint: str | Path) -> list[Operation]:
-    reader = CheckpointReader(Path(checkpoint))
+    from xurcroh.architectures import open_architecture
+
+    adapter = open_architecture(checkpoint)
+    reader = adapter.reader
     names = list(reader.tensor_names())
     shapes = reader.tensor_shapes(names)
     layer_family, layer_indices = _layer_family(names)
@@ -202,7 +205,7 @@ def _compile_matrix(
 
 
 def _boundary_tensor(
-    reader: CheckpointReader, names: list[str], candidates: tuple[str, ...]
+    reader: TensorReader, names: list[str], candidates: tuple[str, ...]
 ) -> torch.Tensor:
     for candidate in candidates:
         if candidate in names:
@@ -211,7 +214,7 @@ def _boundary_tensor(
 
 
 def _optional_media_projection(
-    reader: CheckpointReader, names: list[str], candidates: tuple[str, ...]
+    reader: TensorReader, names: list[str], candidates: tuple[str, ...]
 ) -> torch.Tensor | None:
     for candidate in candidates:
         if candidate in names:
@@ -237,7 +240,10 @@ def compile_fortress_checkpoint(
 ) -> FortressCheckpoint:
     if operation_sink is not None and not materialize_shares:
         raise ValueError("role packaging requires materialized weight shares")
-    reader = CheckpointReader(Path(checkpoint))
+    from xurcroh.architectures import open_architecture
+
+    adapter = open_architecture(checkpoint)
+    reader = adapter.reader
     config = _text_config(reader)
     names = list(reader.tensor_names())
     layer_family, layer_indices = _layer_family(names)
@@ -409,7 +415,10 @@ def compile_fortress_checkpoint(
             model, model_operations = load_multimodal_decoder(
                 str(checkpoint), operations, boundary_dtype
             )
-        elif reader.config.get("model_type") in {"gemma4", "qwen3_5"}:
+        elif reader.source_format != "safetensors" or reader.config.get("model_type") in {
+            "gemma4",
+            "qwen3_5",
+        }:
             from xurcroh.fortress.text_loader import load_text_decoder
 
             model, model_operations = load_text_decoder(reader, operations, boundary_dtype)

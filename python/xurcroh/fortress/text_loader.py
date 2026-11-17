@@ -6,8 +6,8 @@ from typing import Any
 import torch
 
 from xurcroh.errors import ModelLoadError
+from xurcroh.formats import TensorReader
 from xurcroh.fortress.compiler import CompiledOperation
-from xurcroh.shards.compiler import CheckpointReader
 
 CLIENT_ONLY = (
     "lm_head",
@@ -32,7 +32,7 @@ def _model_name(name: str) -> str:
 
 
 def load_text_decoder(
-    reader: CheckpointReader,
+    reader: TensorReader,
     operations: dict[str, CompiledOperation],
     dtype: torch.dtype,
 ) -> tuple[Any, dict[str, CompiledOperation]]:
@@ -40,7 +40,7 @@ def load_text_decoder(
 
     from xurcroh.fortress.module import FortressLinear, replace_linear_layers
 
-    text = reader.config.get("text_config")
+    text = reader.config.get("text_config", reader.config)
     if not isinstance(text, dict):
         raise ModelLoadError("multimodal checkpoint is missing text_config")
     text = dict(text)
