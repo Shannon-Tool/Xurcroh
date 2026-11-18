@@ -12,4 +12,6 @@ FFN gate/up rows are permuted, the up branch is scaled, and down columns are per
 
 Stages retain a common residual basis internally and apply \(T=U_{next}U_{prev}^\top\) only at the boundary. The client recovers the final hidden state and applies final RMSNorm plus the client-owned LM head. Cleanup happens only after the boundary is serialized, avoiding an earlier zeroed-basis defect. Llama-class checkpoints use half-split RoPE rather than adjacent-pair layout; the compiler records the selected convention in authenticated metadata. A direct Hugging Face logit test passes at FP64 `atol=3e-8, rtol=1e-6`, which is tolerance-based equivalence rather than bitwise identity.
 
+Architecture adapters decouple tensor semantics from weight containers. Dense MHA/GQA/MQA, fused QKV, gated FFN, shared/routed experts, MLA, recurrent layers, and VLM projections are accepted only through an explicit semantic adapter. Fused and padded tensors are sliced into the same per-operation share grid; routers, embeddings, output heads, normalization gains, and nonlinear state remain on the trusted combiner. Unknown graph semantics are not inferred from filenames.
+
 Use the [conjugation lab](/15-interactive-laboratory#conjugation) to inspect basis recovery and structural invariants.

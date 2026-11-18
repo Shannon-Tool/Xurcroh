@@ -14,6 +14,12 @@ A `.xurcroh` file contains an 8-byte magic, format version, bounded canonical JS
 
 `VerityPackager` provides real EROFS/dm-verity command automation. It does not imply runtime integrity; that requires separate workload checks and hardware validation. See the [developer reference](/19-developer-reference) and [thin-client boundary](/19-developer-reference#client-boundary).
 
+## Quantized checkpoint ingestion
+
+The format-neutral reader supports Safetensors, GGUF v1–v3, EXL2/GPTQ, and EXL3 on the trusted compiler. GGUF handling covers all 37 current type codes, shard manifests, metadata arrays, embedded Hugging Face tokenizers, and little-/big-endian quantized blocks. EXL2 reconstruction handles mixed row bitrates, activation ordering, packed scales and padding; EXL3 handles integer/fractional trellis rates, 3INST/MCG/MUL1 codebooks, and Hadamard/sign restoration. Source reconstruction is followed by independent Fortress quantization, so exact quantized-reference equality and source-model quality error are separate measurements.
+
+Canonical architecture adapters map GGUF physical names, fused QKV, and stacked experts into logical Fortress operations without decoding weights during shape discovery. GGUF is a container, not a computation graph: unknown future architectures or unexplained tensors fail closed with a `CapabilityError` rather than being guessed. Public SDK registration selects Fortress automatically for these formats and rejects incompatible plaintext engine overrides. See the [quantized format laboratory](/laboratory#quantized-formats).
+
 ## Fortress role packages
 
 Fortress uses a separate role-artifact format for the additive share grid. A seeded compilation uses HKDF-SHA256 domains for the operation, share index, basis purpose, and epoch. The `xurcroh-fortress-role-v2` artifact contains a non-final share's seed and matrix shape; the worker expands its own matrix with ChaCha20. The final share remains a full `xurcroh-fortress-role-v1` AONT-RS artifact because it depends on the quantized weight and every preceding share. Seed-expanded shares provide computational obfuscation, not information-theoretic security.

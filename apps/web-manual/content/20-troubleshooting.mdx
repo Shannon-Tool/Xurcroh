@@ -4,7 +4,7 @@
 
 **Configuration errors.** Check model names, registry paths, worker counts, and TP/EP groups. Pipeline degree cannot exceed workers, and TEE mode requires attestation. Development-only downgrades must be explicit.
 
-**Model loading errors.** Confirm config/index files exist, checkpoint revisions are pinned, and the layout has a verified adapter. Strict workers do not load plaintext monolithic checkpoints. Missing keys, corrupt shards, and unexpected stage metadata fail closed.
+**Model loading errors.** Confirm config/index files exist, checkpoint revisions are pinned, and the layout has a verified adapter. Strict workers do not load plaintext monolithic checkpoints. Missing keys, corrupt shards, and unexpected stage metadata fail closed. GGUF/EXL2/EXL3 automatically select Fortress; incompatible plaintext engine overrides are rejected. A supported container with unknown graph semantics requires a semantic adapter rather than a guessed computation graph.
 
 **Transport errors.** Verify the certificate, ALPN, endpoint, and worker identity. Replayed packets, old sequences, wrong nonces, and modified ciphertext are rejected. Partial-output streams do not retry because that would duplicate tokens.
 
