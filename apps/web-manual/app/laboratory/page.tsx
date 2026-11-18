@@ -9,6 +9,7 @@ import { MemoryLab } from "@/components/labs/MemoryLab";
 import { ShareGridLab } from "@/components/labs/ShareGridLab";
 import { PlacementLab } from "@/components/labs/PlacementLab";
 import { FreivaldsLab } from "@/components/labs/FreivaldsLab";
+import { QuantizedFormatLab } from "@/components/labs/QuantizedFormatLab";
 
 export const metadata: Metadata = {
   title: "Interactive Laboratory",
@@ -25,6 +26,7 @@ export default function LaboratoryPage() {
       </header>
       <ShareGridLab />
       <FreivaldsLab />
+      <QuantizedFormatLab />
       <PlacementLab />
       <ConjugationLab />
       <FwhtLab />

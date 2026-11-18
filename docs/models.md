@@ -15,6 +15,10 @@ All adapters are checkpoint-driven. A strict deployment must pin an immutable ch
 | Wan 2.1/2.2 | `Wan-AI/Wan2.1-T2V-1.3B-Diffusers` @ `0fad780a534b6463e45facd96134c9f345acfa5b`; `Wan2.2-T2V-A14B-Diffusers` @ `5be7df9619b54f4e2667b2755bc6a756675b5cd7` | SGLang Diffusion / xDiT | T2V/I2V, cube permutations, timestep experts, chunked video decode | Neural MP4 generation and math tests pass; Apache-2.0 |
 | MiniMax H3 / Video DeltaNet | `MiniMaxAI/MiniMax-H3` @ `0919fb684102ef115126612f3fbb84d1027e7317` | SGLang Diffusion / xDiT | Frame-wise DeltaNet, cube sparse compatibility, joint audio/video | Recurrent, muxing, and MP4 tests pass; MiniMax community license |
 
+## Quantized container support
+
+The Fortress compiler accepts Safetensors, GGUF v1–v3, EXL2/GPTQ, and EXL3 on the trusted client. GGUF covers all 37 current type codes, shards, metadata arrays, embedded tokenizers, and both endian modes. EXL2 covers mixed-width groups and activation ordering; EXL3 covers integer/fractional trellis rates, all three codebooks, and sign/Hadamard restoration. Public SDK registration selects Fortress automatically and supports synchronous, streaming, and asynchronous chat. Unknown future graph semantics require an explicit architecture adapter and fail closed. Exact Fortress-reference equality and source-model quality are separate evidence; official full-checkpoint and official CUDA decoder validation remain pending.
+
 ## Checkpoint corrections
 
 `Qwen/Qwen3.8-27B` currently declares `model_type=qwen3_5`, `Qwen3_5ForConditionalGeneration`, head dimension 256, and an empty `deepstack_visual_indexes` list. `google/gemma-4-E2B-it` declares 35 text layers, eight query heads, one KV head, head dimension 256, 20 shared-KV layers, and tied embeddings. Its separate 16-layer vision and 12-layer audio towers are not allocated for text-only Fortress execution. These values come from the pinned official `config.json`, not the earlier blueprint constants. Adapters read pinned configs instead of substituting blueprint values.
