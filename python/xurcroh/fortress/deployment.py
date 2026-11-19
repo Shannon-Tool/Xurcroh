@@ -609,6 +609,7 @@ class FortressDeployment:
                 self._workspace / "tunnels" / f"model-{model_index}",
                 target_ports=[role.port for role in self._roles if role.model == name],
                 tunnel_name=f"relay-{model_index}",
+                max_concurrency=self.cluster.startup_concurrency,
             )
             self._tunnel_workers.append(tunnel_workers)
 
@@ -621,7 +622,9 @@ class FortressDeployment:
             try:
                 self._validate()
                 self._executor = self.executor_factory()
-                with ThreadPoolExecutor(max_workers=min(8, len(self.cluster.workers))) as pool:
+                with ThreadPoolExecutor(
+                    max_workers=min(self.cluster.startup_concurrency, len(self.cluster.workers))
+                ) as pool:
                     list(pool.map(self._executor.discover, self.cluster.workers))
                 for name, definition in self.models:
                     report = preflight_checkpoint(
@@ -647,7 +650,9 @@ class FortressDeployment:
                 logging.getLogger(__name__).info("Creating Fortress source archive")
                 archive = self._source_archive()
                 machines = self._machine_workers()
-                with ThreadPoolExecutor(max_workers=min(8, len(machines))) as pool:
+                with ThreadPoolExecutor(
+                    max_workers=min(self.cluster.startup_concurrency, len(machines))
+                ) as pool:
                     list(
                         pool.map(
                             lambda worker: self._prepare_machine(worker, archive),
@@ -655,10 +660,14 @@ class FortressDeployment:
                         )
                     )
                 logging.getLogger(__name__).info("Uploading Fortress role packages")
-                with ThreadPoolExecutor(max_workers=min(8, len(self._roles))) as pool:
+                with ThreadPoolExecutor(
+                    max_workers=min(self.cluster.startup_concurrency, len(self._roles))
+                ) as pool:
                     list(pool.map(self._prepare_role, self._roles))
                 logging.getLogger(__name__).info("Starting Fortress roles")
-                with ThreadPoolExecutor(max_workers=min(8, len(self._roles))) as pool:
+                with ThreadPoolExecutor(
+                    max_workers=min(self.cluster.startup_concurrency, len(self._roles))
+                ) as pool:
                     list(pool.map(self._start_role, self._roles))
                 logging.getLogger(__name__).info("Fortress roles are ready")
                 self._publish_workers()
