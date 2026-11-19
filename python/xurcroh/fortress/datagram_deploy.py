@@ -98,6 +98,7 @@ def start_datagram_tunnels(
     target_port: int = 9444,
     target_ports: list[int] | None = None,
     tunnel_name: str = "relay",
+    max_concurrency: int = 2,
 ) -> None:
     ports = target_ports or [target_port] * len(workers)
     if (
@@ -189,7 +190,7 @@ def start_datagram_tunnels(
             configured["endpoint"] = endpoint
 
     try:
-        with ThreadPoolExecutor(max_workers=min(8, len(workers))) as pool:
+        with ThreadPoolExecutor(max_workers=min(max_concurrency, len(workers))) as pool:
             list(pool.map(lambda item: start_worker(*item), enumerate(workers)))
     except Exception:
         close_datagram_tunnels(started)

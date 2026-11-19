@@ -59,6 +59,28 @@ def test_datagram_relays_carry_real_mutual_tls_quic(
     asyncio.run(exercise())
 
 
+def test_relay_startup_defaults_to_two_concurrent_workers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xurcroh.fortress import datagram_deploy
+
+    limits: list[int] = []
+
+    class Executor:
+        def __init__(self, *, max_workers: int) -> None:
+            limits.append(max_workers)
+            raise RuntimeError("stop before starting relays")
+
+    monkeypatch.setattr(datagram_deploy, "ThreadPoolExecutor", Executor)
+    workers = [{"name": f"worker-{index}"} for index in range(12)]
+    with pytest.raises(RuntimeError, match="stop before"):
+        datagram_deploy.start_datagram_tunnels(
+            workers, str(tmp_path / "remote"), {"cluster": [{} for _ in workers]}, tmp_path
+        )
+
+    assert limits == [2]
+
+
 def test_failed_relay_start_cleans_up_the_remote_process(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

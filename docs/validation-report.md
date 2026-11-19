@@ -30,6 +30,8 @@ At `1b1fbee`, a real single-worker SSH datagram deployment carried an authentica
 
 The current real video engine regression passed in **341.43 seconds** with a hard process-memory cap and no remaining workers. Managed multi-host video remains hardware-pending; this local result is not an official-checkpoint or performance claim.
 
+At `23e019e`, another full managed datagram attempt was lost during relay setup after eight SSH forwards reported ready; the host restarted before the remaining forwards or inference completed. It is a failed startup/resource test, not an inference pass or a measured transport stall. The deployment now defaults `startup_concurrency` to 2 for discovery, uploads, role starts, and relay setup, with focused configuration and bounded-executor regressions. The complete 12-role relay inference gate remains unvalidated and must run on a host with measured capacity for all persistent roles and forwarders; it will not be retried on this 6 GiB development host.
+
 The two-model managed test has not completed on this host. At `90a99a6`, its 24 simultaneous role processes exhausted the available 6 GiB RAM, leaving approximately 47 MiB before the test was stopped and cleaned up. A larger validation host or lower-memory worker packaging is required; no multi-model managed pass is claimed. At `51ecfa9`, deployment began aggregating discovered host memory across assigned roles and rejecting insufficient capacity before archive transfer or role launch.
 
 | Check | Actual result |

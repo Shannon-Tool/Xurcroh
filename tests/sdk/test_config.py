@@ -37,6 +37,12 @@ def test_minimal_cluster_defaults_to_explicit_local_cpu() -> None:
     cluster = ClusterConfig.normalize({})
     assert len(cluster.workers) == 1
     assert cluster.workers[0].endpoint == "local://cpu"
+    assert cluster.startup_concurrency == 2
+
+
+def test_single_worker_mapping_preserves_startup_concurrency() -> None:
+    cluster = ClusterConfig.normalize({"host": "example.internal", "startup_concurrency": 1})
+    assert cluster.startup_concurrency == 1
 
 
 def test_pipeline_cannot_exceed_available_workers() -> None:

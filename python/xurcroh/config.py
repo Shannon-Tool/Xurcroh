@@ -104,6 +104,7 @@ class ClusterConfig(StrictModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     provision_workers: bool = False
     datagram_tunnel: bool = False
+    startup_concurrency: int = Field(default=2, ge=1, le=32)
     controller_endpoint: str | None = None
     request_timeout_seconds: float = Field(default=60, gt=0)
 
@@ -151,6 +152,7 @@ class ClusterConfig(StrictModel):
                     "security",
                     "provision_workers",
                     "datagram_tunnel",
+                    "startup_concurrency",
                     "controller_endpoint",
                     "request_timeout_seconds",
                 )
