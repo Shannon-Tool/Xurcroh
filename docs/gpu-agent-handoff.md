@@ -44,7 +44,7 @@ cargo test --workspace
 .venv/bin/python scripts/fortress/validate_handoff.py
 ```
 
-The final command validates 21 offline ladder commands. It does not contact a provider or resolve unresolved artifacts.
+The final command validates 22 offline commands: 21 YAML ladder forms plus the real multi-model smoke command. It does not contact a provider or resolve unresolved artifacts.
 
 On resource-constrained hosts, run tests sequentially with an explicit process memory cap (for example `ulimit -v 5000000`) and persistent logs. Do not run managed video, multi-model, full-relay, or full-suite workloads concurrently. Do not retry the same expensive test blindly: preserve the log, identify the failing phase, and reduce the fixture or move to a larger host. Terminate only test-owned processes and confirm that no workers or relay forwards remain. Optimized official EXL reconstruction is selected automatically on CUDA hosts; exact CPU reference decoders remain available for local verification.
 
@@ -107,7 +107,7 @@ For a single-rung manifest, the command shape is:
   --signing-key /secure/evidence-signing.key
 ```
 
-For `text-ladder.yaml`, `media-ladder.yaml`, or `f0-m0.yaml`, add `--model <manifest-model-name>`. The offline validator prints all 21 exact command forms. Use `--existing-deployment` only for a reviewed existing deployment, never together with `--provisioned-config`.
+For `text-ladder.yaml`, `media-ladder.yaml`, or `f0-m0.yaml`, add `--model <manifest-model-name>`. The offline validator prints all 22 exact command forms. Use `--existing-deployment` only for a reviewed existing deployment, never together with `--provisioned-config`.
 
 ## 6. Numerical and output acceptance
 
@@ -141,7 +141,7 @@ EXL2/EXL3 validation must include an official-extension differential run. GGUF v
 
 Exercise direct QUIC and the datagram fallback independently. Measure bytes and time for compile, connection, each operation, queueing, kernel execution, and public SDK completion.
 
-Test multiple independent models, multi-user isolation, cancellation, timeouts, backpressure, worker SIGKILL/restart, connection interruption, packet delay/loss, stale sessions, and clean shutdown. Test aggregate-memory rejection before role launch. Preserve proof that all role processes and relay forwards terminate.
+Test multiple independent models, multi-user isolation, cancellation, timeouts, backpressure, worker SIGKILL/restart, connection interruption, packet delay/loss, stale sessions, and clean shutdown. Test aggregate-memory rejection before role launch. Preserve proof that all role processes and relay forwards terminate. The text ladder verifier exercises streaming, acknowledged cancellation, post-cancellation recovery, and concurrent public-SDK requests. Run the separate real multi-model gate with `python scripts/fortress/multi_model_smoke.py --config /secure/multi-model.json --output /secure/evidence/multi-model-smoke.json`; its configuration registers at least two real models and can use the managed SSH lifecycle.
 
 Run on physical GPUs:
 
