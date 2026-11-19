@@ -7,5 +7,5 @@ python3 -m venv .venv
 .venv/bin/python -m pip install \
   --index-url https://download.pytorch.org/whl/cpu \
   --extra-index-url https://pypi.org/simple \
-  -e '.[dev,models,ssh,formats]'
+  -e '.[dev,models,ssh,formats,cloud]'
 .venv/bin/python -m pip freeze > requirements.lock

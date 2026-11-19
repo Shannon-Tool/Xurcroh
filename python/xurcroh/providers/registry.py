@@ -69,6 +69,7 @@ class ProviderRegistry:
         from xurcroh.providers.aws import AwsNitroClient
         from xurcroh.providers.azure import AzureConfidentialClient
         from xurcroh.providers.gcp import GoogleConfidentialClient
+        from xurcroh.providers.ibm import IbmConfidentialClient
         from xurcroh.providers.oci import OciConfidentialClient
 
         registry.register("azure", _cloud_adapter(AzureConfidentialClient))
@@ -76,6 +77,7 @@ class ProviderRegistry:
         registry.register("alibaba", _cloud_adapter(AlibabaConfidentialClient))
         registry.register("oci", _cloud_adapter(OciConfidentialClient))
         registry.register("aws", _cloud_adapter(AwsNitroClient))
+        registry.register("ibm", _cloud_adapter(IbmConfidentialClient))
         return registry.with_entry_points(registry)
 
     @classmethod
