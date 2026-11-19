@@ -7,19 +7,25 @@ from typing import Any
 
 from xurcroh.errors import ProviderError
 
+ProviderInstanceId = str | int
+
 
 @dataclass(frozen=True)
 class ProviderAdapter:
     offers: Callable[[str | None], list[dict[str, Any]]]
-    create: Callable[..., int]
-    destroy: Callable[[int], None]
-    charges: Callable[[dict[str, Any], int], float] | None = None
-    remaining: Callable[[dict[str, Any], int], bool] | None = None
+    create: Callable[..., ProviderInstanceId]
+    destroy: Callable[[ProviderInstanceId], None]
+    charges: Callable[[dict[str, Any], ProviderInstanceId], float] | None = None
+    remaining: Callable[[dict[str, Any], ProviderInstanceId], bool] | None = None
 
 
 class ProviderRegistry:
     def __init__(self) -> None:
         self._adapters: dict[str, ProviderAdapter] = {}
+
+    @classmethod
+    def with_defaults(cls) -> ProviderRegistry:
+        return cls.with_entry_points()
 
     @classmethod
     def with_entry_points(cls) -> ProviderRegistry:
@@ -54,19 +60,19 @@ class ProviderRegistry:
                 offers.append({**offer, "provider_id": provider_id})
         return offers
 
-    def create(self, offer: dict[str, Any], **values: Any) -> int:
+    def create(self, offer: dict[str, Any], **values: Any) -> ProviderInstanceId:
         return self._adapter(offer).create(offer, **values)
 
-    def destroy(self, offer: dict[str, Any], instance_id: int) -> None:
+    def destroy(self, offer: dict[str, Any], instance_id: ProviderInstanceId) -> None:
         self._adapter(offer).destroy(instance_id)
 
-    def charges(self, offer: dict[str, Any], instance_id: int) -> float:
+    def charges(self, offer: dict[str, Any], instance_id: ProviderInstanceId) -> float:
         adapter = self._adapter(offer)
         if adapter.charges is None:
             raise ProviderError("provider does not implement charge reporting")
         return adapter.charges(offer, instance_id)
 
-    def remaining(self, offer: dict[str, Any], instance_id: int) -> bool:
+    def remaining(self, offer: dict[str, Any], instance_id: ProviderInstanceId) -> bool:
         adapter = self._adapter(offer)
         if adapter.remaining is None:
             raise ProviderError("provider does not implement remaining-instance verification")

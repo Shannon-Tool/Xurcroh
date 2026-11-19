@@ -30,8 +30,13 @@ def materialize_ladder_manifest(
     placements = []
     share_count = int(template["share_count"])
     for index, instance in enumerate(workers):
+        provider_instance_id = instance["provider_instance_id"]
+        try:
+            record_key = int(provider_instance_id)
+        except (TypeError, ValueError):
+            record_key = provider_instance_id
         record = {
-            **records.get(int(instance["provider_instance_id"]), {}),
+            **records.get(record_key, {}),
             **instance,
         }
         private = X25519PrivateKey.generate()
@@ -108,7 +113,7 @@ def destroy_ladder_instances(
     for worker in external:
         if registry is None:
             raise ProviderError("external provider teardown requires a provider registry")
-        instance_id = int(worker["provider_instance_id"])
+        instance_id = worker["provider_instance_id"]
         provider_id = str(worker["provider_id"])
         try:
             registry.destroy(worker, instance_id)

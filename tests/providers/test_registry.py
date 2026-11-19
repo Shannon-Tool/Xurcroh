@@ -45,7 +45,7 @@ def test_provider_plugins_report_charges_and_remaining_instances(
     )
     entry_point = type("EntryPoint", (), {"name": "external", "load": lambda self: adapter})()
     monkeypatch.setattr(module, "entry_points", lambda group: [entry_point])
-    registry = ProviderRegistry.with_entry_points()
+    registry = ProviderRegistry.with_defaults()
     offer = {"provider_id": "external"}
     assert registry.charges(offer, 900) == 2.5
     assert registry.remaining(offer, 900) is False
