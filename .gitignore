@@ -14,6 +14,8 @@ htmlcov/
 /build/
 /dist/
 target/
+.opam/
+_opam/
 /native/build/
 *.so
 *.dll
