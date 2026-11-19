@@ -37,6 +37,10 @@ cloud = [
   "PyJWT>=2.10,<3",
   "boto3>=1.44,<2",
   "cbor2>=5.9,<6",
+  "ibm-vpc>=0.36,<1",
+  "ibm-platform-services==0.76.0",
+  "ibm-cloud-sdk-core>=3.27,<3.28",
+  "python-dateutil>=2.9,<3",
 ]
 dev = [
   "pytest>=8.4,<10",
@@ -93,6 +97,7 @@ module = [
   "xdit.*", "xurcroh_quic", "imageio.*", "imageio_ffmpeg", "sgx_dcap_quote_verify",
   "alibabacloud_bssopenapi20171214.*", "alibabacloud_credentials.*",
   "alibabacloud_ecs20140526.*", "alibabacloud_tea_openapi.*", "oci.*", "boto3.*",
+  "ibm_vpc.*", "ibm_platform_services.*",
 ]
 ignore_missing_imports = true
 
