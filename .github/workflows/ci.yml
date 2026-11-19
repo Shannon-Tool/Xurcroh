@@ -105,7 +105,7 @@ jobs:
       - name: Install ProVerif
         run: opam install proverif --yes
       - name: Verify the Fortress session model
-        run: opam exec -- proverif protocol/fortress_session.pv
+        run: opam exec -- proverif protocol/fortress_session.pv | python3 scripts/check_proverif.py
       - uses: dtolnay/rust-toolchain@nightly
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked

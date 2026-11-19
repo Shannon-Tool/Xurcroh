@@ -45,7 +45,7 @@ The two-model managed test has not completed on this host. At `90a99a6`, its 24 
 | Frontend interaction tests | **35 passed** at `720193e` |
 | Frontend typecheck, lint, production build, content validation | Passed at `720193e`; 22 sections, equations, links, and Mermaid syntax validated |
 | Offline ladder/handoff validation | All 21 command forms validated without provider contact at `720193e` |
-| ProVerif model and protocol fuzzing | ProVerif passed in the hosted run above; all three fuzz targets passed locally at `5bcdab3` with 2,230,999 frame, 393,608 AEAD, and 33,264 HPKE runs. The current host lacks `opam`, so no new local ProVerif result is claimed; newer hosted runs are blocked before startup |
+| ProVerif model and protocol fuzzing | ProVerif 2.05 locally confirms activation secrecy, response secrecy, and client/server establishment correspondence after modeling authenticated establishment; the earlier unauthenticated model's false response-secrecy query is corrected and strict result checking is now enforced. All three fuzz targets passed locally at `5bcdab3` with 2,230,999 frame, 393,608 AEAD, and 33,264 HPKE runs; newer hosted runs are blocked before startup |
 | Clean reproducible wheel builds | Matched at `eb9dc848bc189ddf168d5371ed90bffcedd1e7c9`: Python `fb5736c38e74cc8e0d5d359bb4b70f2b545e1492811340c5f2b46a6cf5c9a1ec`, native `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2`; current hosted rebuild remains billing-blocked |
 | `pip-audit` | No known vulnerabilities in audited dependencies at `720193e`; local CPU torch/torchvision and Xurcroh packages remain skipped as detailed below |
 | `npm audit` | 0 vulnerabilities at `720193e` |
@@ -74,7 +74,7 @@ cd apps/web-manual && npm run check && npm audit
 - M0: four independent local worker processes, exact two-step synthetic DiT execution, 328 inference role calls, 117,592 bytes sent and 89,728 bytes received, zero quantized-reference error, and all worker exit codes zero.
 - Public SDK: dense/MoE text grids pass locally and over four real mutual-TLS role workers; real `DDPMPipeline` image generation and `TextToVideoSDPipeline` video generation pass, including public `images.generate` and `videos.generate` calls.
 - VLM boundary: local image/audio projections feed the Fortress decoder without entering worker operations.
-- Protocol: ProVerif and bounded frame/AEAD/HPKE fuzzing pass in CI. Noncanonical unused shape slots are rejected.
+- Protocol: the current ProVerif model passes all three local queries under its documented authenticated-establishment assumptions; strict summary checking rejects any false or missing result. Bounded frame/AEAD/HPKE fuzzing passed in the recorded runs. Noncanonical unused shape slots are rejected.
 - Local and GitHub-hosted wheel builds are byte-identical across hosts. Second-party reproducibility, a live public transparency log, external audits, physical multi-GPU execution, independent attestation, external cryptography review, and production acceptance remain open and are not claimed.
 
 ## Quantized formats and current media/handoff evidence
