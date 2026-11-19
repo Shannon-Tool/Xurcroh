@@ -4,6 +4,8 @@ import hashlib
 from importlib import metadata
 from pathlib import Path
 
+import torch
+
 from xurcroh.errors import CapabilityError
 
 
@@ -36,3 +38,76 @@ class ReferenceDecoderBridge:
             digest.update(str(file).encode() + b"\0")
             digest.update(Path(file.locate()).read_bytes())
         return {"package": self.package, "version": version, "revision": digest.hexdigest()}
+
+
+def official_exl2_error(
+    tensors: dict[str, torch.Tensor], prefix: str, expected: torch.Tensor
+) -> float:
+    from exllamav2 import ext
+
+    extension = ext.exllamav2_ext  # type: ignore[attr-defined]
+
+    if not torch.cuda.is_available():
+        raise CapabilityError("official EXL2 differential validation requires CUDA")
+    is_exl2 = f"{prefix}.q_weight" in tensors
+    names = (
+        ("q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups", "q_group_map")
+        if is_exl2
+        else ("qweight", "qzeros", "scales", "g_idx")
+    )
+    quantized = {
+        name: tensors[f"{prefix}.{name}"].cuda() for name in names if f"{prefix}.{name}" in tensors
+    }
+    if is_exl2 and "q_invperm" in quantized:
+        quantized["q_perm"] = torch.argsort(quantized.pop("q_invperm")).to(torch.int16)
+    if is_exl2 and "q_group_map" not in quantized:
+        quantized["q_group_map"] = ext.make_group_map(
+            quantized["q_groups"], quantized["q_weight"].shape[0]
+        )
+    output_size, input_size = expected.shape
+    temporary = torch.empty(input_size * output_size, dtype=torch.float16, device="cuda")
+    handle = ext.make_q_matrix(quantized, temporary)
+    try:
+        official = torch.empty((input_size, output_size), dtype=torch.float16, device="cuda")
+        extension.reconstruct(handle, official)
+        official = official.T.contiguous()
+        return float((official.cpu() - expected).abs().max())
+    finally:
+        extension.free_q_matrix(handle)
+        temporary.zero_()
+        for tensor in quantized.values():
+            tensor.zero_()
+
+
+def official_exl3_error(
+    tensors: dict[str, torch.Tensor], prefix: str, expected: torch.Tensor
+) -> float:
+    from exllamav3.modules.quant.exl3 import LinearEXL3
+
+    if not torch.cuda.is_available():
+        raise CapabilityError("official EXL3 differential validation requires CUDA")
+    output_size, input_size = expected.shape
+    arguments = {
+        name: tensors[f"{prefix}.{name}"].cuda()
+        for name in ("su", "sv", "suh", "svh", "trellis", "mcg", "mul1", "bias")
+        if f"{prefix}.{name}" in tensors
+    }
+    layer = LinearEXL3(
+        config=None,
+        in_features=input_size,
+        out_features=output_size,
+        su=arguments.get("su"),
+        sv=arguments.get("sv"),
+        suh=arguments.get("suh"),
+        svh=arguments.get("svh"),
+        trellis=arguments["trellis"],
+        mcg=arguments.get("mcg"),
+        mul1=arguments.get("mul1"),
+        bias=arguments.get("bias"),
+    )
+    official = layer.get_weight_tensor().T.contiguous()  # type: ignore[no-untyped-call]
+    result = float((official.cpu() - expected).abs().max())
+    layer.unload()  # type: ignore[no-untyped-call]
+    for tensor in arguments.values():
+        tensor.zero_()
+    return result
