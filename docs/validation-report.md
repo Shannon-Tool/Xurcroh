@@ -46,7 +46,7 @@ The two-model managed test has not completed on this host. At `90a99a6`, its 24 
 | Frontend typecheck, lint, production build, content validation | Passed at `720193e`; 22 sections, equations, links, and Mermaid syntax validated |
 | Offline ladder/handoff validation | All 21 command forms validated without provider contact at `720193e` |
 | ProVerif model and protocol fuzzing | ProVerif passed in the hosted run above; all three fuzz targets passed locally at `5bcdab3` with 2,230,999 frame, 393,608 AEAD, and 33,264 HPKE runs; newer hosted runs are blocked before startup |
-| Clean reproducible wheel builds | Matched locally at `b8d16b8fe088953ede4b67af485c80d7a78f64d2`; current-SHA rebuild and current hosted rebuild remain pending |
+| Clean reproducible wheel builds | Matched at `eb9dc848bc189ddf168d5371ed90bffcedd1e7c9`: Python `fb5736c38e74cc8e0d5d359bb4b70f2b545e1492811340c5f2b46a6cf5c9a1ec`, native `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2`; current hosted rebuild remains billing-blocked |
 | `pip-audit` | No known vulnerabilities in audited dependencies at `720193e`; local CPU torch/torchvision and Xurcroh packages remain skipped as detailed below |
 | `npm audit` | 0 vulnerabilities at `720193e` |
 
