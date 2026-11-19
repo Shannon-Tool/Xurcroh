@@ -29,7 +29,7 @@ python3.12 -m venv .venv
 .venv/bin/maturin develop --manifest-path crates/transport/Cargo.toml --features python
 ```
 
-Provide provider credentials through the environment or the provider's secret mechanism. Do not put keys in YAML, shell history, process arguments, logs, manifests, or Git. Use a separate Ed25519 evidence-signing key at `/secure/evidence-signing.key` with mode `0600`; publish only its public key.
+Provide provider credentials through the environment or the provider's secret mechanism. Do not put keys in YAML, shell history, process arguments, logs, manifests, or Git. Use a separate Ed25519 evidence-signing key at `/secure/evidence-signing.key` with mode `0600`; store only its public key at `/secure/evidence-signing.pub` for predecessor verification. Publish only that public key.
 
 Verify before provisioning:
 
@@ -106,6 +106,8 @@ For a single-rung manifest, the command shape is:
   --provisioned-config /secure/provisioned.json \
   --state /secure/provider-state.json \
   --output /secure/evidence/l0-gemma-4-e2b-gguf \
+  --previous-evidence /secure/evidence/f0-tiny-llama/evidence.json \
+  --evidence-public-key /secure/evidence-signing.pub \
   --signing-key /secure/evidence-signing.key
 ```
 
