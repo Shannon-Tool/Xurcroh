@@ -149,18 +149,20 @@ class AwsNitroClient:
         total = 0.0
         token = None
         for _ in range(1000):
-            document = self._call(
-                "cost query",
-                self._cost.get_cost_and_usage_with_resources,
-                TimePeriod={
+            query = {
+                "TimePeriod": {
                     "Start": now.date().replace(day=1).isoformat(),
                     "End": (now.date() + timedelta(days=1)).isoformat(),
                 },
-                Granularity="DAILY",
-                Metrics=["UnblendedCost"],
-                Filter={"Dimensions": {"Key": "RESOURCE_ID", "Values": [instance_id]}},
-                GroupBy=[{"Type": "DIMENSION", "Key": "RESOURCE_ID"}],
-                NextPageToken=token,
+                "Granularity": "DAILY",
+                "Metrics": ["UnblendedCost"],
+                "Filter": {"Dimensions": {"Key": "RESOURCE_ID", "Values": [instance_id]}},
+                "GroupBy": [{"Type": "DIMENSION", "Key": "RESOURCE_ID"}],
+            }
+            if token is not None:
+                query["NextPageToken"] = token
+            document = self._call(
+                "cost query", self._cost.get_cost_and_usage_with_resources, **query
             )
             for period in document.get("ResultsByTime", []):
                 for group in period.get("Groups", []):

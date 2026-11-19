@@ -1,6 +1,19 @@
 # GPU Topology and Resource Planning
 
-These are analytical provisioning estimates, not reservations, price quotes, or hardware validation results. No provider has been contacted and no paid infrastructure has been used. Select a provider only after checking current availability, checkpoint licenses, independent-operator requirements, network price, and attestation support. Suitable marketplace/provider categories include RunPod, Lambda, Vast.ai, and self-managed GPU hosts; none is endorsed or benchmarked here.
+These are analytical provisioning estimates, not reservations, price quotes, or hardware validation results. The TEE provider expansion did not contact a cloud provider or spend money; earlier scoped Vast.ai results are recorded separately in `docs/validation-report.md`. Select a provider only after checking current availability, checkpoint licenses, independent-operator requirements, network price, and attestation support. Suitable marketplace/provider categories include RunPod, Lambda, Vast.ai, and self-managed GPU hosts; none is endorsed or benchmarked here.
+
+## TEE provider selection
+
+| Provider and starting shape | Attested resource | Memory used for placement | Status |
+|---|---|---:|---|
+| Azure `Standard_NCC40ads_H100_v5` | AMD SEV-SNP + NVIDIA H100 NVL | 94 GiB per GPU | Adapter implemented; physical validation pending |
+| Google `a3-highgpu-1g` | Intel TDX + NVIDIA H100 | 80 GiB per GPU | Adapter implemented; physical validation pending |
+| Alibaba `gn8v-tee` | Intel TDX + NVIDIA H100 | 96 GiB per GPU | Adapter implemented; physical validation pending |
+| OCI `VM.Standard.E5/E6.Flex` | AMD SEV-SNP CPU | 0 GPU memory | CPU-only path; not a confidential-GPU worker |
+| AWS Nitro parent + enclave | Nitro CPU enclave | 0 GPU memory | CPU-only AF_VSOCK path; no external enclave network |
+| IBM VPC TDX-capable current profile | Intel TDX CPU | 0 GPU memory | CPU-only path; not a confidential-GPU worker |
+
+Provider and shape discovery must return actual availability before provisioning. The table is a capability filter, not a reservation or a claim that these instances were launched. Do not substitute GCP G4 for the TDX A3 path without a separately verified AMD attestation implementation. Budget for the trusted client and any non-enclave GPU workers separately; CPU TEE support does not extend hardware evidence to an attached accelerator.
 
 ## Memory model
 

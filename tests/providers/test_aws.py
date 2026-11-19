@@ -59,6 +59,7 @@ class FakeKMS:
 
 class FakeCostExplorer:
     def get_cost_and_usage_with_resources(self, **values):
+        assert "NextPageToken" not in values or values["NextPageToken"] is not None
         return {
             "ResultsByTime": [
                 {

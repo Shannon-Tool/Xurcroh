@@ -108,21 +108,27 @@ def destroy_ladder_instances(
     cost = guard.total()
     external = [worker for worker in workers if str(worker.get("provider_id", "vast")) != "vast"]
     if external:
-        registry = registry or ProviderRegistry.with_entry_points()
+        registry = registry or ProviderRegistry.with_defaults()
         assert registry is not None
     for worker in external:
         if registry is None:
             raise ProviderError("external provider teardown requires a provider registry")
         instance_id = worker["provider_instance_id"]
         provider_id = str(worker["provider_id"])
+        charge = None
+        try:
+            charge = float(registry.charges(worker, instance_id))
+        except Exception as error:
+            errors.append(f"{provider_id}:{instance_id}: {type(error).__name__}")
         try:
             registry.destroy(worker, instance_id)
             if registry.remaining(worker, instance_id):
                 remaining.append(instance_id)
-            cost += float(registry.charges(worker, instance_id))
         except Exception as error:
             remaining.append(instance_id)
             errors.append(f"{provider_id}:{instance_id}: {type(error).__name__}")
+        if charge is not None:
+            cost += charge
     if errors:
         raise ProviderError("provider teardown failed: " + ", ".join(errors))
     destruction["all_destroyed"] = not remaining

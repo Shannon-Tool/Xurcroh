@@ -55,17 +55,20 @@ class GoogleConfidentialClient:
         )
 
     def offers(self, gpu_name: str | None = None) -> list[dict[str, Any]]:
-        del gpu_name
+        if gpu_name and "h100" not in gpu_name.lower():
+            return []
         document = self._rest.request("GET", f"projects/{self.project_id}/zones")
         offers = []
         for zone in document.get("items", []):
             if zone.get("status") != "UP":
                 continue
             name = zone["name"]
-            self._rest.request(
+            machine = self._rest.request(
                 "GET",
                 f"projects/{self.project_id}/zones/{name}/machineTypes/a3-highgpu-1g",
             )
+            if machine is None:
+                continue
             offers.append(
                 {
                     "id": "a3-highgpu-1g",
@@ -198,7 +201,10 @@ class GoogleConfidentialClient:
                 "query": (
                     f"SELECT COALESCE(SUM(cost), 0) AS total_cost "  # noqa: S608
                     f"FROM `{self.billing_export_table}` "
-                    "WHERE labels.xurcroh_instance = @instance_label"
+                    "WHERE EXISTS ("
+                    "SELECT 1 FROM UNNEST(labels) AS label "
+                    "WHERE label.key = 'xurcroh_instance' "
+                    "AND label.value = @instance_label)"
                 ),
                 "useLegacySql": False,
                 "parameterMode": "NAMED",
