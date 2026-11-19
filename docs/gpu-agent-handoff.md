@@ -66,7 +66,7 @@ Decode each generated fixture through `xurcroh.formats.open_checkpoint` before c
 
 ## 4. Required topology and resource preflight
 
-A Fortress operation with `N` shares needs `N²` role cells for each of its activation and weight shares, plus any required replicas. Start with `N=2`: four independent role workers and a separate trusted combiner. Operation placement enforces role uniqueness, anti-adjacency, query/key and gate/up/down separation, provider/country/CPU diversity, capacity, and randomized operation assignment.
+A Fortress operation with `N` shares needs `N²` role cells for each of its activation and weight shares, plus any required replicas. Start with `N=2` and a separate trusted combiner. Hardware ladders generate a per-operation `PlacementMap` and package only each worker's assigned operations with operation-specific weight-share indices; an unplaced pool is rejected before SDK execution. The default 25% provider cap and anti-adjacency rules can require substantially more than four workers, especially for models with many operations. Local F0/M0 retain their explicit four-process reference topology and are not independent-host evidence. Operation placement enforces role uniqueness, anti-adjacency, query/key and gate/up/down separation, provider/country/CPU diversity, capacity, and randomized operation assignment.
 
 Run `client.preflight()` before starting roles. Record:
 

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -23,15 +24,20 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from scripts.gpu.deploy_two_node import download, options, scp, ssh
 
+from xurcroh.config import ModelDefinition
 from xurcroh.fortress.datagram_deploy import close_datagram_tunnels, start_datagram_tunnels
-from xurcroh.fortress.diffusers_loader import compile_diffusers_component
 from xurcroh.fortress.ladder import LadderRung
 from xurcroh.fortress.ladder_deployment import (
+    place_rung_operations,
     sdk_configuration,
     write_operation_role_artifacts,
-    write_role_packages,
 )
-from xurcroh.fortress.model_compiler import compile_fortress_checkpoint
+from xurcroh.fortress.media_adapter import MediaArchitectureAdapter
+from xurcroh.fortress.media_components import compile_media_checkpoint, discover_media_operations
+from xurcroh.fortress.model_compiler import (
+    compile_fortress_checkpoint,
+    discover_fortress_operations,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 GIT = shutil.which("git")
@@ -305,6 +311,17 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
     checkpoint = Path(raw.get("checkpoint_path", ""))
     if not checkpoint.is_dir():
         raise ValueError("checkpoint_path must name a trusted local checkpoint directory")
+    placement = None
+    if rung.rung not in {"F0", "M0"} or any(worker.operation_roles for worker in rung.workers):
+        if rung.modality in {"text", "vlm"}:
+            operations = discover_fortress_operations(checkpoint)
+        else:
+            adapter = MediaArchitectureAdapter.from_checkpoint(checkpoint, rung.modality)
+            operations = discover_media_operations(str(checkpoint), adapter)
+        rung, placement = place_rung_operations(rung, operations)
+        raw["workers"] = [asdict(worker) for worker in rung.workers]
+        raw["placement_epoch"] = rung.placement_epoch
+        raw["max_provider_fraction"] = rung.max_provider_fraction
     key_directory = Path(
         raw.get("recipient_key_directory", manifest_path.parent / "recipient-keys")
     )
@@ -334,13 +351,20 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
             ),
         )
     else:
-        compiled = compile_diffusers_component(
-            checkpoint,
-            component=str(raw.get("diffusion_component", "transformer")),
-            seed=seed,
-            share_count=rung.share_count,
+        definition = ModelDefinition(
+            path=str(checkpoint),
+            engine="fortress",
+            modality=rung.modality,
+            fortress_seed=seed,
+            fortress_shares=rung.share_count,
         )
-        write_role_packages(compiled, rung, role_root)
+        compile_media_checkpoint(
+            definition,
+            MediaArchitectureAdapter.from_checkpoint(checkpoint, rung.modality),
+            operation_sink=lambda name, operation: write_operation_role_artifacts(
+                name, operation, rung, role_root
+            ),
+        )
     packages = {worker.name: role_root / worker.name for worker in rung.workers}
     services = []
     for worker in rung.workers:
@@ -418,9 +442,10 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
     if raw.get("datagram_tunnel") is True:
         start_datagram_tunnels(workers, remote_root, sdk, output / "tunnels")
     deployment = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source_revision": revision,
         "rung": raw,
+        "placement": asdict(placement) if placement is not None else None,
         "hardware_validated": hardware_validated(hardware_reports, len(workers)),
         "hardware": hardware_reports,
         "workers": workers,
