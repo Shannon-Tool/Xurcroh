@@ -255,3 +255,69 @@ def test_four_role_datagram_grid_returns_exact_product(
                 worker.close()
 
     asyncio.run(exercise())
+
+
+def test_concurrent_relay_startup_has_unique_ready_endpoints(
+    tmp_path: Path, mtls_identities: MutualTLSIdentities
+) -> None:
+    from xurcroh.fortress.datagram_deploy import close_datagram_tunnels, start_datagram_tunnels
+
+    with ssh_testbed(tmp_path) as base:
+        assert base.ssh is not None
+        targets = []
+        workers = []
+        ports = []
+        threads = []
+        for index in range(12):
+            target = xurcroh_quic.TensorServer.bind_mutual(
+                "127.0.0.1:0",
+                [mtls_identities["server_certificate"], mtls_identities["ca"]],
+                mtls_identities["server_key"],
+                mtls_identities["ca"],
+            )
+            targets.append(target)
+
+            def echo(server=target) -> None:
+                try:
+                    connection = server.accept()
+                    values = connection.receive()
+                    connection.send(*values[:3], values[3], values[4] or "", values[5], values[6])
+                    connection.close()
+                except ValueError as error:
+                    if "server endpoint closed" not in str(error):
+                        raise
+
+            thread = threading.Thread(target=echo, daemon=True)
+            thread.start()
+            threads.append(thread)
+            ports.append(int(target.local_addr().rsplit(":", 1)[1]))
+            workers.append(
+                {
+                    "name": f"relay-{index}",
+                    "host": base.host,
+                    "ssh_user": base.ssh.username,
+                    "ssh_port": base.ssh.port,
+                    "ssh_key": base.ssh.key_path,
+                    "known_hosts": base.ssh.known_hosts_path,
+                    "python_path": sys.executable,
+                }
+            )
+        (tmp_path / "remote").mkdir()
+        sdk = {"cluster": [{} for _ in workers]}
+        try:
+            start_datagram_tunnels(
+                workers,
+                str(tmp_path / "remote"),
+                sdk,
+                tmp_path / "tunnels",
+                target_ports=ports,
+                tunnel_name="concurrent",
+            )
+            endpoints = [worker["endpoint"] for worker in sdk["cluster"]]
+            assert len(set(endpoints)) == len(endpoints)
+        finally:
+            close_datagram_tunnels(workers)
+            for target in targets:
+                target.close()
+            for thread in threads:
+                thread.join(timeout=5)
