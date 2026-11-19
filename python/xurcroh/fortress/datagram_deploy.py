@@ -129,6 +129,7 @@ def start_datagram_tunnels(
             f">{root}/{shlex.quote(instance_name)}.log 2>&1",
         )
         remote_port = wait_remote_port(worker, address)
+        logging.getLogger(__name__).info("Remote datagram relay %s is listening", instance_name)
         forward_port = free_tcp_port()
         log_path = output / f"{worker['name']}-ssh.log"
         with log_path.open("wb") as log:
@@ -147,6 +148,7 @@ def start_datagram_tunnels(
                 start_new_session=True,
             )
         wait_tcp_forward(forward_port, forward)
+        logging.getLogger(__name__).info("SSH datagram forward %s is ready", instance_name)
         local_address = output / f"{worker['name']}.address"
         with (output / f"{worker['name']}.log").open("wb") as log:
             local = subprocess.Popen(  # noqa: S603
