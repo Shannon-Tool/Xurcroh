@@ -66,6 +66,7 @@ class ProviderRegistry:
     def with_defaults(cls) -> ProviderRegistry:
         registry = cls()
         from xurcroh.providers.alibaba import AlibabaConfidentialClient
+        from xurcroh.providers.aws import AwsNitroClient
         from xurcroh.providers.azure import AzureConfidentialClient
         from xurcroh.providers.gcp import GoogleConfidentialClient
         from xurcroh.providers.oci import OciConfidentialClient
@@ -74,6 +75,7 @@ class ProviderRegistry:
         registry.register("gcp", _cloud_adapter(GoogleConfidentialClient))
         registry.register("alibaba", _cloud_adapter(AlibabaConfidentialClient))
         registry.register("oci", _cloud_adapter(OciConfidentialClient))
+        registry.register("aws", _cloud_adapter(AwsNitroClient))
         return registry.with_entry_points(registry)
 
     @classmethod
