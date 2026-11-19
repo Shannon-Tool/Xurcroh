@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import json
 import logging
 import time
@@ -196,6 +197,24 @@ def _provenance(
     }
 
 
+def _client_rss_bytes() -> int:
+    try:
+        for line in Path("/proc/self/status").read_text().splitlines():
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1]) * 1024
+    except (OSError, ValueError):
+        pass
+    import resource
+
+    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
+
+
+def _release_client_memory() -> None:
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def _verify_text_lifecycle(client: Any, model: str) -> dict[str, Any]:
     from concurrent.futures import ThreadPoolExecutor
 
@@ -278,6 +297,8 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
         name: FortressRoleClient(operation, _roles(cluster, name), identity, operation_name=name)
         for name, operation in compiled.operations.items()
     }
+    phase_times = {"compile_and_connect": time.perf_counter() - started}
+    phase_rss = {"compile_and_connect": _client_rss_bytes()}
     prompt = "user: Reply with a short technical sentence."
     try:
         from transformers import AutoModelForCausalLM, AutoModelForMultimodalLM, AutoTokenizer
@@ -319,35 +340,39 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
             actual = remote.run(hidden)
             quantized_error = float((actual - expected).abs().max())
             quantized_logits = reference.logits(expected[-1:])[0]
-        original_loader = (
-            AutoModelForMultimodalLM
-            if compiled.model is not None
-            and getattr(compiled.model.config, "model_type", None) in {"gemma4", "qwen3_5"}
-            else AutoModelForCausalLM
-        )
-        original = original_loader.from_pretrained(
-            definition["path"],
-            revision=rung.revision,
-            local_files_only=True,
-            trust_remote_code=False,
-            dtype=torch.float32,
-        )
-        original.eval()
-        with torch.inference_mode():
-            original_logits = original(input_ids=input_ids).logits[0, -1].to(torch.float64)
-        original_error = float((quantized_logits - original_logits).abs().max())
-        del original
+        official_multimodal = compiled.model is not None and getattr(
+            compiled.model.config, "model_type", None
+        ) in {"gemma4", "qwen3_5"}
         from xurcroh.fortress.attacks import exercise_adversarial_grid
 
         adversarial = exercise_adversarial_grid(
             clients, _roles(cluster, next(iter(clients))), compiled.operations
         )
+        phase_times["grid_verification"] = time.perf_counter() - started
+        phase_rss["grid_verification"] = _client_rss_bytes()
     finally:
         for role_client in clients.values():
             role_client.close()
     direct_sent = sum(client.bytes_sent for client in clients.values())
     direct_received = sum(client.bytes_received for client in clients.values())
     del compiled, reference
+    _release_client_memory()
+    original_loader = AutoModelForMultimodalLM if official_multimodal else AutoModelForCausalLM
+    original = original_loader.from_pretrained(
+        definition["path"],
+        revision=rung.revision,
+        local_files_only=True,
+        trust_remote_code=False,
+        dtype=torch.float32,
+    )
+    original.eval()
+    with torch.inference_mode():
+        original_logits = original(input_ids=input_ids).logits[0, -1].to(torch.float64)
+    original_error = float((quantized_logits - original_logits).abs().max())
+    del original
+    _release_client_memory()
+    phase_times["original_model"] = time.perf_counter() - started
+    phase_rss["original_model"] = _client_rss_bytes()
     from Xurcroh import Xurcroh
 
     with Xurcroh(**sdk) as client:
@@ -359,9 +384,13 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
         )
         lifecycle = _verify_text_lifecycle(client, rung.model)
         metrics = client.metrics()
+    phase_times["public_sdk"] = time.perf_counter() - started
+    phase_rss["public_sdk"] = _client_rss_bytes()
     return _provenance(
         {
             "hardware_validated": deployment.get("hardware_validated", False),
+            "phase_seconds": phase_times,
+            "client_phase_rss_bytes": phase_rss,
             "production_accepted": False,
             "quantized_reference_max_abs_error": quantized_error,
             "original_model_max_abs_error": original_error,
@@ -529,12 +558,14 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
             request = request_for(workflow)
             local = boundary(None, selected_definition)
             remote = boundary(clients, selected_definition)
-            original = DiffusionMediaBoundary.from_definition(selected_definition)
             phase(f"{workflow.name}:load_boundaries")
             expected = generate(local.pipeline, request)
             phase(f"{workflow.name}:quantized_reference")
             actual = generate(remote.pipeline, request)
             phase(f"{workflow.name}:remote_grid")
+            del local, remote
+            _release_client_memory()
+            original = DiffusionMediaBoundary.from_definition(selected_definition)
             original_values = generate(original.pipeline, request)
             phase(f"{workflow.name}:original_model")
             workflow_quantized = float((actual - expected).abs().max())
@@ -546,7 +577,8 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
                 "quantized_reference_max_abs_error": workflow_quantized,
                 "original_model_max_abs_error": workflow_original,
             }
-            del local, remote, original
+            del original
+            _release_client_memory()
         from xurcroh.fortress.attacks import exercise_adversarial_grid
 
         adversarial = exercise_adversarial_grid(
