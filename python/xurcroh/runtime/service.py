@@ -5,6 +5,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from xurcroh.config import ClusterConfig, ModelRegistry, WorkerConfig
@@ -149,11 +150,13 @@ class RuntimeService:
         | FortressDiffusionEngine
     ):
         definition = self.models.get(name)
-        if definition.source_format == "auto":
+        workers = self._workers_for_model(name)
+        if definition.source_format == "auto" and (
+            definition.engine == "fortress" or Path(definition.path).expanduser().exists()
+        ):
             from xurcroh.preflight import detect_modality
 
             detect_modality(definition)
-        workers = self._workers_for_model(name)
         if definition.engine == "fortress":
             self._require_preflight(name)
         with self._lock:

@@ -7,7 +7,8 @@ import sys
 from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from tests.fortress.test_ladder import evidence_mapping, manifest_mapping
+from tests.fortress.test_ladder import manifest_mapping
+from tests.fortress.test_ladder_v2 import valid_v2_report
 
 from xurcroh.fortress.ladder import verify_rung_evidence
 
@@ -38,7 +39,7 @@ def test_ladder_runner_writes_verified_signed_evidence(tmp_path: Path) -> None:
     private = Ed25519PrivateKey.generate()
     signing_key = tmp_path / "signing.key"
     signing_key.write_bytes(private.private_bytes_raw())
-    report = evidence_mapping()
+    report = valid_v2_report()
     del report["worker_exit_codes"]
     del report["cost_usd"]
     del report["destruction"]
