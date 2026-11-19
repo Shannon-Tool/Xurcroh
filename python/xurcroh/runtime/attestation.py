@@ -139,6 +139,14 @@ class RemoteAttestationClient:
             document = evidence_response.json()
         except (httpx.HTTPError, ValueError, KeyError) as error:
             raise AttestationError("worker did not provide attestation evidence") from error
+        components = document.get("components")
+        if components is not None:
+            required = document.get("required_vendors")
+            self.verify_components(
+                components,
+                required_vendors=set(required) if required is not None else None,
+            )
+            return
         vendor = str(document.get("vendor", ""))
         evidence_nonce = bytes.fromhex(document.get("nonce", nonce.hex()))
         evidence = AttestationEvidence(
@@ -153,6 +161,37 @@ class RemoteAttestationClient:
             NVIDIARemoteVerifier(client=self._client).verify(evidence, document)
         signed_report_data = self._hardware_verifier(vendor, document, nonce)
         AttestationVerifier(expected_nonce=nonce).verify_binding(evidence, signed_report_data)
+
+    def verify_components(
+        self,
+        documents: list[dict[str, Any]],
+        *,
+        required_vendors: set[str] | None = None,
+    ) -> None:
+        if not documents:
+            raise AttestationError("composite attestation requires CPU and device evidence")
+        vendors = [str(document.get("vendor", "")) for document in documents]
+        if len(set(vendors)) != len(vendors):
+            raise AttestationError("duplicate attestation vendor evidence")
+        if required_vendors is not None and set(vendors) != required_vendors:
+            raise AttestationError("required attestation vendor is missing")
+        for document in documents:
+            vendor = str(document["vendor"])
+            evidence_nonce = bytes.fromhex(document["nonce"])
+            evidence = AttestationEvidence(
+                vendor=vendor,
+                nonce=evidence_nonce,
+                report_data=str(document["report_data"]),
+                workload_hash=bytes.fromhex(document["workload_hash"]),
+                artifact_hash=bytes.fromhex(document["artifact_hash"]),
+                public_key_hash=bytes.fromhex(document["public_key_hash"]),
+            )
+            if vendor == "nvidia":
+                NVIDIARemoteVerifier(client=self._client).verify(evidence, document)
+            signed_report_data = self._hardware_verifier(vendor, document, evidence_nonce)
+            AttestationVerifier(expected_nonce=evidence_nonce).verify_binding(
+                evidence, signed_report_data
+            )
 
     def close(self) -> None:
         return None
