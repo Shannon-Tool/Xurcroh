@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Current verification revision: `ece124184f063a82bd0e2dc5e93b03a0770701b5`
+- Current verification revision: `19d359e521214dc3c1ad315cc5ad7cc2545c9b48`
 - Local implementation: **standard suite and current static checks passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -42,13 +42,13 @@ The two-model managed test has not completed on this host. At `90a99a6`, its 24 
 | Strict mypy, 157 source files | Passed at `ece1241` |
 | Rust tests | **31 passed** at `720193e` |
 | Rust formatting, Clippy, RustSec | Passed at `720193e`; no known advisories |
-| Frontend interaction tests | **35 passed** at `720193e` |
-| Frontend typecheck, lint, production build, content validation | Passed at `720193e`; 22 sections, equations, links, and Mermaid syntax validated |
+| Frontend interaction tests | **35 passed** at `19d359e` |
+| Frontend typecheck, lint, production build, content validation | Passed at `19d359e`; 22 sections, equations, links, and Mermaid syntax validated |
 | Offline ladder/handoff validation | All 21 command forms validated without provider contact at `720193e` |
 | ProVerif model and protocol fuzzing | ProVerif 2.05 locally confirms activation secrecy, response secrecy, and client/server establishment correspondence after modeling authenticated establishment; the earlier unauthenticated model's false response-secrecy query is corrected and strict result checking is now enforced. At `ece1241`, all three fuzz targets completed without crashes: 2,236,428 frame, 410,065 AEAD, and 33,090 HPKE executions; newer hosted runs are blocked before startup |
-| Clean reproducible wheel builds | Matched at `eb9dc848bc189ddf168d5371ed90bffcedd1e7c9`: Python `fb5736c38e74cc8e0d5d359bb4b70f2b545e1492811340c5f2b46a6cf5c9a1ec`, native `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2`; current hosted rebuild remains billing-blocked |
+| Clean reproducible wheel builds | Matched at `19d359e521214dc3c1ad315cc5ad7cc2545c9b48`: Python `fb5736c38e74cc8e0d5d359bb4b70f2b545e1492811340c5f2b46a6cf5c9a1ec`, native `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2`; current hosted rebuild remains billing-blocked |
 | `pip-audit` | No known vulnerabilities in audited dependencies at `720193e`; local CPU torch/torchvision and Xurcroh packages remain skipped as detailed below |
-| `npm audit` | 0 vulnerabilities at `720193e` |
+| `npm audit` | 0 vulnerabilities at `19d359e` |
 | Quantized checkpoint reader fuzzing | 100 mutations at `eea4001`: 51 accepted, 49 rejected, no unexpected failure |
 | Secret scanning | Gitleaks 8.30.1 scanned 399 commits across `--all` at `eea4001`; no leaks found; release archive checksum verified |
 
