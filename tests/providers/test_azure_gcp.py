@@ -88,7 +88,17 @@ def test_google_confidential_lifecycle() -> None:
         seen.append(request)
         path = request.url.path
         if path.endswith("/zones"):
-            return httpx.Response(200, json={"items": [{"name": "zone-a", "status": "UP"}]})
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {"name": "zone-a", "status": "UP"},
+                        {"name": "zone-b", "status": "UP"},
+                    ]
+                },
+            )
+        if path.endswith("/zones/zone-b/machineTypes/a3-highgpu-1g"):
+            return httpx.Response(404, json={})
         if path.endswith("/machineTypes/a3-highgpu-1g"):
             return httpx.Response(200, json={"name": "a3-highgpu-1g"})
         if path.endswith("/queries"):
@@ -110,7 +120,9 @@ def test_google_confidential_lifecycle() -> None:
             transport=httpx.MockTransport(handler),
         ),
     )
-    offer = client.offers()[0]
+    offers = client.offers()
+    assert len(offers) == 1
+    offer = offers[0]
     assert offer["tee_type"] == "tdx"
     instance = client.create(
         offer,
@@ -170,3 +182,6 @@ def test_google_billing_uses_bound_parameters() -> None:
         }
     ]
     assert payload["useLegacySql"] is False
+    assert "UNNEST(labels)" in payload["query"]
+    assert "label.key = 'xurcroh_instance'" in payload["query"]
+    assert "label.value = @instance_label" in payload["query"]

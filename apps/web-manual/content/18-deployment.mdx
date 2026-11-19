@@ -16,6 +16,21 @@ For Fortress models, SSH-configured hosts are provisioned automatically unless `
 
 The repository includes a locked multi-stage `Dockerfile`, loopback-only `deploy/compose.yaml`, and TLS-oriented `deploy/kubernetes.yaml`. Compose intentionally uses development HTTP on one network; it is not a zero-trust deployment. Kubernetes requires operator-supplied CA certificates, checkpoint storage, ingress policy, attestation, and strict shard configuration. Full commands and resource checks are in `docs/deployment.md`; no container or physical cluster deployment is claimed as locally verified on this host.
 
-Remote TEE stages expose `/v1/attestation/challenge` and `/v1/attestation/evidence`. Clients bind each fresh nonce to workload, artifact, and public-key hashes, then verify AMD/Intel evidence locally. Tests exercise real stage inference and tamper rejection with explicit hardware-verifier doubles; physical TEE success is unverified. NVIDIA remote-report transport remains unsupported and fails explicitly.
+Remote TEE stages expose `/v1/attestation/challenge` and `/v1/attestation/evidence`. Clients bind each fresh nonce to workload, artifact, and public-key hashes, then verify AMD/Intel evidence locally. NVIDIA supports local verification and nonce-bound remote NRAS tokens; composite confidential-GPU acceptance requires both CPU and GPU evidence. Tests exercise real stage inference and tamper rejection with explicit verifier doubles; physical TEE success is unverified.
 
-Use `scripts/gpu/validate.sh` for native and CPU checks. EROFS/dm-verity and AMD/Intel/NVIDIA attestation are optional defense-in-depth, not blanket deployment requirements. `docs/gpu-agent-handoff.md` provides the funded-agent execution procedure, and `scripts/fortress/validate_handoff.py` validates all 21 offline ladder commands without contacting a provider. Multi-model manifests require `--model`; unresolved revisions and final zero artifact fingerprints are stop conditions. The [hardware plan](/22-experimental-reports) lists Stage Two acceptance tests.
+## Confidential cloud matrix
+
+<Evidence type="local">Official API adapters and mocked lifecycle/security tests; no physical provider claim</Evidence>
+
+| Provider | Platform | Boundary | Verification requirement |
+|---|---|---|---|
+| Azure | NCC40ads H100 v5, SEV-SNP + H100 NVL | Confidential GPU | Composite CPU/GPU evidence and explicit ingress CIDRs |
+| Google Cloud | A3 HighGPU, TDX + H100 | Confidential GPU | Composite evidence, scoped firewall, parameterized billing-export query |
+| Alibaba Cloud | gn8v-tee, TDX + H100 | Confidential GPU | Signed OIDC policy/runtime appraisal with approved Linux image |
+| OCI | E5/E6 Flex, SEV-SNP | CPU only | Pinned Veraison key, fresh affirming appraisal, expected measurements |
+| AWS | Nitro Enclaves | CPU only, no external enclave network | COSE/ES384, pinned root, PCRs, nonce, KMS policy, AF_VSOCK relay |
+| IBM VPC | Current TDX-capable profiles | CPU only | Full Intel DCAP collateral and workload/key binding |
+
+CPU-only paths never count as confidential-GPU evidence. GCP G4 is excluded until its separate AMD evidence flow is implemented. All six adapters implement lifecycle, remaining-instance, and charge-reporting contracts through `ProviderRegistry.with_defaults()`, but no provider has been physically launched or attested by these local tests. Exact credentials, CIDRs, policies, and funded-agent checks are documented in `docs/deployment.md` and `docs/gpu-agent-handoff.md`.
+
+Use `scripts/gpu/validate.sh` for native and CPU checks. EROFS/dm-verity and AMD/Intel/NVIDIA attestation are optional defense-in-depth, not blanket deployment requirements. `docs/gpu-agent-handoff.md` provides the funded-agent execution procedure, and `scripts/fortress/validate_handoff.py` validates all 22 offline command forms without contacting a provider. Multi-model manifests require `--model`; unresolved revisions and final zero artifact fingerprints are stop conditions. The [hardware plan](/22-experimental-reports) lists Stage Two acceptance tests.

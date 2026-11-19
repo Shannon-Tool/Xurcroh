@@ -147,3 +147,59 @@ def test_external_provider_teardown_is_verified(tmp_path: Path) -> None:
         "all_destroyed": True,
         "remaining_instance_ids": [],
     }
+
+
+def test_builtin_cloud_teardown_uses_default_registry(tmp_path: Path, monkeypatch) -> None:
+    from xurcroh.providers.registry import ProviderAdapter, ProviderRegistry
+
+    events = []
+    registry = ProviderRegistry()
+    registry.register(
+        "azure",
+        ProviderAdapter(
+            offers=lambda gpu_name: [],
+            create=lambda offer, **values: "vm-1",
+            destroy=lambda instance_id: events.append(("destroy", instance_id)),
+            charges=lambda offer, instance_id: events.append(("charges", instance_id)) or 1.25,
+            remaining=lambda offer, instance_id: False,
+        ),
+    )
+    monkeypatch.setattr(ProviderRegistry, "with_defaults", classmethod(lambda cls: registry))
+    result = destroy_ladder_instances(
+        StateStore(tmp_path / "state.json"),
+        uncapped=True,
+        provisioned={"workers": [{"provider_instance_id": "vm-1", "provider_id": "azure"}]},
+    )
+    assert events == [("charges", "vm-1"), ("destroy", "vm-1")]
+    assert result["cost_usd"] == 1.25
+    assert result["destruction"]["all_destroyed"] is True
+
+
+def test_cloud_teardown_continues_when_charge_query_fails(tmp_path: Path) -> None:
+    import pytest
+
+    from xurcroh.errors import ProviderError
+    from xurcroh.providers.registry import ProviderAdapter, ProviderRegistry
+
+    destroyed = []
+    registry = ProviderRegistry()
+    registry.register(
+        "ibm",
+        ProviderAdapter(
+            offers=lambda gpu_name: [],
+            create=lambda offer, **values: "vm-1",
+            destroy=destroyed.append,
+            charges=lambda offer, instance_id: (_ for _ in ()).throw(
+                ProviderError("billing unavailable")
+            ),
+            remaining=lambda offer, instance_id: False,
+        ),
+    )
+    with pytest.raises(ProviderError, match="teardown failed"):
+        destroy_ladder_instances(
+            StateStore(tmp_path / "state.json"),
+            uncapped=True,
+            provisioned={"workers": [{"provider_instance_id": "vm-1", "provider_id": "ibm"}]},
+            registry=registry,
+        )
+    assert destroyed == ["vm-1"]
