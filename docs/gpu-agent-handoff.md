@@ -77,7 +77,9 @@ Run `client.preflight()` before starting roles. Record:
 - expected activation/result bandwidth and relay mode;
 - provider, country, CPU vendor, GPU model, VRAM, and independent machine IDs.
 
-Reject overcommit before archive transfer. Do not treat four roles on one machine as independent-host evidence. A relay forwards opaque datagrams; it is not an additional confidentiality layer.
+Reject overcommit before role launch. Do not treat four roles on one machine as independent-host evidence. A relay forwards opaque datagrams; it is not an additional confidentiality layer.
+
+Vast workers use the tracked provider state. Other providers register a `ProviderAdapter` through the `xurcroh.providers` Python entry-point group; teardown requires its `destroy`, `charges`, and `remaining` implementations so cost and remaining-instance evidence cannot be skipped. A fully described external worker can omit a Vast state record but must supply `provider_instance_id`, `machine_id`, `provider_id`, `geolocation`, `cpu_vendor`, SSH connection fields, `public_host`, and `tls_port`. Unknown providers or incomplete verification fail closed. `startup_concurrency` defaults to 2 across uploads, discovery, role startup, and relay setup. V2 reports include live per-role CPU, RSS, and process-attributed GPU memory collected before shutdown.
 
 ## 5. Execution order
 

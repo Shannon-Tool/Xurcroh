@@ -34,19 +34,28 @@ def test_provisioned_hosts_generate_valid_role_manifest(tmp_path: Path) -> None:
                 "machine_id": index + 1,
             }
         )
-        store.add_instance(
-            {
-                "id": index + 1,
-                "machine_id": index + 1,
-                "created_at": 1,
-                "compute_hourly_usd": 1,
-                "storage_hourly_usd": 0,
-                "bandwidth_usd": 0,
-                "provider_id": f"provider-{index}",
-                "geolocation": f"country-{index}",
-                "cpu_vendor": "amd" if index % 2 else "intel",
-            }
-        )
+        if index == 3:
+            workers[-1].update(
+                {
+                    "provider_id": "external",
+                    "geolocation": "country-external",
+                    "cpu_vendor": "amd",
+                }
+            )
+        if index < 3:
+            store.add_instance(
+                {
+                    "id": index + 1,
+                    "machine_id": index + 1,
+                    "created_at": 1,
+                    "compute_hourly_usd": 1,
+                    "storage_hourly_usd": 0,
+                    "bandwidth_usd": 0,
+                    "provider_id": f"provider-{index}",
+                    "geolocation": f"country-{index}",
+                    "cpu_vendor": "amd" if index % 2 else "intel",
+                }
+            )
     path = materialize_ladder_manifest(
         template,
         {"workers": workers},
@@ -107,3 +116,32 @@ def test_ladder_teardown_reports_actual_cost_and_destruction(tmp_path: Path) -> 
         module.VastClient = original
     assert result["cost_usd"] == 3.0
     assert result["destruction"]["all_destroyed"] is True
+
+
+def test_external_provider_teardown_is_verified(tmp_path: Path) -> None:
+    from xurcroh.providers.registry import ProviderAdapter, ProviderRegistry
+
+    destroyed = []
+    registry = ProviderRegistry()
+    registry.register(
+        "external",
+        ProviderAdapter(
+            offers=lambda gpu_name: [],
+            create=lambda offer, **values: 900,
+            destroy=destroyed.append,
+            charges=lambda offer, instance_id: 2.5,
+            remaining=lambda offer, instance_id: False,
+        ),
+    )
+    result = destroy_ladder_instances(
+        StateStore(tmp_path / "state.json"),
+        uncapped=True,
+        provisioned={"workers": [{"provider_instance_id": 900, "provider_id": "external"}]},
+        registry=registry,
+    )
+    assert destroyed == [900]
+    assert result["cost_usd"] == 2.5
+    assert result["destruction"] == {
+        "all_destroyed": True,
+        "remaining_instance_ids": [],
+    }

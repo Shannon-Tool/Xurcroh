@@ -12,7 +12,7 @@ if str(Path(__file__).resolve().parents[2]) not in sys.path:
 
 import yaml
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from scripts.fortress.deploy_ladder import deploy, stop_workers
+from scripts.fortress.deploy_ladder import collect_role_resources, deploy, stop_workers
 
 from xurcroh.fortress.ladder import LadderRung, run_ladder_rung, write_rung_evidence
 from xurcroh.fortress.ladder_provider import (
@@ -46,6 +46,7 @@ def run(args: argparse.Namespace) -> Path:
     manifest = args.output / "manifest-template.yaml"
     manifest.write_text(yaml.safe_dump(template, sort_keys=True))
     store = StateStore(args.state)
+    provisioned = None
     if args.provisioned_config is not None:
         provisioned = json.loads(args.provisioned_config.read_text())
         manifest = materialize_ladder_manifest(
@@ -65,6 +66,9 @@ def run(args: argparse.Namespace) -> Path:
             rung = LadderRung.from_mapping(deployment["rung"])
         try:
             report = verify_ladder(deployment)
+            report["role_resources"] = collect_role_resources(
+                deployment["workers"], deployment["source_revision"]
+            )
         finally:
             exit_codes = stop_workers(deployment["workers"], deployment["source_revision"])
         report["worker_exit_codes"] = exit_codes
@@ -78,7 +82,7 @@ def run(args: argparse.Namespace) -> Path:
                 "destruction": {"all_destroyed": True, "remaining_instance_ids": []},
                 "cost_usd": 0.0,
             }
-        return destroy_ladder_instances(store, uncapped=args.uncapped)
+        return destroy_ladder_instances(store, uncapped=args.uncapped, provisioned=provisioned)
 
     report = run_ladder_rung(rung, execute=execute, teardown=teardown)
     signing_key = Ed25519PrivateKey.from_private_bytes(args.signing_key.read_bytes())

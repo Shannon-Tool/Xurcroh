@@ -24,7 +24,8 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from scripts.gpu.deploy_two_node import download, options, scp, ssh
 
-from xurcroh.config import ModelDefinition
+from xurcroh.config import GPUConfig, ModelDefinition, WorkerConfig
+from xurcroh.errors import ConfigurationError
 from xurcroh.fortress.datagram_deploy import close_datagram_tunnels, start_datagram_tunnels
 from xurcroh.fortress.ladder import LadderRung
 from xurcroh.fortress.ladder_deployment import (
@@ -38,6 +39,7 @@ from xurcroh.fortress.model_compiler import (
     compile_fortress_checkpoint,
     discover_fortress_operations,
 )
+from xurcroh.preflight import preflight_checkpoint
 
 ROOT = Path(__file__).resolve().parents[2]
 GIT = shutil.which("git")
@@ -70,6 +72,40 @@ def endpoint_host(endpoint: str) -> str:
     if parsed.hostname is None or parsed.port is None:
         raise ValueError(f"invalid Fortress endpoint: {endpoint}")
     return parsed.hostname
+
+
+def validate_role_capacity(
+    rung: LadderRung, checkpoint: Path, reports: list[dict[str, Any]]
+) -> None:
+    if len(reports) != len(rung.workers):
+        raise ConfigurationError("role capacity preflight requires one hardware report per worker")
+    workers = []
+    for worker, report in zip(rung.workers, reports, strict=True):
+        memories = [int(gpu["memory_bytes"]) for gpu in report.get("gpus", [])]
+        if not memories:
+            raise ConfigurationError(f"worker {worker.name} has no reported GPU capacity")
+        workers.append(
+            WorkerConfig(
+                name=worker.name,
+                endpoint=f"quic://{worker.endpoint}",
+                gpu=GPUConfig(memory_gb=min(memories) / 1024**3),
+            )
+        )
+    definition = ModelDefinition(
+        path=str(checkpoint),
+        engine="fortress",
+        modality=rung.modality,
+        fortress_shares=rung.share_count,
+    )
+    preflight = preflight_checkpoint(
+        rung.model,
+        definition,
+        workers,
+        require_known_memory=True,
+        validate_roles=False,
+    )
+    if not preflight.supported:
+        raise ConfigurationError("role capacity preflight failed: " + "; ".join(preflight.issues))
 
 
 def hardware_validated(reports: list[dict[str, Any]], worker_count: int) -> bool:
@@ -302,11 +338,55 @@ def stop_workers(workers: list[Any], revision: str, *, timeout: float = 60) -> l
     return exit_codes
 
 
+def collect_role_resources(workers: list[Any], revision: str) -> dict[str, Any]:
+    resources = {}
+    root = shlex.quote(f"/tmp/xurcroh-fortress-{revision[:12]}")  # noqa: S108
+    for worker in workers:
+        command = (
+            f"pid=$(cat {root}/role.pid 2>/dev/null || true); "
+            'if test -n "$pid" && kill -0 "$pid" 2>/dev/null; then '
+            'ps -p "$pid" -o %cpu=,rss=; '
+            "if command -v nvidia-smi >/dev/null 2>&1; then "
+            "nvidia-smi --query-compute-apps=pid,used_memory "
+            "--format=csv,noheader,nounits | "
+            "awk -F', *' -v pid=\"$pid\" '$1 == pid {print $2}'; fi; fi"
+        )
+        result = subprocess.run(  # noqa: S603
+            [
+                SSH,
+                *options(worker),
+                f"{worker['ssh_user']}@{worker['host']}",
+                command,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        lines = result.stdout.strip().splitlines()
+        if not lines:
+            raise RuntimeError(f"role {worker['name']} exited before resource collection")
+        cpu, rss = lines[0].split()
+        resources[worker["name"]] = {
+            "running": True,
+            "cpu_percent": float(cpu),
+            "rss_bytes": int(rss) * 1024,
+            "gpu_memory_bytes": sum(int(value.strip()) for value in lines[1:]) * 1024 * 1024,
+        }
+    return resources
+
+
 def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -> Path:
     raw = yaml.safe_load(manifest_path.read_text())
     if not isinstance(raw, dict):
         raise ValueError("ladder manifest must be an object")
     rung = LadderRung.from_mapping(raw, allow_unverified_hardware=True)
+    startup_concurrency = raw.get("startup_concurrency", 2)
+    if (
+        isinstance(startup_concurrency, bool)
+        or not isinstance(startup_concurrency, int)
+        or not 1 <= startup_concurrency <= 32
+    ):
+        raise ConfigurationError("startup_concurrency must be an integer from 1 to 32")
     revision = source_revision()
     checkpoint = Path(raw.get("checkpoint_path", ""))
     if not checkpoint.is_dir():
@@ -384,7 +464,7 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
     workers = [ssh_worker(raw, worker, index) for index, worker in enumerate(rung.workers)]
     remote_root = f"/tmp/xurcroh-fortress-{revision[:12]}"  # noqa: S108
     try:
-        with ThreadPoolExecutor(max_workers=len(workers)) as executor:
+        with ThreadPoolExecutor(max_workers=min(startup_concurrency, len(workers))) as executor:
             list(
                 executor.map(
                     lambda item: prepare_worker(
@@ -402,7 +482,7 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
             )
         hardware_directory = output / "hardware"
         hardware_directory.mkdir(exist_ok=True)
-        with ThreadPoolExecutor(max_workers=len(workers)) as executor:
+        with ThreadPoolExecutor(max_workers=min(startup_concurrency, len(workers))) as executor:
             list(
                 executor.map(
                     lambda worker: download(
@@ -421,7 +501,8 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
         for raw_worker, report in zip(raw["workers"], hardware_reports, strict=True):
             raw_worker["cpu_vendor"] = report["cpu_vendor"]
         rung = LadderRung.from_mapping(raw)
-        with ThreadPoolExecutor(max_workers=len(workers)) as executor:
+        validate_role_capacity(rung, checkpoint, hardware_reports)
+        with ThreadPoolExecutor(max_workers=min(startup_concurrency, len(workers))) as executor:
             list(
                 executor.map(
                     lambda worker: start_worker(worker, remote_root, worker["name"]),
@@ -440,7 +521,13 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
         ca_path=output / "tls" / "ca.crt",
     )
     if raw.get("datagram_tunnel") is True:
-        start_datagram_tunnels(workers, remote_root, sdk, output / "tunnels")
+        start_datagram_tunnels(
+            workers,
+            remote_root,
+            sdk,
+            output / "tunnels",
+            max_concurrency=startup_concurrency,
+        )
     deployment = {
         "schema_version": 2,
         "source_revision": revision,

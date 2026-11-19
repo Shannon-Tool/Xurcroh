@@ -8,7 +8,9 @@ from typing import Any
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
+from xurcroh.errors import ProviderError
 from xurcroh.fortress.ladder import LadderRung
+from xurcroh.providers.registry import ProviderRegistry
 from xurcroh.providers.vast import BudgetGuard, BudgetPolicy, StateStore, VastClient
 
 
@@ -28,7 +30,10 @@ def materialize_ladder_manifest(
     placements = []
     share_count = int(template["share_count"])
     for index, instance in enumerate(workers):
-        record = records[int(instance["provider_instance_id"])]
+        record = {
+            **records.get(int(instance["provider_instance_id"]), {}),
+            **instance,
+        }
         private = X25519PrivateKey.generate()
         public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
         name = f"role-{index // share_count}-{index % share_count}"
@@ -73,10 +78,48 @@ def materialize_ladder_manifest(
     return destination
 
 
-def destroy_ladder_instances(store: StateStore, *, uncapped: bool) -> dict[str, Any]:
+def destroy_ladder_instances(
+    store: StateStore,
+    *,
+    uncapped: bool,
+    provisioned: dict[str, Any] | None = None,
+    registry: ProviderRegistry | None = None,
+) -> dict[str, Any]:
     policy = BudgetPolicy.uncapped() if uncapped else BudgetPolicy()
     guard = BudgetGuard(store, policy)
-    with VastClient() as client:
-        client.refresh_charges(store)
-        destruction = client.destroy_tracked(store, guard)
-    return {"destruction": destruction, "cost_usd": guard.total()}
+    workers = [] if provisioned is None else provisioned["workers"]
+    if (
+        provisioned is None
+        or any(str(worker.get("provider_id", "vast")) == "vast" for worker in workers)
+        or store.snapshot()["instances"]
+    ):
+        with VastClient() as client:
+            client.refresh_charges(store)
+            destruction = client.destroy_tracked(store, guard)
+    else:
+        destruction = {"all_destroyed": True, "remaining_instance_ids": []}
+    remaining = list(destruction.get("remaining_instance_ids", []))
+    errors = []
+    cost = guard.total()
+    external = [worker for worker in workers if str(worker.get("provider_id", "vast")) != "vast"]
+    if external:
+        registry = registry or ProviderRegistry.with_entry_points()
+        assert registry is not None
+    for worker in external:
+        if registry is None:
+            raise ProviderError("external provider teardown requires a provider registry")
+        instance_id = int(worker["provider_instance_id"])
+        provider_id = str(worker["provider_id"])
+        try:
+            registry.destroy(worker, instance_id)
+            if registry.remaining(worker, instance_id):
+                remaining.append(instance_id)
+            cost += float(registry.charges(worker, instance_id))
+        except Exception as error:
+            remaining.append(instance_id)
+            errors.append(f"{provider_id}:{instance_id}: {type(error).__name__}")
+    if errors:
+        raise ProviderError("provider teardown failed: " + ", ".join(errors))
+    destruction["all_destroyed"] = not remaining
+    destruction["remaining_instance_ids"] = remaining
+    return {"destruction": destruction, "cost_usd": cost}

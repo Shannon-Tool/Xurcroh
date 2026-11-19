@@ -2,7 +2,7 @@
 
 These are provisioning templates, not evidence and not claims that official checkpoints have run. `resolution_required: true` means the operator must verify the official repository, immutable revision, license, and complete artifact fingerprint before provisioning. `REQUIRED_MODEL_SELECTION` and `REQUIRED_REVIEW` are intentional stop markers.
 
-Workers are omitted so the provisioner can discover real independent hosts. The offline validator injects only a schema-valid example grid. It never contacts a provider. Run:
+Workers are omitted so the provisioner can discover real independent hosts. The offline validator injects only a schema-valid example grid. It never contacts a provider. Hardware deployments require enough workers for the placement policy, not merely one N×N grid. Non-Vast providers use `xurcroh.providers` entry-point adapters with destroy, charge, and remaining-instance verification; external worker metadata is accepted without a Vast record only when complete. Set `startup_concurrency` explicitly only after measuring gateway capacity; the default is 2. Run:
 
 ```bash
 .venv/bin/python scripts/fortress/validate_handoff.py
