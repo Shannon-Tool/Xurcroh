@@ -144,6 +144,25 @@ def test_vae_decode_and_from_definition_paths(monkeypatch, tmp_path) -> None:
     }
 
 
+def test_configured_diffusers_pipeline_class_is_used(monkeypatch, tmp_path) -> None:
+    from xurcroh.config import ModelDefinition
+
+    class CustomPipeline:
+        @classmethod
+        def from_pretrained(cls, path, **kwargs):
+            return TinyNeuralPipeline()
+
+    monkeypatch.setattr("diffusers.CustomPipeline", CustomPipeline, raising=False)
+    loaded = DiffusionMediaBoundary.from_definition(
+        ModelDefinition(
+            path=str(tmp_path),
+            modality="image",
+            pipeline_class="CustomPipeline",
+        )
+    )
+    assert isinstance(loaded.pipeline, TinyNeuralPipeline)
+
+
 def test_media_decoder_failure_paths() -> None:
     class NoVideoDecoder:
         unet = TinyNeuralPipeline().unet

@@ -119,7 +119,7 @@ Each rung requires:
 - VLM text/image/audio conditioning where implemented;
 - exact local-versus-grid latent equality for image/video, plus deterministic PNG/MP4 and supported audio checks;
 - non-square, odd-sized, and chunked temporal shapes for media;
-- image-to-image, masked editing, and image-to-video workflow checks where the pinned pipeline exposes them.
+- image-to-image, masked editing, and image-to-video workflow checks where the pinned pipeline exposes them. `verification.workflows` selects the required gates and `verification.workflow_pipelines` maps each to an installed Diffusers class; current manifests include Flux/Qwen inpainting and Wan image-to-video. The verifier executes every selected workflow through local, remote, original, and public-SDK paths and rejects unsupported parameters rather than skipping them.
 
 Retain model/output quality metrics and actual failures. Performance is measured, never a pass criterion.
 

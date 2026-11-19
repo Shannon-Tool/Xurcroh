@@ -213,6 +213,7 @@ class ModelDefinition(StrictModel):
         "auto", "reference", "transformers", "vllm", "sglang", "diffusion", "xdit", "fortress"
     ] = "auto"
     modality: Literal["auto", "text", "vlm", "image", "video"] = "auto"
+    pipeline_class: str | None = Field(default=None, pattern=r"^[A-Za-z][A-Za-z0-9_]*$")
     allow_download: bool = False
     manifest_path: str | None = None
     boundary_key_env: str | None = None

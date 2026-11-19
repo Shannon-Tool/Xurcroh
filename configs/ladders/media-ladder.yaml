@@ -1,7 +1,91 @@
 rungs:
-  - {rung: M1, model: pixart-sigma-256, modality: image, repository: PixArt-alpha/PixArt-Sigma-XL-2-256x256, revision: "0000000000000000000000000000000000000000", license: REQUIRED_REVIEW, checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000", resolution_required: true, share_count: 2, verification: {steps: 2, size: 256x256}}
-  - {rung: M2, model: flux-1-dev, modality: image, repository: black-forest-labs/FLUX.1-dev, revision: 3de623fc3c33e44ffbe2bad470d0f45bccf2eb21, license: FLUX.1-dev-non-commercial, checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000", resolution_required: true, share_count: 2, verification: {steps: 2, size: 64x64}}
-  - {rung: M2, model: qwen-image, modality: image, repository: Qwen/Qwen-Image, revision: 75e0b4be04f60ec59a75f475837eced720f823b6, license: Apache-2.0, checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000", resolution_required: true, share_count: 2, verification: {steps: 2, size: 64x64}}
-  - {rung: M3, model: wan-2.1-t2v-1.3b, modality: video, repository: Wan-AI/Wan2.1-T2V-1.3B-Diffusers, revision: 0fad780a534b6463e45facd96134c9f345acfa5b, license: Apache-2.0, checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000", resolution_required: true, share_count: 2, verification: {steps: 1, size: 64x64, frames: 4, fps: 4}}
-  - {rung: M4, model: wan-2.2-t2v-a14b, modality: video, repository: Wan-AI/Wan2.2-T2V-A14B-Diffusers, revision: 5be7df9619b54f4e2667b2755bc6a756675b5cd7, license: Apache-2.0, checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000", resolution_required: true, share_count: 2, verification: {steps: 1, size: 64x64, frames: 4, fps: 4}}
-  - {rung: M4, model: minimax-h3, modality: video, repository: MiniMaxAI/MiniMax-H3, revision: 0919fb684102ef115126612f3fbb84d1027e7317, license: MiniMax-community, checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000", resolution_required: true, share_count: 2, verification: {steps: 1, size: 64x64, frames: 4, fps: 4}}
+  - rung: M1
+    model: pixart-sigma-256
+    modality: image
+    repository: PixArt-alpha/PixArt-Sigma-XL-2-256x256
+    revision: "0000000000000000000000000000000000000000"
+    license: REQUIRED_REVIEW
+    checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000"
+    resolution_required: true
+    share_count: 2
+    verification: {steps: 2, size: 256x256, workflows: [text_to_image]}
+  - rung: M2
+    model: flux-1-dev
+    modality: image
+    repository: black-forest-labs/FLUX.1-dev
+    revision: 3de623fc3c33e44ffbe2bad470d0f45bccf2eb21
+    license: FLUX.1-dev-non-commercial
+    checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000"
+    resolution_required: true
+    share_count: 2
+    verification:
+      steps: 2
+      size: 64x64
+      workflows: [text_to_image, image_to_image, masked_edit]
+      workflow_pipelines:
+        text_to_image: FluxPipeline
+        image_to_image: FluxImg2ImgPipeline
+        masked_edit: FluxInpaintPipeline
+  - rung: M2
+    model: qwen-image
+    modality: image
+    repository: Qwen/Qwen-Image
+    revision: 75e0b4be04f60ec59a75f475837eced720f823b6
+    license: Apache-2.0
+    checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000"
+    resolution_required: true
+    share_count: 2
+    verification:
+      steps: 2
+      size: 64x64
+      workflows: [text_to_image, image_to_image, masked_edit]
+      workflow_pipelines:
+        text_to_image: QwenImagePipeline
+        image_to_image: QwenImageEditPipeline
+        masked_edit: QwenImageInpaintPipeline
+  - rung: M3
+    model: wan-2.1-t2v-1.3b
+    modality: video
+    repository: Wan-AI/Wan2.1-T2V-1.3B-Diffusers
+    revision: 0fad780a534b6463e45facd96134c9f345acfa5b
+    license: Apache-2.0
+    checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000"
+    resolution_required: true
+    share_count: 2
+    verification:
+      steps: 1
+      size: 64x64
+      frames: 4
+      fps: 4
+      workflows: [text_to_video, image_to_video]
+      workflow_pipelines:
+        text_to_video: WanPipeline
+        image_to_video: WanImageToVideoPipeline
+  - rung: M4
+    model: wan-2.2-t2v-a14b
+    modality: video
+    repository: Wan-AI/Wan2.2-T2V-A14B-Diffusers
+    revision: 5be7df9619b54f4e2667b2755bc6a756675b5cd7
+    license: Apache-2.0
+    checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000"
+    resolution_required: true
+    share_count: 2
+    verification:
+      steps: 1
+      size: 64x64
+      frames: 4
+      fps: 4
+      workflows: [text_to_video, image_to_video]
+      workflow_pipelines:
+        text_to_video: WanPipeline
+        image_to_video: WanImageToVideoPipeline
+  - rung: M4
+    model: minimax-h3
+    modality: video
+    repository: MiniMaxAI/MiniMax-H3
+    revision: 0919fb684102ef115126612f3fbb84d1027e7317
+    license: MiniMax-community
+    checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000"
+    resolution_required: true
+    share_count: 2
+    verification: {steps: 1, size: 64x64, frames: 4, fps: 4}
