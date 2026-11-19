@@ -136,10 +136,12 @@ def test_external_provider_teardown_is_verified(tmp_path: Path) -> None:
     result = destroy_ladder_instances(
         StateStore(tmp_path / "state.json"),
         uncapped=True,
-        provisioned={"workers": [{"provider_instance_id": 900, "provider_id": "external"}]},
+        provisioned={
+            "workers": [{"provider_instance_id": "external-vm-900", "provider_id": "external"}]
+        },
         registry=registry,
     )
-    assert destroyed == [900]
+    assert destroyed == ["external-vm-900"]
     assert result["cost_usd"] == 2.5
     assert result["destruction"] == {
         "all_destroyed": True,
