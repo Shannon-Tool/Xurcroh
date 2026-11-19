@@ -56,3 +56,4 @@ def test_default_registry_includes_confidential_cloud_adapters() -> None:
     assert registry._adapter({"provider_id": "azure"}) is not None
     assert registry._adapter({"provider_id": "gcp"}) is not None
     assert registry._adapter({"provider_id": "alibaba"}) is not None
+    assert registry._adapter({"provider_id": "oci"}) is not None

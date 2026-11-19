@@ -68,10 +68,12 @@ class ProviderRegistry:
         from xurcroh.providers.alibaba import AlibabaConfidentialClient
         from xurcroh.providers.azure import AzureConfidentialClient
         from xurcroh.providers.gcp import GoogleConfidentialClient
+        from xurcroh.providers.oci import OciConfidentialClient
 
         registry.register("azure", _cloud_adapter(AzureConfidentialClient))
         registry.register("gcp", _cloud_adapter(GoogleConfidentialClient))
         registry.register("alibaba", _cloud_adapter(AlibabaConfidentialClient))
+        registry.register("oci", _cloud_adapter(OciConfidentialClient))
         return registry.with_entry_points(registry)
 
     @classmethod
