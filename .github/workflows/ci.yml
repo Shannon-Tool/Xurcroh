@@ -34,6 +34,10 @@ jobs:
         run: ./scripts/build-wheels.sh
       - name: Test
         run: .venv/bin/pytest --cov --cov-report=xml -m 'not hardware'
+      - name: Fuzz quantized checkpoint readers
+        run: |
+          .venv/bin/python scripts/formats/generate_gguf_fixtures.py /tmp/xurcroh-fuzz
+          .venv/bin/python scripts/formats/fuzz_readers.py /tmp/xurcroh-fuzz/q4_0.gguf --iterations 100
       - name: Audit dependencies
         run: .venv/bin/pip-audit
 
