@@ -4,7 +4,7 @@ import json
 import math
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -46,9 +46,24 @@ class WorkerPlacement:
     activation_index: int
     weight_index: int
     recipient_public: str
+    operation_roles: dict[str, tuple[int, int]] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, document: Mapping[str, Any]) -> WorkerPlacement:
+        raw_roles = document.get("operation_roles", {})
+        if not isinstance(raw_roles, dict):
+            raise LadderEvidenceError("operation_roles must be an object")
+        operation_roles: dict[str, tuple[int, int]] = {}
+        for name, value in raw_roles.items():
+            if (
+                not isinstance(name, str)
+                or not name
+                or not isinstance(value, list)
+                or len(value) != 2
+                or any(isinstance(index, bool) or not isinstance(index, int) for index in value)
+            ):
+                raise LadderEvidenceError("operation role entries are invalid")
+            operation_roles[name] = (value[0], value[1])
         worker = cls(
             name=_string(document, "name"),
             endpoint=_string(document, "endpoint"),
@@ -59,6 +74,7 @@ class WorkerPlacement:
             activation_index=_integer(document, "activation_index"),
             weight_index=_integer(document, "weight_index"),
             recipient_public=_string(document, "recipient_public"),
+            operation_roles=operation_roles,
         )
         if worker.machine_id < 1 or worker.activation_index < 0 or worker.weight_index < 0:
             raise LadderEvidenceError("worker machine and role indexes are invalid")
@@ -77,6 +93,8 @@ class LadderRung:
     checkpoint_fingerprint: str
     share_count: int
     workers: tuple[WorkerPlacement, ...]
+    placement_epoch: int = 0
+    max_provider_fraction: float = 0.25
 
     @classmethod
     def from_mapping(
@@ -95,6 +113,14 @@ class LadderRung:
             checkpoint_fingerprint=_string(document, "checkpoint_fingerprint"),
             share_count=_integer(document, "share_count"),
             workers=tuple(WorkerPlacement.from_mapping(worker) for worker in raw_workers),
+            placement_epoch=(
+                _integer(document, "placement_epoch") if "placement_epoch" in document else 0
+            ),
+            max_provider_fraction=(
+                _metric(document, "max_provider_fraction")
+                if "max_provider_fraction" in document
+                else 0.25
+            ),
         )
         rung._validate(allow_unverified_hardware=allow_unverified_hardware)
         return rung
@@ -106,23 +132,43 @@ class LadderRung:
             raise LadderEvidenceError("unsupported ladder modality")
         _hex(self.revision, 40, "checkpoint revision")
         _hex(self.checkpoint_fingerprint, 64, "checkpoint_fingerprint")
-        if self.share_count < 2:
-            raise LadderEvidenceError("at least two activation and weight shares are required")
+        if (
+            self.share_count < 2
+            or self.placement_epoch < 0
+            or not 0 < self.max_provider_fraction <= 1
+        ):
+            raise LadderEvidenceError("share count, placement epoch, or provider cap is invalid")
         expected = {
             (activation, weight)
             for activation in range(self.share_count)
             for weight in range(self.share_count)
         }
-        actual = {(worker.activation_index, worker.weight_index) for worker in self.workers}
-        if actual != expected or len(self.workers) != len(expected):
-            raise LadderEvidenceError("worker roles must form one complete share grid")
-        for field in ("name", "machine_id"):
-            values = [getattr(worker, field) for worker in self.workers]
+        operation_names = {name for worker in self.workers for name in worker.operation_roles}
+        if operation_names:
+            for name in operation_names:
+                assigned = [worker for worker in self.workers if name in worker.operation_roles]
+                coordinates = {worker.operation_roles[name] for worker in assigned}
+                if (
+                    len(assigned) != len(expected)
+                    or len({worker.name for worker in assigned}) != len(assigned)
+                    or coordinates != expected
+                ):
+                    raise LadderEvidenceError(
+                        f"operation {name!r} must have one complete unique-worker share grid"
+                    )
+        else:
+            actual = {(worker.activation_index, worker.weight_index) for worker in self.workers}
+            if len(self.workers) < len(expected) or (
+                len(self.workers) == len(expected) and actual != expected
+            ):
+                raise LadderEvidenceError("worker roles must form one complete share grid")
+        for attribute in ("name", "machine_id"):
+            values = [getattr(worker, attribute) for worker in self.workers]
             if len(set(values)) != len(values):
-                raise LadderEvidenceError(f"worker {field} values must be unique")
-        for field in ("provider_id", "country", "cpu_vendor"):
-            if len({getattr(worker, field) for worker in self.workers}) < 2:
-                raise LadderEvidenceError(f"worker {field} diversity is required")
+                raise LadderEvidenceError(f"worker {attribute} values must be unique")
+        for attribute in ("provider_id", "country", "cpu_vendor"):
+            if len({getattr(worker, attribute) for worker in self.workers}) < 2:
+                raise LadderEvidenceError(f"worker {attribute} diversity is required")
         if (
             not allow_unverified_hardware
             and self.rung not in {"F0", "M0"}

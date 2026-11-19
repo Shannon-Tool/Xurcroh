@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 from pathlib import Path
@@ -27,17 +28,35 @@ def _identity(cluster: list[dict[str, Any]]) -> MutualTLSIdentity:
     )
 
 
-def _roles(cluster: list[dict[str, Any]]) -> list[RoleEndpoint]:
-    return [
-        RoleEndpoint(
-            activation_index=int(worker["labels"]["activation_index"]),
-            weight_index=int(worker["labels"]["weight_index"]),
-            address=worker["endpoint"].removeprefix("quic://"),
-            recipient_public=bytes.fromhex(worker["labels"]["recipient_public"]),
-            provider_id=worker["name"],
+def _roles(cluster: list[dict[str, Any]], operation_name: str) -> list[RoleEndpoint]:
+    roles = []
+    for worker in cluster:
+        labels = worker["labels"]
+        activation_index = int(labels["activation_index"])
+        weight_index = int(labels["weight_index"])
+        if "operation_roles" in labels:
+            assigned = json.loads(labels["operation_roles"]).get(operation_name)
+            if assigned is None:
+                continue
+            if (
+                not isinstance(assigned, list)
+                or len(assigned) != 2
+                or any(isinstance(index, bool) or not isinstance(index, int) for index in assigned)
+            ):
+                raise CapabilityError("operation role labels are invalid")
+            activation_index, weight_index = assigned
+        roles.append(
+            RoleEndpoint(
+                activation_index=activation_index,
+                weight_index=weight_index,
+                address=worker["endpoint"].removeprefix("quic://"),
+                recipient_public=bytes.fromhex(labels["recipient_public"]),
+                provider_id=worker["name"],
+            )
         )
-        for worker in cluster
-    ]
+    if not roles:
+        raise CapabilityError(f"no roles are assigned to operation {operation_name!r}")
+    return roles
 
 
 def _provenance(
@@ -139,9 +158,8 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
     )
     cluster = sdk["cluster"]
     identity = _identity(cluster)
-    roles = _roles(cluster)
     clients = {
-        name: FortressRoleClient(operation, roles, identity, operation_name=name)
+        name: FortressRoleClient(operation, _roles(cluster, name), identity, operation_name=name)
         for name, operation in compiled.operations.items()
     }
     prompt = "user: Reply with a short technical sentence."
@@ -205,7 +223,9 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
         del original
         from xurcroh.fortress.attacks import exercise_adversarial_grid
 
-        adversarial = exercise_adversarial_grid(clients, roles, compiled.operations)
+        adversarial = exercise_adversarial_grid(
+            clients, _roles(cluster, next(iter(clients))), compiled.operations
+        )
     finally:
         for role_client in clients.values():
             role_client.close()
@@ -267,9 +287,8 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
     }
     cluster = sdk["cluster"]
     identity = _identity(cluster)
-    roles = _roles(cluster)
     clients = {
-        name: FortressRoleClient(operation, roles, identity, operation_name=name)
+        name: FortressRoleClient(operation, _roles(cluster, name), identity, operation_name=name)
         for name, operation in operations.items()
     }
     phase_times: dict[str, float] = {}
@@ -370,7 +389,9 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
         original_error = float((expected - original_values).abs().max())
         from xurcroh.fortress.attacks import exercise_adversarial_grid
 
-        adversarial = exercise_adversarial_grid(clients, roles, operations)
+        adversarial = exercise_adversarial_grid(
+            clients, _roles(cluster, next(iter(clients))), operations
+        )
         phase("adversarial")
     finally:
         for role_client in clients.values():
