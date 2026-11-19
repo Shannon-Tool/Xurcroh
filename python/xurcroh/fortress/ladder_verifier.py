@@ -196,6 +196,65 @@ def _provenance(
     }
 
 
+def _verify_text_lifecycle(client: Any, model: str) -> dict[str, Any]:
+    from concurrent.futures import ThreadPoolExecutor
+
+    from xurcroh.errors import RequestCancelledError
+
+    messages = [{"role": "user", "content": "Reply with a short technical sentence."}]
+    stream = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=0,
+        max_tokens=2,
+        stream=True,
+    )
+    chunks = list(stream)
+    streaming_tokens = chunks[-1].usage.completion_tokens if chunks[-1].usage is not None else 0
+    cancelling = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=0,
+        max_tokens=4,
+        stream=True,
+        request_id="ladder-cancel",
+    )
+    next(cancelling)
+    cancelled = bool(client.cancel("ladder-cancel"))
+    try:
+        list(cancelling)
+    except RequestCancelledError:
+        cancelled = cancelled and True
+    else:
+        cancelled = False
+    if not cancelled:
+        raise RuntimeError("streaming cancellation was not acknowledged")
+    post = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=0,
+        max_tokens=1,
+    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        concurrent = list(
+            executor.map(
+                lambda _: client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=0,
+                    max_tokens=1,
+                ),
+                range(2),
+            )
+        )
+    return {
+        "streaming_completion_tokens": streaming_tokens,
+        "cancelled": cancelled,
+        "post_cancellation_completion_tokens": post.usage.completion_tokens,
+        "concurrent_requests": len(concurrent),
+    }
+
+
 def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
     rung = LadderRung.from_mapping(deployment["rung"])
     if rung.modality in {"image", "video"}:
@@ -298,6 +357,7 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
             temperature=0,
             max_tokens=1,
         )
+        lifecycle = _verify_text_lifecycle(client, rung.model)
         metrics = client.metrics()
     return _provenance(
         {
@@ -309,6 +369,7 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
             "bytes_received": direct_received + int(metrics.get("fortress_bytes_received", 0)),
             "inference_seconds": time.perf_counter() - started,
             **adversarial,
+            "lifecycle": lifecycle,
             "sdk": {
                 "response": response.model_dump(mode="json"),
                 "metrics": metrics,

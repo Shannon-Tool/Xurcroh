@@ -69,6 +69,10 @@ def test_ladder_verifier_compares_remote_tensors_and_public_sdk(
         assert report["attack_results"]["full_weight_collusion_exact"] is True
         assert report["canary_tripped"] is True
         assert report["freivalds_failures"] == 0
+        assert report["lifecycle"]["streaming_completion_tokens"] == 2
+        assert report["lifecycle"]["cancelled"] is True
+        assert report["lifecycle"]["post_cancellation_completion_tokens"] == 1
+        assert report["lifecycle"]["concurrent_requests"] == 2
     finally:
         for worker in workers:
             worker.close()

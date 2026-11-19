@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +84,15 @@ def main() -> None:
     for path in paths:
         for command in validate(path):
             print(command)
+    if not args.paths:
+        multi_model = root / "configs/ladders/multi-model-smoke.example.json"
+        document = json.loads(multi_model.read_text())
+        if not isinstance(document.get("model_path"), dict) or len(document["model_path"]) < 2:
+            raise ValueError("multi-model smoke example requires two models")
+        print(
+            "python scripts/fortress/multi_model_smoke.py "
+            f"--config {multi_model} --output /secure/evidence/multi-model-smoke.json"
+        )
 
 
 if __name__ == "__main__":

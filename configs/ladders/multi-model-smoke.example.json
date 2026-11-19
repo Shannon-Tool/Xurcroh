@@ -1,0 +1,17 @@
+{
+  "cluster": {
+    "endpoint": "local://cpu"
+  },
+  "model_path": {
+    "tiny-a": {
+      "path": "/secure/models/tiny-llama",
+      "engine": "fortress",
+      "fortress_seed": 731
+    },
+    "tiny-b": {
+      "path": "/secure/models/tiny-llama",
+      "engine": "fortress",
+      "fortress_seed": 732
+    }
+  }
+}
