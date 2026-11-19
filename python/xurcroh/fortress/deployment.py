@@ -636,12 +636,15 @@ class FortressDeployment:
                             f"model {name!r} preflight failed: " + "; ".join(report.issues)
                         )
                     self._role_estimates[name] = report.estimated_role_worker_bytes
+                logging.getLogger(__name__).info("Creating Fortress role packages")
                 self._create_roles()
                 self._validate_host_memory()
+                logging.getLogger(__name__).info("Fortress role packages created")
                 generate_mutual_tls(
                     self._workspace / "tls",
                     {role.service_name: [role.worker.host or ""] for role in self._roles},
                 )
+                logging.getLogger(__name__).info("Creating Fortress source archive")
                 archive = self._source_archive()
                 machines = self._machine_workers()
                 with ThreadPoolExecutor(max_workers=min(8, len(machines))) as pool:
@@ -651,12 +654,16 @@ class FortressDeployment:
                             machines,
                         )
                     )
+                logging.getLogger(__name__).info("Uploading Fortress role packages")
                 with ThreadPoolExecutor(max_workers=min(8, len(self._roles))) as pool:
                     list(pool.map(self._prepare_role, self._roles))
+                logging.getLogger(__name__).info("Starting Fortress roles")
                 with ThreadPoolExecutor(max_workers=min(8, len(self._roles))) as pool:
                     list(pool.map(self._start_role, self._roles))
+                logging.getLogger(__name__).info("Fortress roles are ready")
                 self._publish_workers()
                 self._enable_tunnels()
+                logging.getLogger(__name__).info("Fortress datagram configuration complete")
                 self._started = True
                 return self
             except BaseException as error:
