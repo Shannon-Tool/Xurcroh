@@ -3,8 +3,8 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Validated implementation revision: `729ce90`
-- Local implementation: **passed**
+- Current verification revision: `720193e87b7fdacba627cb0847b80eb9400ff0f2`
+- Local implementation: **focused current-SHA checks passed; complete final-SHA standard suite pending**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
 - MoE, VLM, image, and video hardware execution: **not validated**
@@ -36,18 +36,19 @@ The two-model managed test has not completed on this host. At `90a99a6`, its 24 
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **431 passed, 33 deselected** at `729ce90`; slow managed/video tests have separate results |
-| Python branch coverage | **81.41%**, above the 80% requirement |
-| Ruff format and lint | Passed |
-| Strict mypy, 135 source files | Passed |
-| Rust tests | **29 passed** |
-| Rust formatting, Clippy, RustSec | Passed; no known advisories |
-| Frontend interaction tests | **32 passed** |
-| Frontend typecheck, lint, production build, content validation | Passed; 22 sections, equations, links, and Mermaid syntax validated |
+| Python unit/integration/security tests | **562 passed, 35 deselected** at `7b61493`; slow managed/video tests have separate results. Current-SHA relay/configuration verification: **12 focused tests passed** at `720193e`; the complete standard suite must still be rerun on the final SHA |
+| Python branch coverage | **81.22%**, above the 80% requirement at `7b61493` |
+| Ruff format and lint | Passed on changed files at `720193e` |
+| Strict mypy, 157 source files | Passed at `720193e` |
+| Rust tests | **31 passed** at `720193e` |
+| Rust formatting, Clippy, RustSec | Passed at `720193e`; no known advisories |
+| Frontend interaction tests | **35 passed** at `720193e` |
+| Frontend typecheck, lint, production build, content validation | Passed at `720193e`; 22 sections, equations, links, and Mermaid syntax validated |
+| Offline ladder/handoff validation | All 21 command forms validated without provider contact at `720193e` |
 | ProVerif model and protocol fuzzing | ProVerif passed in the hosted run above; all three fuzz targets passed locally at `5bcdab3` with 2,230,999 frame, 393,608 AEAD, and 33,264 HPKE runs; newer hosted runs are blocked before startup |
-| Clean reproducible wheel builds | Matched locally at `b8d16b8fe088953ede4b67af485c80d7a78f64d2`; current hosted rebuild is billing-blocked |
-| `pip-audit` | No known vulnerabilities in audited dependencies |
-| `npm audit` | 0 vulnerabilities |
+| Clean reproducible wheel builds | Matched locally at `b8d16b8fe088953ede4b67af485c80d7a78f64d2`; current-SHA rebuild and current hosted rebuild remain pending |
+| `pip-audit` | No known vulnerabilities in audited dependencies at `720193e`; local CPU torch/torchvision and Xurcroh packages remain skipped as detailed below |
+| `npm audit` | 0 vulnerabilities at `720193e` |
 
 `pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The prior wheel comparison preserved Maturin's CycloneDX dependency inventory while normalizing checkout paths, compiler paths, file modes, ZIP encoding, and `RECORD`. Its cross-host SHA-256 values were `57a3e9c309ac80ed575eeedee09ea64d8cf13d2ff6b3f6ca3d3feb3a335cbaa0` for the Python wheel and `113652e94e084a89c0908a3dedc8a09ce843edd29258ce0c90eb85c93232b6c2` for the native wheel. This is automated cross-machine evidence, not second-party attestation. The current local reproducibility run at `b8d16b8` produced matching SHA-256 values `99e5fcf98b2e67fc7cf02a2c74bb1baa8642c37e1af75b9ae6868649486c86bb` (Python) and `f4489d0e3191a7d4c89b1fb85903f2c09075f3fcb631625c2430d0a9fbfa57e6` (native).
 
