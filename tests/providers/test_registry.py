@@ -49,3 +49,9 @@ def test_provider_plugins_report_charges_and_remaining_instances(
     offer = {"provider_id": "external"}
     assert registry.charges(offer, 900) == 2.5
     assert registry.remaining(offer, 900) is False
+
+
+def test_default_registry_includes_confidential_cloud_adapters() -> None:
+    registry = ProviderRegistry.with_defaults()
+    assert registry._adapter({"provider_id": "azure"}) is not None
+    assert registry._adapter({"provider_id": "gcp"}) is not None

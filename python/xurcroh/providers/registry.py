@@ -3,11 +3,23 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import entry_points
-from typing import Any
+from typing import Any, Protocol
 
 from xurcroh.errors import ProviderError
 
 ProviderInstanceId = str | int
+
+
+class ConfidentialCloudClient(Protocol):
+    def offers(self, gpu_name: str | None = None) -> list[dict[str, Any]]: ...
+
+    def create(self, offer: dict[str, Any], **values: Any) -> ProviderInstanceId: ...
+
+    def destroy(self, instance_id: str) -> None: ...
+
+    def remaining(self, instance_id: str) -> bool: ...
+
+    def charges(self, instance_id: str) -> float: ...
 
 
 @dataclass(frozen=True)
@@ -19,17 +31,50 @@ class ProviderAdapter:
     remaining: Callable[[dict[str, Any], ProviderInstanceId], bool] | None = None
 
 
+def _cloud_adapter(client_factory: Callable[[], ConfidentialCloudClient]) -> ProviderAdapter:
+    def offers(gpu_name: str | None) -> list[dict[str, Any]]:
+        return client_factory().offers(gpu_name)
+
+    def create(offer: dict[str, Any], **values: Any) -> ProviderInstanceId:
+        return client_factory().create(offer, **values)
+
+    def destroy(instance_id: ProviderInstanceId) -> None:
+        client_factory().destroy(str(instance_id))
+
+    def charges(offer: dict[str, Any], instance_id: ProviderInstanceId) -> float:
+        del offer
+        return client_factory().charges(str(instance_id))
+
+    def remaining(offer: dict[str, Any], instance_id: ProviderInstanceId) -> bool:
+        del offer
+        return client_factory().remaining(str(instance_id))
+
+    return ProviderAdapter(
+        offers=offers,
+        create=create,
+        destroy=destroy,
+        charges=charges,
+        remaining=remaining,
+    )
+
+
 class ProviderRegistry:
     def __init__(self) -> None:
         self._adapters: dict[str, ProviderAdapter] = {}
 
     @classmethod
     def with_defaults(cls) -> ProviderRegistry:
-        return cls.with_entry_points()
+        registry = cls()
+        from xurcroh.providers.azure import AzureConfidentialClient
+        from xurcroh.providers.gcp import GoogleConfidentialClient
+
+        registry.register("azure", _cloud_adapter(AzureConfidentialClient))
+        registry.register("gcp", _cloud_adapter(GoogleConfidentialClient))
+        return registry.with_entry_points(registry)
 
     @classmethod
-    def with_entry_points(cls) -> ProviderRegistry:
-        registry = cls()
+    def with_entry_points(cls, registry: ProviderRegistry | None = None) -> ProviderRegistry:
+        registry = registry or cls()
         for entry_point in entry_points(group="xurcroh.providers"):
             adapter = entry_point.load()
             if not isinstance(adapter, ProviderAdapter):
