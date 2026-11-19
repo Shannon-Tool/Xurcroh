@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 
@@ -73,6 +73,33 @@ def _provenance(
         if selected_format in {"exl2", "exl3"}
         else {"package": selected_format, "official_reference": True}
     )
+    official_error = None
+    if selected_format in {"exl2", "exl3"} and torch.cuda.is_available():
+        from xurcroh.architectures.base import CanonicalReader
+        from xurcroh.formats.reference_bridge import official_exl2_error, official_exl3_error
+
+        with open_architecture(path, source_format) as adapter:
+            source = cast(CanonicalReader, adapter.reader).source
+            name = next(
+                candidate
+                for candidate in adapter.reader.tensor_names()
+                if candidate.endswith(".weight")
+                and len(adapter.reader.tensor_shapes([candidate])[candidate]) == 2
+            )
+            expected = source.read_operation(name)
+            prefix = name.removesuffix(".weight")
+            tensors = source.read_tensors(
+                [
+                    candidate
+                    for candidate in source.tensor_names()
+                    if candidate.startswith(prefix + ".")
+                ]
+            )
+            official_error = (
+                official_exl2_error(tensors, prefix, expected)
+                if selected_format == "exl2"
+                else official_exl3_error(tensors, prefix, expected)
+            )
     return {
         **report,
         "evidence_version": 2,
@@ -80,8 +107,9 @@ def _provenance(
         "source_digest": source_digest,
         "architecture_adapter": adapter_name,
         "decoder_identity": decoder,
-        "source_decoder_max_abs_error": 0.0,
-        "official_decoder_validated": selected_format in {"safetensors", "gguf"},
+        "source_decoder_max_abs_error": official_error or 0.0,
+        "official_decoder_validated": selected_format in {"safetensors", "gguf"}
+        or official_error == 0.0,
         "workflow": rung.modality,
         "client_resources": report.get("sdk", {}).get("metrics", {}),
         "role_resources": deployment.get("role_resources", {}),
