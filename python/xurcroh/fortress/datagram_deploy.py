@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import shlex
 import shutil
@@ -117,6 +118,7 @@ def start_datagram_tunnels(
         worker["datagram_tunnel"] = {"remote_pid_path": str(pid_path)}
         started.append(worker)
         python = shlex.quote(str(worker.get("python_path", ".venv-cuda/bin/python")))
+        logging.getLogger(__name__).info("Starting datagram relay %s", instance_name)
         start_detached(
             worker,
             f"cd {root} && setsid -f env {python} -m "
@@ -170,6 +172,7 @@ def start_datagram_tunnels(
                 start_new_session=True,
             )
         local_port = wait_local_port(local_address, local)
+        logging.getLogger(__name__).info("Datagram relay %s is ready", instance_name)
         worker["datagram_tunnel"] = {
             "ssh_forward_pid": forward.pid,
             "local_relay_pid": local.pid,
