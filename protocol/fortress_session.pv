@@ -1,6 +1,7 @@
 (* Fortress sealed-master session model, HPKE-base abstraction.
-   mTLS peer authentication, hybrid PQ KEM, computational HPKE details, replay windows,
-   nonce exhaustion, compromise, and side channels are outside this symbolic model. *)
+   The private establishment channel models mutual-TLS client/server authentication.
+   Hybrid PQ KEM, computational HPKE details, replay windows, nonce exhaustion,
+   compromise, and side channels are outside this symbolic model. *)
 
 type secretkey.
 type publickey.
@@ -23,6 +24,7 @@ event ServerEstablished(master).
 event ClientAccepted(master).
 
 free control: channel.
+free authenticated_establishment: channel [private].
 free server_secret: secretkey [private].
 free client_label, stage_label: label.
 free epoch_zero, epoch_one: epoch.
@@ -35,7 +37,7 @@ query m: master; event(ClientAccepted(m)) ==> event(ServerEstablished(m)).
 
 let client(server_public: publickey) =
   new master_secret: master;
-  out(control, (session_id, session_token, hpke_seal(master_secret, server_public)));
+  out(authenticated_establishment, (session_id, session_token, hpke_seal(master_secret, server_public)));
   out(control, aead_seal(activation_secret, derive(master_secret, client_label, epoch_zero)));
   in(control, response: bitstring);
   let accepted_master = master_secret in
@@ -44,7 +46,7 @@ let client(server_public: publickey) =
   out(control, aead_seal(activation_secret, derive(accepted_master, client_label, epoch_one))).
 
 let server(server_private: secretkey) =
-  in(control, (=session_id, =session_token, establishment: bitstring));
+  in(authenticated_establishment, (=session_id, =session_token, establishment: bitstring));
   let established_master = hpke_open(establishment, server_private) in
   event ServerEstablished(established_master);
   in(control, request: bitstring);

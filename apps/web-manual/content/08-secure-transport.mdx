@@ -10,7 +10,7 @@ HKDF-SHA256 derives distinct send/receive keys. Nonces encode monotonic sequence
 
 <Equation tex="K_{dir}=HKDF\text{-}SHA256(master, context \parallel dir),\quad N_t=0^{32}\parallel t_{64}" />
 
-Interactive stage and protected-media sessions establish a fresh random master using RFC 9180 HPKE (`X25519HkdfSha256` with ChaCha20-Poly1305), bound to session identifiers and authentication tokens. The older raw-X25519 session exchange has been removed. Mutual rustls QUIC additionally negotiates `X25519MLKEM768` in the transport test, so the data plane has independent forward-secret hybrid post-quantum TLS.
+Interactive stage and protected-media sessions establish a fresh random master using RFC 9180 HPKE (`X25519HkdfSha256` with ChaCha20-Poly1305), bound to session identifiers and authentication tokens. HPKE Base mode alone does not authenticate the client; mutual TLS supplies peer authentication. The ProVerif model represents authenticated establishment as a private channel and its CI checker rejects false or missing query results. The older raw-X25519 session exchange has been removed. Mutual rustls QUIC additionally negotiates `X25519MLKEM768` in the transport test, so the data plane has independent forward-secret hybrid post-quantum TLS.
 
 Onion-style layers use ephemeral ECDH keys in the browser simulation and X25519 in production Rust. The innermost layer alone carries return secrets. Allowlisted oblivious relays forward fixed-size frames without receiving HPKE or directional-AEAD payload keys; destination workers unwrap their own layer. The relay sees the client address, workers see the relay address, and a global adversary can still correlate traffic.
 

@@ -36,7 +36,9 @@ CPU tests cover cache/request cleanup, sealed memfds, nonce/binding failures, fi
 
 ## HPKE session establishment
 
-Interactive stage and protected-media sessions use RFC 9180 HPKE (`X25519HkdfSha256` with ChaCha20-Poly1305) to seal a fresh random session master. Stage HPKE associated data binds the session identifier and authentication token; media HPKE associated data binds the media session identifier. Directional AEAD keys, replay windows, and monotonic epoch rotation are derived only after that authenticated establishment. The legacy raw-X25519 session-exchange path has been removed. Offline shard recipient sealing is a separate artifact-custody mechanism, not this interactive handshake.
+Interactive stage and protected-media sessions use RFC 9180 HPKE (`X25519HkdfSha256` with ChaCha20-Poly1305) to seal a fresh random session master. HPKE Base mode alone does not authenticate the client; peer authentication comes from mutually authenticated QUIC/TLS. Stage HPKE associated data binds the session identifier and authentication token; media HPKE associated data binds the media session identifier. Directional AEAD keys, replay windows, and monotonic epoch rotation are derived only after that authenticated establishment. The legacy raw-X25519 session-exchange path has been removed. Offline shard recipient sealing is a separate artifact-custody mechanism, not this interactive handshake.
+
+`protocol/fortress_session.pv` models the mutually authenticated establishment as a private channel while leaving subsequent ciphertext traffic adversary-visible. `scripts/check_proverif.py` requires every summary query to be true, so a ProVerif exit status of zero cannot hide a false secrecy or correspondence query. Hybrid post-quantum KEM details, computational HPKE proofs, replay windows, nonce exhaustion, compromise, and side channels remain outside this symbolic model.
 
 
 ## Oblivious relay and traffic analysis
