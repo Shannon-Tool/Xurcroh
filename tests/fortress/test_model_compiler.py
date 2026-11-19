@@ -185,6 +185,50 @@ def test_moe_checkpoint_keeps_router_local_and_compiles_each_expert(tmp_path: Pa
     combiner.drop_request("moe-request")
 
 
+def test_reap_pruning_remaps_experts_and_router(tmp_path: Path) -> None:
+    test_moe_checkpoint_keeps_router_local_and_compiles_each_expert(tmp_path)
+    original = compile_fortress_checkpoint(tmp_path, seed=731)
+    pruned = compile_fortress_checkpoint(
+        tmp_path,
+        seed=731,
+        reap_keep_fraction=0.5,
+        reap_saliency={0: {0: 0.1, 1: 0.9}},
+    )
+    assert ".experts.1." not in " ".join(pruned.operations)
+    operation = pruned.operations["model.layers.0.mlp.experts.0.gate_proj"]
+    recovered = operation.input_basis.inverse(operation.quantized.dequantize())
+    recovered = operation.output_basis.inverse(recovered.T).T
+    from safetensors import safe_open
+
+    with safe_open(tmp_path / "model.safetensors", framework="pt") as handle:
+        expected = handle.get_tensor("model.layers.0.mlp.experts.1.gate_proj.weight")
+    torch.testing.assert_close(recovered, expected, atol=0.02, rtol=0)
+    assert pruned.layers[0].router is not None
+    assert original.layers[0].router is not None
+    assert torch.equal(pruned.layers[0].router, original.layers[0].router[1:])
+    from xurcroh.fortress.model_compiler import discover_fortress_operations
+
+    discovered = discover_fortress_operations(
+        tmp_path,
+        reap_keep_fraction=0.5,
+        reap_saliency={0: {0: 0.1, 1: 0.9}},
+    )
+    assert [operation.identifier for operation in discovered] == list(pruned.operations)
+    combiner = pruned.combiner()
+    hidden = torch.tensor([[0.2, -0.1, 0.3, 0.4]], dtype=torch.float64)
+    actual = combiner.run_cached("reap-request", hidden)
+    assert actual.shape == hidden.shape
+    combiner.drop_request("reap-request")
+
+
+def test_reap_requires_complete_saliency_scores(tmp_path: Path) -> None:
+    import pytest
+
+    test_moe_checkpoint_keeps_router_local_and_compiles_each_expert(tmp_path)
+    with pytest.raises(ValueError, match="saliency"):
+        compile_fortress_checkpoint(tmp_path, reap_keep_fraction=0.5, reap_saliency={0: {0: 1.0}})
+
+
 def test_language_model_prefixed_checkpoint_compiles(tiny_llama_path: Path, tmp_path: Path) -> None:
     from safetensors import safe_open
     from safetensors.torch import save_file

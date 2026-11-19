@@ -331,7 +331,17 @@ class FortressDeployment:
             adapter = MediaArchitectureAdapter.from_checkpoint(definition.path, definition.modality)
             operations = discover_media_operations(definition.path, adapter)
         else:
-            operations = discover_fortress_operations(definition.path)
+            from xurcroh.fortress.model_compiler import load_reap_saliency
+
+            operations = discover_fortress_operations(
+                definition.path,
+                reap_keep_fraction=definition.reap_keep_fraction,
+                reap_saliency=(
+                    load_reap_saliency(definition.reap_saliency_path)
+                    if definition.reap_saliency_path is not None
+                    else None
+                ),
+            )
         placement = place_operations(
             operations,
             providers,
@@ -412,11 +422,19 @@ class FortressDeployment:
                 media_definition = definition.model_copy(update={"fortress_seed": model_seed})
                 compile_media_checkpoint(media_definition, adapter, operation_sink=sink)
             else:
+                from xurcroh.fortress.model_compiler import load_reap_saliency
+
                 compile_fortress_checkpoint(
                     definition.path,
                     seed=model_seed,
                     share_count=definition.fortress_shares,
                     load_model=False,
+                    reap_keep_fraction=definition.reap_keep_fraction,
+                    reap_saliency=(
+                        load_reap_saliency(definition.reap_saliency_path)
+                        if definition.reap_saliency_path is not None
+                        else None
+                    ),
                     operation_sink=sink,
                 )
             if definition.fortress_seed is None:

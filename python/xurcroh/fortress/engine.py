@@ -245,6 +245,8 @@ class FortressEngine:
                     self._processor = AutoProcessor.from_pretrained(  # type: ignore[no-untyped-call]
                         self.definition.path, tokenizer=self._tokenizer, **options
                     )
+                from xurcroh.fortress.model_compiler import load_reap_saliency
+
                 self._compiled = compile_fortress_checkpoint(
                     self.definition.path,
                     seed=self.definition.fortress_seed,
@@ -255,6 +257,12 @@ class FortressEngine:
                         torch.float32 if self.engine_name == "fortress-grid" else torch.float64
                     ),
                     load_full_multimodal=official_vlm,
+                    reap_keep_fraction=self.definition.reap_keep_fraction,
+                    reap_saliency=(
+                        load_reap_saliency(self.definition.reap_saliency_path)
+                        if self.definition.reap_saliency_path is not None
+                        else None
+                    ),
                 )
                 compiled = self._compiled
                 clients: dict[str, FortressRoleClient] = {}

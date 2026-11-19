@@ -150,18 +150,20 @@ def sdk_configuration(
                 "labels": labels,
             }
         )
+    definition = {
+        "path": str(checkpoint_path),
+        "revision": rung.revision,
+        "engine": "fortress",
+        "modality": rung.modality,
+        "allow_download": False,
+        "fortress_seed": fortress_seed,
+        "fortress_shares": rung.share_count,
+    }
+    if rung.verification.get("reap_keep_fraction") is not None:
+        definition["reap_keep_fraction"] = rung.verification["reap_keep_fraction"]
+        definition["reap_saliency_path"] = rung.verification["reap_saliency_path"]
     return {
         "cluster": cluster,
-        "model_path": {
-            rung.model: {
-                "path": str(checkpoint_path),
-                "revision": rung.revision,
-                "engine": "fortress",
-                "modality": rung.modality,
-                "allow_download": False,
-                "fortress_seed": fortress_seed,
-                "fortress_shares": rung.share_count,
-            }
-        },
+        "model_path": {rung.model: definition},
         "security": {"mode": "strict"},
     }

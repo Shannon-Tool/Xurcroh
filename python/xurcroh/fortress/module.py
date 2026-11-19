@@ -120,7 +120,14 @@ class FortressExperts(torch.nn.Module):
         grid_clients: dict[str, FortressRoleClient] | None,
     ) -> None:
         super().__init__()
-        self.num_experts = int(original.num_experts)
+        expert_indices = {
+            int(name[len(prefix) + 1 :].split(".", 1)[0])
+            for name in operations
+            if name.startswith(prefix + ".")
+        }
+        if not expert_indices or expert_indices != set(range(max(expert_indices) + 1)):
+            raise ValueError("Fortress expert indices must be contiguous and zero-based")
+        self.num_experts = len(expert_indices)
         self.act_fn = original.act_fn
         for projection in ("gate_proj", "up_proj", "down_proj"):
             modules = []

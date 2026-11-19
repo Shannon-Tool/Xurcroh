@@ -8,4 +8,4 @@ Workers are omitted so the provisioner can discover real independent hosts. The 
 .venv/bin/python scripts/fortress/validate_handoff.py
 ```
 
-The text ladder covers F0 and L0–L6; the media ladder covers M0–M4. Format-specific L0 smoke manifests cover GGUF, EXL2, and EXL3. Start with `formats-smoke.yaml`, then `gguf-l0.yaml`, `exl2-l0.yaml`, and `exl3-l0.yaml`. Higher rungs require the previous rung's signed passing evidence and a separate resource/budget review.
+The text ladder covers F0 and L0–L6; the media ladder covers M0–M4. Format-specific L0 smoke manifests cover GGUF, EXL2, and EXL3. Start with `formats-smoke.yaml`, then `gguf-l0.yaml`, `exl2-l0.yaml`, and `exl3-l0.yaml`. Higher rungs require the previous rung's signed passing evidence at the same source revision and a separate resource/budget review. L4 uses Qwen1.5-110B-Chat (Tongyi Qianwen). L6 requires complete per-layer REAP saliency, not the schema-only example, and uses the DeepSeek model license. Flux/Qwen inpainting and Wan image-to-video have explicit Diffusers pipeline mappings in `media-ladder.yaml`.

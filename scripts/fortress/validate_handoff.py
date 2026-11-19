@@ -3,15 +3,33 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
+if str(Path(__file__).resolve().parents[2]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 import yaml
+from scripts.fortress.run_ladder import PREDECESSORS
 
 from xurcroh.fortress.ladder import LadderRung
 
 ZERO_REVISION = "0" * 40
 ZERO_FINGERPRINT = "0" * 64
+PREDECESSOR_OUTPUTS = {
+    "L0": "f0-tiny-llama",
+    "L1": "l0-gemma-4-e2b",
+    "L2": "l1-gemma-4-12b",
+    "L3": "l2-gemma-4-26b-a4b",
+    "L4": "l3-qwen-3.8-27b",
+    "L5": "l4-dense-100-300b-class",
+    "L6": "l5-qwen3-235b-a22b",
+    "M1": "m0-synthetic-dit",
+    "M2": "m1-pixart-sigma-256",
+    "M3": "m2-qwen-image",
+    "M4": "m3-wan-2.1-t2v-1.3b",
+}
 
 
 def template_workers() -> list[dict[str, Any]]:
@@ -63,11 +81,20 @@ def validate(path: Path) -> list[str]:
         elif rung.revision == ZERO_REVISION or rung.checkpoint_fingerprint == ZERO_FINGERPRINT:
             raise ValueError(f"{rung.rung} requires immutable checkpoint provenance")
         model_option = f" --model {rung.model}" if len(documents(path)) > 1 else ""
+        predecessor = PREDECESSORS.get(rung.rung)
+        previous_option = (
+            ""
+            if predecessor is None
+            else "--previous-evidence /secure/evidence/"
+            f"{PREDECESSOR_OUTPUTS[rung.rung]}/evidence.json "
+            "--evidence-public-key /secure/evidence-signing.pub "
+        )
         commands.append(
             f"python scripts/fortress/run_ladder.py {path}{model_option} "
             "--provisioned-config /secure/provisioned.json "
             "--state /secure/provider-state.json "
             f"--output /secure/evidence/{rung.rung.lower()}-{rung.model} "
+            f"{previous_option}"
             "--signing-key /secure/evidence-signing.key"
         )
     return commands

@@ -3,8 +3,8 @@ rungs:
     model: pixart-sigma-256
     modality: image
     repository: PixArt-alpha/PixArt-Sigma-XL-2-256x256
-    revision: "0000000000000000000000000000000000000000"
-    license: REQUIRED_REVIEW
+    revision: 495cb1bafac48d71ca96761409c5fd7e48354df2
+    license: OpenRAIL
     checkpoint_fingerprint: "0000000000000000000000000000000000000000000000000000000000000000"
     resolution_required: true
     share_count: 2

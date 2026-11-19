@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import math
 import re
 import secrets
 from collections.abc import Callable
@@ -15,7 +17,7 @@ from xurcroh.algebra.modulation import SignedPermutation
 from xurcroh.errors import ConfigurationError
 from xurcroh.formats import TensorReader
 from xurcroh.fortress.combiner import FortressCombiner, FortressLayerMetadata
-from xurcroh.fortress.compiler import CompiledOperation, compile_operation
+from xurcroh.fortress.compiler import CompiledOperation, compile_operation, reap_prune_experts
 from xurcroh.fortress.placement import Operation
 
 
@@ -62,7 +64,57 @@ def _layer_family(names: list[str]) -> tuple[str, list[int]]:
     return family, sorted(families[family])
 
 
-def discover_fortress_operations(checkpoint: str | Path) -> list[Operation]:
+def load_reap_saliency(path: str | Path) -> dict[int, dict[int, float]]:
+    document = json.loads(Path(path).read_text())
+    if not isinstance(document, dict):
+        raise ValueError("REAP saliency must be a layer-to-expert object")
+    saliency = {}
+    for raw_layer, raw_experts in document.items():
+        if not isinstance(raw_experts, dict):
+            raise ValueError("REAP saliency must be a layer-to-expert object")
+        scores = {}
+        for raw_expert, raw_score in raw_experts.items():
+            try:
+                layer = int(raw_layer)
+                expert = int(raw_expert)
+                score = float(raw_score)
+            except (TypeError, ValueError) as error:
+                raise ValueError("REAP saliency indices and scores are invalid") from error
+            if layer < 0 or expert < 0 or not math.isfinite(score) or score < 0:
+                raise ValueError("REAP saliency indices and scores are invalid")
+            scores[expert] = score
+        saliency[layer] = scores
+    return saliency
+
+
+def _reap_expert_mapping(
+    expert_indices: list[int],
+    layer_index: int,
+    keep_fraction: float | None,
+    saliency: dict[int, dict[int, float]] | None,
+) -> dict[int, int]:
+    if keep_fraction is None:
+        return {expert: expert for expert in expert_indices}
+    if saliency is None or layer_index not in saliency:
+        raise ValueError(f"REAP saliency is missing for layer {layer_index}")
+    scores = saliency[layer_index]
+    if set(scores) != set(expert_indices):
+        raise ValueError(f"REAP saliency does not cover every expert in layer {layer_index}")
+    pruned = reap_prune_experts(
+        {str(expert): torch.empty(0) for expert in expert_indices},
+        {str(expert): scores[expert] for expert in expert_indices},
+        keep_fraction=keep_fraction,
+    )
+    selected = sorted(int(expert) for expert in pruned)
+    return {expert: new_index for new_index, expert in enumerate(selected)}
+
+
+def discover_fortress_operations(
+    checkpoint: str | Path,
+    *,
+    reap_keep_fraction: float | None = None,
+    reap_saliency: dict[int, dict[int, float]] | None = None,
+) -> list[Operation]:
     from xurcroh.architectures import open_architecture
 
     adapter = open_architecture(checkpoint)
@@ -112,9 +164,13 @@ def discover_fortress_operations(checkpoint: str | Path) -> list[Operation]:
             }
         )
         if expert_indices:
-            for expert in expert_indices:
+            expert_mapping = _reap_expert_mapping(
+                expert_indices, index, reap_keep_fraction, reap_saliency
+            )
+            for original_expert, expert in expert_mapping.items():
                 for projection in ("gate_proj", "up_proj", "down_proj"):
-                    add(f"{mlp_prefix}.experts.{expert}.{projection}.weight")
+                    source = f"{mlp_prefix}.experts.{original_expert}.{projection}.weight"
+                    add(source.replace(f".experts.{original_expert}.", f".experts.{expert}."))
         else:
             for projection in ("gate_proj", "up_proj", "down_proj"):
                 add(f"{mlp_prefix}.{projection}.weight")
@@ -127,6 +183,7 @@ def discover_fortress_operations(checkpoint: str | Path) -> list[Operation]:
                 and name not in selected
                 and ".per_layer_" not in name
                 and ".router." not in name
+                and ".experts." not in name
                 and name != f"{mlp_prefix}.gate.weight"
             ):
                 add(operation_name)
@@ -236,6 +293,8 @@ def compile_fortress_checkpoint(
     model_dtype: torch.dtype | None = None,
     load_model: bool = True,
     load_full_multimodal: bool = False,
+    reap_keep_fraction: float | None = None,
+    reap_saliency: dict[int, dict[int, float]] | None = None,
     operation_sink: Callable[[str, CompiledOperation], None] | None = None,
 ) -> FortressCheckpoint:
     if operation_sink is not None and not materialize_shares:
@@ -264,6 +323,16 @@ def compile_fortress_checkpoint(
         )
         if expert_indices != list(range(len(expert_indices))):
             raise ConfigurationError("expert indices must be contiguous and zero-based")
+        expert_mapping = _reap_expert_mapping(
+            expert_indices, index, reap_keep_fraction, reap_saliency
+        )
+        if expert_indices:
+            layer_names = [
+                name
+                for name in layer_names
+                if (match := re.search(r"mlp\.experts\.(\d+)\.", name)) is None
+                or int(match.group(1)) in expert_mapping
+            ]
         tensors = reader.read_tensors(layer_names)
         attention_prefix = f"{prefix}.self_attn"
         for projection in ("q_proj", "k_proj", "v_proj", "o_proj"):
@@ -286,11 +355,11 @@ def compile_fortress_checkpoint(
             )
         mlp_prefix = f"{prefix}.mlp"
         if expert_indices:
-            for expert in expert_indices:
+            for original_expert, expert in expert_mapping.items():
                 for projection in ("gate_proj", "up_proj", "down_proj"):
                     _compile_matrix(
                         f"{mlp_prefix}.experts.{expert}.{projection}",
-                        tensors[f"{mlp_prefix}.experts.{expert}.{projection}.weight"],
+                        tensors[f"{mlp_prefix}.experts.{original_expert}.{projection}.weight"],
                         operations,
                         threshold=threshold,
                         slice_count=slice_count,
@@ -324,6 +393,7 @@ def compile_fortress_checkpoint(
                 and operation_name not in operations
                 and ".per_layer_" not in name
                 and ".router." not in name
+                and ".experts." not in name
                 and name != f"{mlp_prefix}.gate.weight"
             ):
                 _compile_matrix(
@@ -339,9 +409,16 @@ def compile_fortress_checkpoint(
                     retain_quantized=retain_quantized,
                     operation_sink=operation_sink,
                 )
-        router = tensors[f"{mlp_prefix}.gate.weight"].to(torch.float64) if expert_indices else None
-        top_k = int(
-            config.get("num_experts_per_tok", config.get("moe_top_k", config.get("top_k", 1)))
+        router = (
+            tensors[f"{mlp_prefix}.gate.weight"][list(expert_mapping)]
+            .to(torch.float64)
+            .contiguous()
+            if expert_indices
+            else None
+        )
+        top_k = min(
+            int(config.get("num_experts_per_tok", config.get("moe_top_k", config.get("top_k", 1)))),
+            len(expert_mapping) if expert_indices else 1,
         )
         layers.append(
             FortressLayerMetadata(
@@ -433,6 +510,17 @@ def compile_fortress_checkpoint(
         from xurcroh.fortress.module import replace_linear_layers
         from xurcroh.fortress.text_loader import CLIENT_ONLY
 
+        if reap_keep_fraction is not None:
+            for index, layer in enumerate(layers):
+                if layer.router is None:
+                    continue
+                mlp = model.model.layers[index].mlp
+                mlp.gate.weight = torch.nn.Parameter(
+                    layer.router.to(mlp.gate.weight.dtype), requires_grad=False
+                )
+                mlp.gate.num_experts = layer.router.shape[0]
+                mlp.gate.top_k = layer.top_k
+                mlp.num_experts = layer.router.shape[0]
         if not load_full_multimodal and reader.config.get("model_type") not in {
             "gemma4",
             "qwen3_5",
