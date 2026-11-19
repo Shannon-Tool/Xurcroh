@@ -46,6 +46,8 @@ cargo test --workspace
 
 The final command validates 21 offline ladder commands. It does not contact a provider or resolve unresolved artifacts.
 
+On resource-constrained hosts, run tests sequentially with an explicit process memory cap (for example `ulimit -v 5000000`) and persistent logs. Do not run managed video, multi-model, full-relay, or full-suite workloads concurrently. Do not retry the same expensive test blindly: preserve the log, identify the failing phase, and reduce the fixture or move to a larger host. Terminate only test-owned processes and confirm that no workers or relay forwards remain. Optimized official EXL reconstruction is selected automatically on CUDA hosts; exact CPU reference decoders remain available for local verification.
+
 ## 3. Checkpoint provenance and format gates
 
 Every manifest with `resolution_required: true` must be completed before provisioning. For Hugging Face artifacts, verify the official repository, immutable 40-character commit, license, tokenizer, and complete checkpoint fingerprint. For local GGUF/EXL artifacts, additionally record source SHA-256, the original model's repository/revision/license, conversion tool and revision, and the pinned decoder identity from `ReferenceDecoderBridge`.
