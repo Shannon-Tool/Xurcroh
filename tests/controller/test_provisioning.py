@@ -495,7 +495,9 @@ def test_managed_datagram_tunnel_rewrites_endpoints_and_cleans_relay(
     tiny_llama_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     executor = RecordingExecutor()
-    cluster = provisioned_cluster().model_copy(update={"datagram_tunnel": True})
+    cluster = provisioned_cluster().model_copy(
+        update={"datagram_tunnel": True, "startup_concurrency": 1}
+    )
     definition = ModelDefinition(path=str(tiny_llama_path), engine="fortress", fortress_seed=731)
     deployment = FortressDeployment(
         cluster,
@@ -507,11 +509,20 @@ def test_managed_datagram_tunnel_rewrites_endpoints_and_cleans_relay(
     closed = []
 
     def start(
-        workers, remote_root, sdk, output, *, target_port=9444, target_ports=None, tunnel_name
+        workers,
+        remote_root,
+        sdk,
+        output,
+        *,
+        target_port=9444,
+        target_ports=None,
+        tunnel_name,
+        max_concurrency=2,
     ):
         assert target_port == 9444
         assert target_ports == [9444] * 20
         assert tunnel_name == "relay-0"
+        assert max_concurrency == 1
         for worker, configured in zip(workers, sdk["cluster"], strict=True):
             worker["datagram_tunnel"] = {
                 "local_relay_pid": 99999999,
