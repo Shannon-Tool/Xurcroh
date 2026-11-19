@@ -283,6 +283,8 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
     sdk = deployment["sdk"]
     definition = sdk["model_path"][rung.model]
     started = time.perf_counter()
+    from xurcroh.fortress.model_compiler import load_reap_saliency
+
     compiled = compile_fortress_checkpoint(
         definition["path"],
         seed=definition["fortress_seed"],
@@ -290,6 +292,12 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
         materialize_shares=False,
         model_dtype=torch.float32,
         load_model=True,
+        reap_keep_fraction=definition.get("reap_keep_fraction"),
+        reap_saliency=(
+            load_reap_saliency(definition["reap_saliency_path"])
+            if "reap_saliency_path" in definition
+            else None
+        ),
     )
     cluster = sdk["cluster"]
     identity = _identity(cluster)

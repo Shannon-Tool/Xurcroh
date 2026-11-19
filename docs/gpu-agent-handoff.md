@@ -64,6 +64,8 @@ PYTHONPATH=.:python .venv/bin/python scripts/formats/generate_exl_fixtures.py /s
 
 Decode each generated fixture through `xurcroh.formats.open_checkpoint` before compiling. Physical EXL2/EXL3 runs must compare reconstructed matrices against the official pinned ExLlama extension. The local trellis fixtures are not a substitute for that differential check.
 
+The L4 dense selection is `Qwen/Qwen1.5-110B-Chat` under the Tongyi Qianwen license. L6 uses `deepseek-ai/DeepSeek-V3` under the DeepSeek model license and requires an operator-measured `verification.reap_saliency_path`. Its JSON maps each layer index to every original expert index and finite nonnegative saliency score (`configs/ladders/reap-saliency.example.json` shows only the schema, not production scores). Complete per-layer scores are mandatory. Pruning reads only retained experts, remaps them contiguously, restricts official/client routers consistently, and measures quality against the original unpruned model. Do not provision L6 with example or incomplete scores.
+
 ## 4. Required topology and resource preflight
 
 A Fortress operation with `N` shares needs `N²` role cells for each of its activation and weight shares, plus any required replicas. Start with `N=2` and a separate trusted combiner. Hardware ladders generate a per-operation `PlacementMap` and package only each worker's assigned operations with operation-specific weight-share indices; an unplaced pool is rejected before SDK execution. The default 25% provider cap and anti-adjacency rules can require substantially more than four workers, especially for models with many operations. Local F0/M0 retain their explicit four-process reference topology and are not independent-host evidence. Operation placement enforces role uniqueness, anti-adjacency, query/key and gate/up/down separation, provider/country/CPU diversity, capacity, and randomized operation assignment.
@@ -107,7 +109,7 @@ For a single-rung manifest, the command shape is:
   --signing-key /secure/evidence-signing.key
 ```
 
-For `text-ladder.yaml`, `media-ladder.yaml`, or `f0-m0.yaml`, add `--model <manifest-model-name>`. The offline validator prints all 22 exact command forms. Use `--existing-deployment` only for a reviewed existing deployment, never together with `--provisioned-config`.
+For `text-ladder.yaml`, `media-ladder.yaml`, or `f0-m0.yaml`, add `--model <manifest-model-name>`. The offline validator prints all 22 exact command forms. F0/M0 are roots; every later rung additionally requires `--previous-evidence <signed-predecessor.json>` and `--evidence-public-key <trusted-public-key>`. The runner verifies the predecessor's passing V2 result, rung order, and identical source revision before compilation or deployment. Use `--existing-deployment` only for a reviewed existing deployment, never together with `--provisioned-config`.
 
 ## 6. Numerical and output acceptance
 

@@ -38,6 +38,7 @@ from xurcroh.fortress.media_components import compile_media_checkpoint, discover
 from xurcroh.fortress.model_compiler import (
     compile_fortress_checkpoint,
     discover_fortress_operations,
+    load_reap_saliency,
 )
 from xurcroh.preflight import preflight_checkpoint
 
@@ -391,10 +392,21 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
     checkpoint = Path(raw.get("checkpoint_path", ""))
     if not checkpoint.is_dir():
         raise ValueError("checkpoint_path must name a trusted local checkpoint directory")
+    verification = rung.verification
+    reap_keep_fraction = verification.get("reap_keep_fraction")
+    reap_saliency = (
+        load_reap_saliency(verification["reap_saliency_path"])
+        if "reap_saliency_path" in verification
+        else None
+    )
     placement = None
     if rung.rung not in {"F0", "M0"} or any(worker.operation_roles for worker in rung.workers):
         if rung.modality in {"text", "vlm"}:
-            operations = discover_fortress_operations(checkpoint)
+            operations = discover_fortress_operations(
+                checkpoint,
+                reap_keep_fraction=reap_keep_fraction,
+                reap_saliency=reap_saliency,
+            )
         else:
             adapter = MediaArchitectureAdapter.from_checkpoint(checkpoint, rung.modality)
             operations = discover_media_operations(str(checkpoint), adapter)
@@ -426,6 +438,8 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
             seed=seed,
             share_count=rung.share_count,
             load_model=False,
+            reap_keep_fraction=reap_keep_fraction,
+            reap_saliency=reap_saliency,
             operation_sink=lambda name, operation: write_operation_role_artifacts(
                 name, operation, rung, role_root
             ),

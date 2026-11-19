@@ -222,6 +222,14 @@ class ModelDefinition(StrictModel):
     fortress_seed: int | None = None
     fortress_shares: int = Field(default=2, ge=2)
     fortress_max_provider_fraction: float = Field(default=0.25, gt=0, le=1)
+    reap_keep_fraction: float | None = Field(default=None, gt=0, le=1)
+    reap_saliency_path: str | None = None
+
+    @model_validator(mode="after")
+    def validate_reap_configuration(self) -> Self:
+        if (self.reap_keep_fraction is None) != (self.reap_saliency_path is None):
+            raise ConfigurationError("REAP requires both keep fraction and saliency path")
+        return self
 
 
 class ModelRegistry:
