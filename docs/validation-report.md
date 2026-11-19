@@ -3,8 +3,8 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Current verification revision: `720193e87b7fdacba627cb0847b80eb9400ff0f2`
-- Local implementation: **focused current-SHA checks passed; complete final-SHA standard suite pending**
+- Current verification revision: `014f0acc147237d3875b0beb67d4d01e2a2cc842`
+- Local implementation: **standard suite and current static checks passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
 - MoE, VLM, image, and video hardware execution: **not validated**
@@ -36,16 +36,16 @@ The two-model managed test has not completed on this host. At `90a99a6`, its 24 
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **562 passed, 35 deselected** at `7b61493`; slow managed/video tests have separate results. Current-SHA relay/configuration verification: **12 focused tests passed** at `720193e`; the complete standard suite must still be rerun on the final SHA |
-| Python branch coverage | **81.22%**, above the 80% requirement at `7b61493` |
-| Ruff format and lint | Passed on changed files at `720193e` |
-| Strict mypy, 157 source files | Passed at `720193e` |
+| Python unit/integration/security tests | **565 passed, 35 deselected** in 879.92 seconds at `014f0acc147237d3875b0beb67d4d01e2a2cc842`; slow managed/video tests have separate results |
+| Python branch coverage | **81.50%**, above the 80% requirement at `014f0ac` |
+| Ruff format and lint | Passed across 328 Python files at `014f0ac` |
+| Strict mypy, 157 source files | Passed at `014f0ac` |
 | Rust tests | **31 passed** at `720193e` |
 | Rust formatting, Clippy, RustSec | Passed at `720193e`; no known advisories |
 | Frontend interaction tests | **35 passed** at `720193e` |
 | Frontend typecheck, lint, production build, content validation | Passed at `720193e`; 22 sections, equations, links, and Mermaid syntax validated |
 | Offline ladder/handoff validation | All 21 command forms validated without provider contact at `720193e` |
-| ProVerif model and protocol fuzzing | ProVerif passed in the hosted run above; all three fuzz targets passed locally at `5bcdab3` with 2,230,999 frame, 393,608 AEAD, and 33,264 HPKE runs; newer hosted runs are blocked before startup |
+| ProVerif model and protocol fuzzing | ProVerif passed in the hosted run above; all three fuzz targets passed locally at `5bcdab3` with 2,230,999 frame, 393,608 AEAD, and 33,264 HPKE runs. The current host lacks `opam`, so no new local ProVerif result is claimed; newer hosted runs are blocked before startup |
 | Clean reproducible wheel builds | Matched at `eb9dc848bc189ddf168d5371ed90bffcedd1e7c9`: Python `fb5736c38e74cc8e0d5d359bb4b70f2b545e1492811340c5f2b46a6cf5c9a1ec`, native `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2`; current hosted rebuild remains billing-blocked |
 | `pip-audit` | No known vulnerabilities in audited dependencies at `720193e`; local CPU torch/torchvision and Xurcroh packages remain skipped as detailed below |
 | `npm audit` | 0 vulnerabilities at `720193e` |
@@ -55,9 +55,9 @@ The two-model managed test has not completed on this host. At `90a99a6`, its 24 
 Primary commands:
 
 ```bash
-.venv/bin/pytest --cov --cov-report=term -m 'not hardware' -q
-.venv/bin/ruff format --check python benchmarks tests
-.venv/bin/ruff check python benchmarks tests
+.venv/bin/pytest --cov --cov-report=term -m 'not hardware and not slow' -q
+.venv/bin/ruff format --check python benchmarks tests examples
+.venv/bin/ruff check python benchmarks tests examples
 .venv/bin/mypy
 PATH=/root/.cargo/bin:$PATH cargo fmt --all -- --check
 PATH=/root/.cargo/bin:$PATH cargo clippy --workspace --all-targets -- -D warnings
