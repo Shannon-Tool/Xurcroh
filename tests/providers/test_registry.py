@@ -29,3 +29,23 @@ def test_provider_registry_aggregates_backends_and_routes_lifecycle() -> None:
     registry.destroy(offers[1], 202)
     assert created == [(1, {"image": "test"})]
     assert destroyed == [202]
+
+
+def test_provider_plugins_report_charges_and_remaining_instances(
+    monkeypatch,
+) -> None:
+    import xurcroh.providers.registry as module
+
+    adapter = ProviderAdapter(
+        offers=lambda gpu_name: [],
+        create=lambda offer, **values: 900,
+        destroy=lambda instance_id: None,
+        charges=lambda offer, instance_id: 2.5,
+        remaining=lambda offer, instance_id: False,
+    )
+    entry_point = type("EntryPoint", (), {"name": "external", "load": lambda self: adapter})()
+    monkeypatch.setattr(module, "entry_points", lambda group: [entry_point])
+    registry = ProviderRegistry.with_entry_points()
+    offer = {"provider_id": "external"}
+    assert registry.charges(offer, 900) == 2.5
+    assert registry.remaining(offer, 900) is False

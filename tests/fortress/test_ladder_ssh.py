@@ -153,6 +153,43 @@ def test_worker_shutdown_collects_actual_exit_status(monkeypatch: pytest.MonkeyP
     assert any("role.exit" in argument for command in commands for argument in command)
 
 
+def test_role_resources_measure_live_process_and_gpu_memory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = load_module()
+    result = type(
+        "Result",
+        (),
+        {"returncode": 0, "stdout": " 12.5 204800\n512\n256\n", "stderr": ""},
+    )()
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: result)
+    resources = module.collect_role_resources(
+        [{"name": "role", "host": "192.0.2.1", "ssh_user": "root"}], "a" * 40
+    )
+    assert resources["role"] == {
+        "running": True,
+        "cpu_percent": 12.5,
+        "rss_bytes": 204800 * 1024,
+        "gpu_memory_bytes": (512 + 256) * 1024 * 1024,
+    }
+
+
+def test_role_capacity_is_checked_against_discovered_gpu_memory(
+    tiny_llama_path: Path,
+) -> None:
+    from tests.fortress.test_ladder import manifest_mapping
+
+    from xurcroh.fortress.ladder import LadderRung
+
+    module = load_module()
+    rung = LadderRung.from_mapping(manifest_mapping())
+    insufficient = [{"gpus": [{"memory_bytes": 1}]} for _ in rung.workers]
+    with pytest.raises(Exception, match="insufficient known memory"):
+        module.validate_role_capacity(rung, tiny_llama_path, insufficient)
+    sufficient = [{"gpus": [{"memory_bytes": 2 * 1024**3}]} for _ in rung.workers]
+    module.validate_role_capacity(rung, tiny_llama_path, sufficient)
+
+
 def test_hardware_validation_requires_a_reported_gpu_per_worker() -> None:
     module = load_module()
     reports = [
