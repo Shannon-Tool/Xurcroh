@@ -141,3 +141,12 @@ def test_fortress_bootstrap_has_minimal_pinned_role_environment() -> None:
     assert 'FORTRESS_ONLY="${XURCROH_FORTRESS_ONLY:-0}"' in bootstrap
     assert "requirements-fortress-cuda.lock" in bootstrap
     assert "PackageNotFoundError" in bootstrap
+
+
+def test_bootstrap_includes_pinned_quantized_decoder_dependencies() -> None:
+    bootstrap = (ROOT / "scripts/bootstrap-python.sh").read_text()
+    lock = (ROOT / "requirements.lock").read_text().splitlines()
+    assert "formats" in bootstrap
+    for package in ("exllamav2", "exllamav3", "gguf", "ninja", "marisa-trie", "llguidance"):
+        assert any(line.startswith(f"{package}==") for line in lock)
+    assert "/root/" not in "\n".join(lock)
