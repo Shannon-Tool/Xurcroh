@@ -22,7 +22,7 @@ print(response.choices[0].message.content)
 client.close()
 ```
 
-Synchronous, asynchronous, streaming, multimodal, advanced cluster, and security configuration are documented in `docs/sdk.md`. A requested model must resolve to a real execution adapter; Xurcroh never returns generated-looking canned responses. Deployment and repeatable JSON benchmarks are documented in `docs/deployment.md` and `docs/benchmarking.md`.
+Synchronous, asynchronous, streaming, multimodal, advanced cluster, and security configuration are documented in `docs/sdk.md`. GGUF, EXL2/GPTQ, and EXL3 checkpoints use the same Fortress API with automatic format detection and explicit semantic adapters; unknown graph semantics fail closed. A requested model must resolve to a real execution adapter; Xurcroh never returns generated-looking canned responses. Deployment and repeatable JSON benchmarks are documented in `docs/deployment.md` and `docs/benchmarking.md`; the funded GPU validation procedure is in `docs/gpu-agent-handoff.md`.
 
 ## Protected multi-host quickstart
 
