@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Current verification revision: `014f0acc147237d3875b0beb67d4d01e2a2cc842`
+- Current verification revision: `ece124184f063a82bd0e2dc5e93b03a0770701b5`
 - Local implementation: **standard suite and current static checks passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -36,10 +36,10 @@ The two-model managed test has not completed on this host. At `90a99a6`, its 24 
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **565 passed, 35 deselected** in 879.92 seconds at `014f0acc147237d3875b0beb67d4d01e2a2cc842`; slow managed/video tests have separate results |
-| Python branch coverage | **81.50%**, above the 80% requirement at `014f0ac` |
-| Ruff format and lint | Passed across 328 Python files at `014f0ac` |
-| Strict mypy, 157 source files | Passed at `014f0ac` |
+| Python unit/integration/security tests | **568 passed, 35 deselected** in 956.66 seconds at `ece124184f063a82bd0e2dc5e93b03a0770701b5`; slow managed/video tests have separate results |
+| Python branch coverage | **81.47%**, above the 80% requirement at `ece1241` |
+| Ruff format and lint | Passed across 328 Python files at `014f0ac`; new protocol checker and tests also pass at `ece1241` |
+| Strict mypy, 157 source files | Passed at `ece1241` |
 | Rust tests | **31 passed** at `720193e` |
 | Rust formatting, Clippy, RustSec | Passed at `720193e`; no known advisories |
 | Frontend interaction tests | **35 passed** at `720193e` |
