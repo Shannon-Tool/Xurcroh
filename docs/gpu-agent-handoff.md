@@ -121,7 +121,7 @@ Each rung requires:
 - non-square, odd-sized, and chunked temporal shapes for media;
 - image-to-image, masked editing, and image-to-video workflow checks where the pinned pipeline exposes them. `verification.workflows` selects the required gates and `verification.workflow_pipelines` maps each to an installed Diffusers class; current manifests include Flux/Qwen inpainting and Wan image-to-video. The verifier executes every selected workflow through local, remote, original, and public-SDK paths and rejects unsupported parameters rather than skipping them.
 
-Retain model/output quality metrics and actual failures. Performance is measured, never a pass criterion.
+Retain model/output quality metrics and actual failures. Performance is measured, never a pass criterion. Text verification releases the compiled reference before loading the original model; media releases local/remote pipelines before original-model evaluation. V2 evidence includes per-phase timing and client RSS so large-model memory can be reviewed instead of assumed. If the original model does not fit alongside the trusted verifier after those releases, run the same pinned original-model quality comparison on a separate trusted reference host and join its signed result to the rung evidence; never skip or weaken that comparison.
 
 ## 7. Security and adversarial validation
 

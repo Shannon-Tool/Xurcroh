@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
@@ -20,8 +21,24 @@ from xurcroh.fortress.worker import FortressRoleWorker
 
 
 def test_ladder_verifier_compares_remote_tensors_and_public_sdk(
-    tiny_llama_path: Path, tmp_path: Path, mtls_identities: dict[str, bytes]
+    tiny_llama_path: Path,
+    tmp_path: Path,
+    mtls_identities: dict[str, bytes],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import gc
+
+    from transformers import AutoModelForCausalLM
+
+    events: list[str] = []
+    monkeypatch.setattr(gc, "collect", lambda: events.append("gc"))
+    original_loader = AutoModelForCausalLM.from_pretrained
+
+    def tracked_loader(*args, **kwargs):
+        events.append("original")
+        return original_loader(*args, **kwargs)
+
+    monkeypatch.setattr(AutoModelForCausalLM, "from_pretrained", tracked_loader)
     rung = LadderRung.from_mapping(manifest_mapping())
     compiled = compile_fortress_checkpoint(tiny_llama_path, seed=731)
     workers: list[FortressRoleWorker] = []
@@ -73,6 +90,9 @@ def test_ladder_verifier_compares_remote_tensors_and_public_sdk(
         assert report["lifecycle"]["cancelled"] is True
         assert report["lifecycle"]["post_cancellation_completion_tokens"] == 1
         assert report["lifecycle"]["concurrent_requests"] == 2
+        last_original = max(index for index, event in enumerate(events) if event == "original")
+        assert "gc" in events[:last_original]
+        assert report["client_phase_rss_bytes"]["original_model"] > 0
     finally:
         for worker in workers:
             worker.close()
