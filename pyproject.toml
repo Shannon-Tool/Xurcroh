@@ -35,6 +35,8 @@ cloud = [
   "alibabacloud_bssopenapi20171214>=5.2,<6",
   "oci>=2.192,<3",
   "PyJWT>=2.10,<3",
+  "boto3>=1.44,<2",
+  "cbor2>=5.9,<6",
 ]
 dev = [
   "pytest>=8.4,<10",
@@ -90,7 +92,7 @@ module = [
   "torch.*", "safetensors.*", "PIL.*", "asyncssh.*", "vllm.*", "sglang.*",
   "xdit.*", "xurcroh_quic", "imageio.*", "imageio_ffmpeg", "sgx_dcap_quote_verify",
   "alibabacloud_bssopenapi20171214.*", "alibabacloud_credentials.*",
-  "alibabacloud_ecs20140526.*", "alibabacloud_tea_openapi.*", "oci.*",
+  "alibabacloud_ecs20140526.*", "alibabacloud_tea_openapi.*", "oci.*", "boto3.*",
 ]
 ignore_missing_imports = true
 
