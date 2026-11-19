@@ -144,6 +144,11 @@ def decode_exl3(
     start, stop, _ = (0, output_size, 1) if columns is None else columns.indices(output_size)
     su = _signs(tensors, prefix, "su", input_size)
     sv = _signs(tensors, prefix, "sv", output_size)
+    if torch.cuda.is_available():
+        from xurcroh.formats.reference_bridge import reconstruct_exl3_official
+
+        restored = reconstruct_exl3_official(tensors, prefix, (output_size, input_size))
+        return restored[start:stop].contiguous()
     packed = trellis.detach().cpu().numpy()
     transform = _hadamard()
     restored_blocks = []
