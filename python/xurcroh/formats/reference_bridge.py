@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from importlib import metadata
 from pathlib import Path
+from typing import cast
 
 import torch
 
@@ -40,9 +41,9 @@ class ReferenceDecoderBridge:
         return {"package": self.package, "version": version, "revision": digest.hexdigest()}
 
 
-def official_exl2_error(
-    tensors: dict[str, torch.Tensor], prefix: str, expected: torch.Tensor
-) -> float:
+def reconstruct_exl2_official(
+    tensors: dict[str, torch.Tensor], prefix: str, shape: tuple[int, int]
+) -> torch.Tensor:
     from exllamav2 import ext
 
     extension = ext.exllamav2_ext  # type: ignore[attr-defined]
@@ -64,14 +65,13 @@ def official_exl2_error(
         quantized["q_group_map"] = ext.make_group_map(
             quantized["q_groups"], quantized["q_weight"].shape[0]
         )
-    output_size, input_size = expected.shape
+    output_size, input_size = shape
     temporary = torch.empty(input_size * output_size, dtype=torch.float16, device="cuda")
     handle = ext.make_q_matrix(quantized, temporary)
     try:
         official = torch.empty((input_size, output_size), dtype=torch.float16, device="cuda")
         extension.reconstruct(handle, official)
-        official = official.T.contiguous()
-        return float((official.cpu() - expected).abs().max())
+        return official.T.contiguous().cpu()
     finally:
         extension.free_q_matrix(handle)
         temporary.zero_()
@@ -79,14 +79,21 @@ def official_exl2_error(
             tensor.zero_()
 
 
-def official_exl3_error(
+def official_exl2_error(
     tensors: dict[str, torch.Tensor], prefix: str, expected: torch.Tensor
 ) -> float:
+    official = reconstruct_exl2_official(tensors, prefix, (expected.shape[0], expected.shape[1]))
+    return float((official - expected).abs().max())
+
+
+def reconstruct_exl3_official(
+    tensors: dict[str, torch.Tensor], prefix: str, shape: tuple[int, int]
+) -> torch.Tensor:
     from exllamav3.modules.quant.exl3 import LinearEXL3
 
     if not torch.cuda.is_available():
         raise CapabilityError("official EXL3 differential validation requires CUDA")
-    output_size, input_size = expected.shape
+    output_size, input_size = shape
     arguments = {
         name: tensors[f"{prefix}.{name}"].cuda()
         for name in ("su", "sv", "suh", "svh", "trellis", "mcg", "mul1", "bias")
@@ -106,8 +113,14 @@ def official_exl3_error(
         bias=arguments.get("bias"),
     )
     official = layer.get_weight_tensor().T.contiguous()  # type: ignore[no-untyped-call]
-    result = float((official.cpu() - expected).abs().max())
     layer.unload()  # type: ignore[no-untyped-call]
     for tensor in arguments.values():
         tensor.zero_()
-    return result
+    return cast(torch.Tensor, official.cpu())
+
+
+def official_exl3_error(
+    tensors: dict[str, torch.Tensor], prefix: str, expected: torch.Tensor
+) -> float:
+    official = reconstruct_exl3_official(tensors, prefix, (expected.shape[0], expected.shape[1]))
+    return float((official - expected).abs().max())

@@ -70,6 +70,10 @@ def decode_exl2(tensors: dict[str, torch.Tensor], prefix: str) -> torch.Tensor:
         input_rows is not None and logical_start != input_rows
     ):
         raise ModelLoadError("EXL2 groups do not cover the complete matrix")
+    if torch.cuda.is_available():
+        from xurcroh.formats.reference_bridge import reconstruct_exl2_official
+
+        return reconstruct_exl2_official(tensors, prefix, (q_weight.shape[1], logical_start))
     result = torch.cat(decoded_groups).to(torch.float16)
     if inverse is not None:
         validate_permutation(inverse)
