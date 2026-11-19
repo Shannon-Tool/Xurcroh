@@ -20,9 +20,14 @@ class DiffusionMediaBoundary:
 
     @classmethod
     def from_definition(cls, definition: ModelDefinition) -> DiffusionMediaBoundary:
-        from diffusers import DiffusionPipeline
+        import diffusers
 
-        pipeline = DiffusionPipeline.from_pretrained(  # type: ignore[no-untyped-call]
+        pipeline_type = (
+            diffusers.DiffusionPipeline
+            if definition.pipeline_class is None
+            else getattr(diffusers, definition.pipeline_class)
+        )
+        pipeline = pipeline_type.from_pretrained(
             definition.path,
             local_files_only=not definition.allow_download,
             trust_remote_code=False,

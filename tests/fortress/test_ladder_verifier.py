@@ -72,3 +72,28 @@ def test_ladder_verifier_compares_remote_tensors_and_public_sdk(
     finally:
         for worker in workers:
             worker.close()
+
+
+def test_media_workflows_include_masked_editing_pipeline() -> None:
+    from xurcroh.fortress.ladder_verifier import _media_workflows
+
+    document = manifest_mapping("M2")
+    document["modality"] = "image"
+    document["verification"] = {"workflow_pipelines": {"masked_edit": "CustomInpaintPipeline"}}
+    rung = LadderRung.from_mapping(document)
+
+    class Pipeline:
+        transformer = object()
+
+        def __call__(self, prompt, image=None, mask_image=None):
+            return None
+
+    workflows = _media_workflows(rung, Pipeline())
+    assert {workflow.name for workflow in workflows} == {
+        "text_to_image",
+        "image_to_image",
+        "masked_edit",
+    }
+    selected = {workflow.name: workflow for workflow in workflows}
+    assert selected["masked_edit"].pipeline_class == "CustomInpaintPipeline"
+    assert selected["masked_edit"].masked is True

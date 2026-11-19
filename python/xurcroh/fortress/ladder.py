@@ -95,6 +95,7 @@ class LadderRung:
     workers: tuple[WorkerPlacement, ...]
     placement_epoch: int = 0
     max_provider_fraction: float = 0.25
+    verification: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(
@@ -103,6 +104,9 @@ class LadderRung:
         raw_workers = document.get("workers")
         if not isinstance(raw_workers, list):
             raise LadderEvidenceError("workers must be a list")
+        verification = document.get("verification", {})
+        if not isinstance(verification, dict):
+            raise LadderEvidenceError("verification must be an object")
         rung = cls(
             rung=_string(document, "rung"),
             model=_string(document, "model"),
@@ -121,6 +125,7 @@ class LadderRung:
                 if "max_provider_fraction" in document
                 else 0.25
             ),
+            verification=verification,
         )
         rung._validate(allow_unverified_hardware=allow_unverified_hardware)
         return rung

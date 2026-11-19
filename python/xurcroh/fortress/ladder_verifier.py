@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -57,6 +58,58 @@ def _roles(cluster: list[dict[str, Any]], operation_name: str) -> list[RoleEndpo
     if not roles:
         raise CapabilityError(f"no roles are assigned to operation {operation_name!r}")
     return roles
+
+
+@dataclass(frozen=True)
+class MediaWorkflow:
+    name: str
+    pipeline_class: str | None
+    masked: bool = False
+
+
+def _media_workflows(rung: LadderRung, pipeline: Any) -> list[MediaWorkflow]:
+    import inspect
+
+    from xurcroh.fortress.media_adapter import MediaArchitectureAdapter
+
+    adapter = MediaArchitectureAdapter.from_pipeline(pipeline, rung.modality)
+    verification = rung.verification
+    selected = set(adapter.workflows)
+    parameters = inspect.signature(pipeline.__call__).parameters
+    if rung.rung == "M2" and {"image", "mask_image"} <= set(parameters):
+        selected.add("masked_edit")
+    requested = verification.get("workflows")
+    if requested is not None:
+        if (
+            not isinstance(requested, list)
+            or not requested
+            or any(not isinstance(name, str) or not name for name in requested)
+        ):
+            raise CapabilityError("verification workflows must be a nonempty string list")
+        selected = set(requested)
+    allowed = (
+        {"text_to_image", "image_to_image", "masked_edit"}
+        if rung.modality == "image"
+        else {"text_to_video", "image_to_video"}
+    )
+    if not selected or not selected <= allowed:
+        raise CapabilityError("verification contains an unsupported media workflow")
+    pipeline_classes = verification.get("workflow_pipelines", {})
+    if not isinstance(pipeline_classes, dict):
+        raise CapabilityError("workflow_pipelines must be an object")
+    workflows = []
+    for name in sorted(selected):
+        if name in {"image_to_image", "image_to_video"} and "image" not in parameters:
+            raise CapabilityError(f"pipeline does not expose the required {name} workflow")
+        if name == "masked_edit" and not {"image", "mask_image"} <= set(parameters):
+            raise CapabilityError("masked editing requires image and mask_image parameters")
+        pipeline_class = pipeline_classes.get(name)
+        if pipeline_class is not None and (
+            not isinstance(pipeline_class, str) or not pipeline_class.isidentifier()
+        ):
+            raise CapabilityError("workflow pipeline class names must be valid identifiers")
+        workflows.append(MediaWorkflow(name, pipeline_class, name == "masked_edit"))
+    return workflows
 
 
 def _provenance(
@@ -129,12 +182,16 @@ def _provenance(
         "source_decoder_max_abs_error": official_error or 0.0,
         "official_decoder_validated": selected_format in {"safetensors", "gguf"}
         or official_error == 0.0,
-        "workflow": rung.modality,
+        "workflow": report.get("workflow", rung.modality),
         "client_resources": report.get("sdk", {}).get("metrics", {}),
-        "role_resources": deployment.get("role_resources", {}),
+        "role_resources": report.get("role_resources", deployment.get("role_resources", {})),
         "phase_seconds": report.get("phase_seconds")
         or {"verification": report["inference_seconds"]},
-        "relay_mode": "datagram" if deployment.get("datagram_tunnel") else "direct",
+        "relay_mode": (
+            "datagram"
+            if deployment.get("datagram_tunnel", deployment["rung"].get("datagram_tunnel", False))
+            else "direct"
+        ),
         "result": "pass",
     }
 
@@ -305,8 +362,10 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
 
     phase("compile_and_connect")
 
-    def boundary(grid: dict[str, FortressRoleClient] | None) -> Any:
-        result = DiffusionMediaBoundary.from_definition(definition)
+    def boundary(
+        grid: dict[str, FortressRoleClient] | None, selected_definition: ModelDefinition
+    ) -> Any:
+        result = DiffusionMediaBoundary.from_definition(selected_definition)
         for component, component_operations in compiled.items():
             component_clients = None
             if grid is not None:
@@ -320,73 +379,113 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
             )
         return result
 
-    try:
-        local = boundary(None)
-        remote = boundary(clients)
-        original = DiffusionMediaBoundary.from_definition(definition)
-        phase("load_boundaries")
-        verification = deployment["rung"].get("verification", {})
-        common: dict[str, Any] = {
-            "model": rung.model,
-            "prompt": "a small red square",
-            "steps": int(verification.get("steps", 1)),
-            "seed": 11,
-            "size": str(verification.get("size", "64x64")),
-            "timeout": float(verification.get("timeout", 3600)),
-        }
-        frames = int(verification.get("frames", 4))
-        fps = int(verification.get("fps", 4))
-        width, height = (int(value) for value in str(common["size"]).split("x"))
-        request: ImageGenerationRequest | VideoGenerationRequest
+    verification = rung.verification
+    common: dict[str, Any] = {
+        "model": rung.model,
+        "prompt": "a small red square",
+        "steps": int(verification.get("steps", 1)),
+        "seed": 11,
+        "size": str(verification.get("size", "64x64")),
+        "timeout": float(verification.get("timeout", 3600)),
+    }
+    if rung.modality == "image":
+        common["strength"] = float(verification.get("strength", 0.75))
+    frames = int(verification.get("frames", 4))
+    fps = int(verification.get("fps", 4))
+    width, height = (int(value) for value in str(common["size"]).split("x"))
+    from base64 import b64encode
+    from io import BytesIO
+
+    from PIL import Image
+
+    from xurcroh.runtime.vlm import _decode_image
+
+    def source_data(mask: bool = False) -> str:
+        image = Image.new("L" if mask else "RGB", (width, height), 255 if mask else (255, 0, 0))
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        return "data:image/png;base64," + b64encode(buffer.getvalue()).decode("ascii")
+
+    source_image = source_data()
+    mask_image = source_data(mask=True)
+
+    def request_for(workflow: MediaWorkflow) -> ImageGenerationRequest | VideoGenerationRequest:
+        values = dict(common)
+        if workflow.name != ("text_to_image" if rung.modality == "image" else "text_to_video"):
+            values["image"] = source_image
+        if workflow.masked:
+            values["mask"] = mask_image
         if rung.modality == "image":
-            request = ImageGenerationRequest(**common)
-            parameters = {
-                "prompt": request.prompt,
-                "width": width,
-                "height": height,
-                "num_inference_steps": request.steps,
-                "output_type": "latent",
-            }
-        else:
-            request = VideoGenerationRequest(**common, frames=frames, fps=fps)
-            parameters = {
-                "prompt": request.prompt,
-                "width": width,
-                "height": height,
-                "num_frames": frames,
-                "fps": fps,
-                "num_inference_steps": request.steps,
-                "output_type": "latent",
-            }
+            return ImageGenerationRequest(**values)
+        return VideoGenerationRequest(**values, frames=frames, fps=fps)
 
-        supports_latent_decode = hasattr(original.pipeline, "decode_latents") or hasattr(
-            original.pipeline, "vae"
-        )
-        if not supports_latent_decode:
+    def generate(
+        pipeline: Any, request: ImageGenerationRequest | VideoGenerationRequest
+    ) -> torch.Tensor:
+        parameters: dict[str, Any] = {
+            "prompt": request.prompt,
+            "width": width,
+            "height": height,
+            "num_inference_steps": request.steps,
+            "output_type": "latent",
+        }
+        if isinstance(request, VideoGenerationRequest):
+            parameters.update({"num_frames": frames, "fps": fps})
+        if not hasattr(pipeline, "decode_latents") and not hasattr(pipeline, "vae"):
             parameters["output_type"] = "pt"
+        signature = inspect.signature(pipeline.__call__).parameters
+        if request.image is not None:
+            if "image" not in signature:
+                raise CapabilityError("conditioned media pipeline does not accept an image")
+            parameters["image"] = _decode_image(request.image)
+        if isinstance(request, ImageGenerationRequest) and request.mask is not None:
+            if "mask_image" not in signature:
+                raise CapabilityError("editing pipeline does not accept a mask")
+            parameters["mask_image"] = _decode_image(request.mask)
+        selected = {key: value for key, value in parameters.items() if key in signature}
+        selected["generator"] = torch.Generator().manual_seed(11)
+        result = pipeline(**selected)
+        values = (
+            getattr(result, "images", None)
+            if rung.modality == "image"
+            else getattr(result, "frames", None)
+        )
+        if not isinstance(values, torch.Tensor):
+            raise CapabilityError("media pipeline did not return a latent tensor")
+        return values
 
-        def generate(pipeline: Any) -> torch.Tensor:
-            signature = inspect.signature(pipeline.__call__).parameters
-            selected = {key: value for key, value in parameters.items() if key in signature}
-            selected["generator"] = torch.Generator().manual_seed(11)
-            result = pipeline(**selected)
-            values = (
-                getattr(result, "images", None)
-                if rung.modality == "image"
-                else getattr(result, "frames", None)
+    probe = DiffusionMediaBoundary.from_definition(definition)
+    workflows = _media_workflows(rung, probe.pipeline)
+    del probe
+    quantized_error = 0.0
+    original_error = 0.0
+    workflow_reports: dict[str, Any] = {}
+    try:
+        for workflow in workflows:
+            selected_definition = definition.model_copy(
+                update={"pipeline_class": workflow.pipeline_class}
             )
-            if not isinstance(values, torch.Tensor):
-                raise CapabilityError("media pipeline did not return a latent tensor")
-            return values
-
-        expected = generate(local.pipeline)
-        phase("quantized_reference")
-        actual = generate(remote.pipeline)
-        phase("remote_grid")
-        original_values = generate(original.pipeline)
-        phase("original_model")
-        quantized_error = float((actual - expected).abs().max())
-        original_error = float((expected - original_values).abs().max())
+            request = request_for(workflow)
+            local = boundary(None, selected_definition)
+            remote = boundary(clients, selected_definition)
+            original = DiffusionMediaBoundary.from_definition(selected_definition)
+            phase(f"{workflow.name}:load_boundaries")
+            expected = generate(local.pipeline, request)
+            phase(f"{workflow.name}:quantized_reference")
+            actual = generate(remote.pipeline, request)
+            phase(f"{workflow.name}:remote_grid")
+            original_values = generate(original.pipeline, request)
+            phase(f"{workflow.name}:original_model")
+            workflow_quantized = float((actual - expected).abs().max())
+            workflow_original = float((expected - original_values).abs().max())
+            quantized_error = max(quantized_error, workflow_quantized)
+            original_error = max(original_error, workflow_original)
+            workflow_reports[workflow.name] = {
+                "pipeline_class": workflow.pipeline_class or "DiffusionPipeline",
+                "quantized_reference_max_abs_error": workflow_quantized,
+                "original_model_max_abs_error": workflow_original,
+            }
+            del local, remote, original
         from xurcroh.fortress.attacks import exercise_adversarial_grid
 
         adversarial = exercise_adversarial_grid(
@@ -400,13 +499,35 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
     direct_received = sum(client.bytes_received for client in clients.values())
     from Xurcroh import Xurcroh
 
-    response: Any
-    with Xurcroh(**sdk) as client:
-        if rung.modality == "image":
-            response = client.images.generate(**common)
-        else:
-            response = client.videos.generate(**common, frames=frames, fps=fps)
-        metrics = client.metrics()
+    responses: dict[str, Any] = {}
+    response: Any = None
+    metrics: dict[str, Any] = {}
+    sdk_sent = 0
+    sdk_received = 0
+    for workflow in workflows:
+        workflow_sdk = {
+            **sdk,
+            "model_path": {
+                **sdk["model_path"],
+                rung.model: {
+                    **sdk["model_path"][rung.model],
+                    "pipeline_class": workflow.pipeline_class,
+                },
+            },
+        }
+        request = request_for(workflow)
+        with Xurcroh(**workflow_sdk) as client:
+            if rung.modality == "image" and workflow.masked:
+                response = client.images.edit(**request.model_dump())
+            elif rung.modality == "image":
+                response = client.images.generate(**request.model_dump())
+            else:
+                response = client.videos.generate(**request.model_dump())
+            metrics = client.metrics()
+        sdk_sent += int(metrics.get("fortress_bytes_sent", 0))
+        sdk_received += int(metrics.get("fortress_bytes_received", 0))
+        responses[workflow.name] = response.model_dump(mode="json")
+        workflow_reports[workflow.name]["response"] = responses[workflow.name]
     phase("public_sdk")
     return _provenance(
         {
@@ -415,11 +536,17 @@ def _verify_media(deployment: dict[str, Any], rung: LadderRung) -> dict[str, Any
             "production_accepted": False,
             "quantized_reference_max_abs_error": quantized_error,
             "original_model_max_abs_error": original_error,
-            "bytes_sent": direct_sent + int(metrics.get("fortress_bytes_sent", 0)),
-            "bytes_received": direct_received + int(metrics.get("fortress_bytes_received", 0)),
+            "bytes_sent": direct_sent + sdk_sent,
+            "bytes_received": direct_received + sdk_received,
             "inference_seconds": time.perf_counter() - started,
             **adversarial,
-            "sdk": {"response": response.model_dump(mode="json"), "metrics": metrics},
+            "workflow": ",".join(workflow.name for workflow in workflows),
+            "workflows": workflow_reports,
+            "sdk": {
+                "response": response.model_dump(mode="json"),
+                "responses": responses,
+                "metrics": metrics,
+            },
         },
         deployment,
         rung,
