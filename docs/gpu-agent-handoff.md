@@ -162,6 +162,7 @@ Verify two clean wheel builds, SBOM/signature/transparency checks, ProVerif, pro
 ```bash
 PATH=$HOME/.cargo/bin:$PATH CARGO_BUILD_JOBS=2 ./scripts/reproducible-build.sh
 set -o pipefail; opam exec -- proverif protocol/fortress_session.pv | python3 scripts/check_proverif.py
+.venv/bin/python scripts/fortress/container_smoke.py  # requires Docker; builds and exercises the sealed role
 .venv/bin/pip-audit
 npm run check  # from apps/web-manual
 ```

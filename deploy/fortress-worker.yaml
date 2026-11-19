@@ -17,6 +17,33 @@ spec:
         - name: worker
           image: ghcr.io/shannon-tool/xurcroh-fortress-worker@sha256:REPLACE_WITH_MEASURED_DIGEST
           imagePullPolicy: IfNotPresent
+          command: ["/opt/venv/bin/python", "-m", "xurcroh.fortress.worker_cli"]
+          args:
+            - --artifact-dir=/runtime-data/shards
+            - --recipient-key=/runtime-data/shards/recipient.key
+            - --certificate=/runtime-data/shards/tls/worker.crt
+            - --private-key=/runtime-data/shards/tls/worker.key
+            - --ca=/runtime-data/shards/tls/ca.crt
+            - --host=0.0.0.0
+            - --port=9444
+            - --device=cpu
+            - --ready-file=/runtime-data/scratch/ready
+            - --pid-file=/runtime-data/scratch/role.pid
+            - --exit-status-file=/runtime-data/scratch/role.exit
+          ports:
+            - name: quic
+              containerPort: 9444
+              protocol: UDP
+          readinessProbe:
+            exec:
+              command:
+                - /opt/venv/bin/python
+                - -c
+                - "from pathlib import Path; raise SystemExit(0 if Path('/runtime-data/scratch/ready').is_file() else 1)"
+            initialDelaySeconds: 1
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 60
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

@@ -124,3 +124,42 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  container:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.99.1"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install client dependencies
+        run: ./scripts/bootstrap-python.sh
+      - name: Build native client bindings
+        run: .venv/bin/maturin develop --manifest-path crates/transport/Cargo.toml --features python
+      - name: Build and smoke-test the sealed worker image
+        run: .venv/bin/python scripts/fortress/container_smoke.py
+      - name: Record image identity
+        run: docker image inspect --format '{{.Id}}' xurcroh-fortress-worker:local > container-image-digest.txt
+      - name: Generate image SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: xurcroh-fortress-worker:local
+          format: cyclonedx-json
+          output-file: fortress-worker-sbom.json
+      - name: Scan image vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: xurcroh-fortress-worker:local
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fortress-worker-image-evidence
+          path: |
+            container-image-digest.txt
+            fortress-worker-sbom.json
+          retention-days: 1
