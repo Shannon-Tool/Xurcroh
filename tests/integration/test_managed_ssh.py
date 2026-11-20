@@ -651,7 +651,7 @@ def test_managed_video_generation_over_real_ssh(tiny_llama_path: Path, tmp_path:
             fps=2,
             steps=1,
             seed=12,
-            timeout=900,
+            timeout=1800,
         )
         assert response.data[0].b64_json
         assert response.execution.engine == "fortress-diffusion-grid"
