@@ -204,7 +204,8 @@ def _build_cuda_worker(monkeypatch: pytest.MonkeyPatch, library, **overrides):
         PublicFormat,
     )
 
-    from xurcroh.fortress import cuda_driver, native as fortress_native
+    from xurcroh.fortress import cuda_driver
+    from xurcroh.fortress import native as fortress_native
     from xurcroh.fortress import worker as worker_module
     from xurcroh.fortress.compiler import compile_operation
     from xurcroh.fortress.transport import encode_role_artifact
