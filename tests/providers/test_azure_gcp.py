@@ -188,6 +188,39 @@ def test_google_confidential_lifecycle() -> None:
     assert client.charges(instance) == 2.5
 
 
+def test_google_destroy_cleans_up_firewall_when_instance_wait_fails(monkeypatch) -> None:
+    seen = []
+    deleted = set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        path = request.url.path
+        if request.method == "DELETE":
+            deleted.add(path)
+            return httpx.Response(200, json={})
+        if request.method == "GET" and "instances/tee-worker" in path:
+            return httpx.Response(200, json={"name": "tee-worker", "status": "RUNNING"})
+        if request.method == "GET" and path in deleted:
+            return httpx.Response(404, json={})
+        return httpx.Response(404, json={})
+
+    client = GoogleConfidentialClient(
+        project_id="project",
+        billing_export_table="project.billing.export",
+        credential=Credential(),
+        client=httpx.Client(
+            base_url="https://compute.googleapis.com/compute/v1",
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+    clock = iter([0.0, 301.0, 400.0, 500.0, 600.0, 700.0])
+    monkeypatch.setattr("xurcroh.providers.gcp.time.monotonic", lambda: next(clock))
+    with pytest.raises(ProviderError, match="timed out"):
+        client.destroy("zones/zone-a/instances/tee-worker")
+    deleted_paths = [str(request.url) for request in seen if request.method == "DELETE"]
+    assert any(f"global/firewalls/{_firewall_name('tee-worker')}" in path for path in deleted_paths)
+
+
 def test_google_billing_uses_bound_parameters() -> None:
     seen = []
 

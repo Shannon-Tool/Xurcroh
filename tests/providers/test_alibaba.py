@@ -153,6 +153,33 @@ def test_alibaba_confidential_gpu_lifecycle() -> None:
     assert billing.requests[0].instance_id == instance
 
 
+def test_alibaba_create_deletes_security_group_when_run_instances_fails() -> None:
+    ecs = FakeECS()
+
+    def failing_run_instances(request):
+        raise RuntimeError("no capacity")
+
+    ecs.run_instances = failing_run_instances
+    alibaba = client(ecs)
+    with pytest.raises(ProviderError, match="instance creation"):
+        alibaba.create(
+            {"country": "cn-beijing-l", "id": "ecs.gn8v-tee.4xlarge"},
+            label="tee-worker",
+            image_id="aliyun_3_x64_20G_alibase_20250117.vhd",
+            key_pair_name="tee-key",
+            vpc_id="vpc-test",
+            v_switch_id="vsw-test",
+            allowed_source_ranges=["192.0.2.10/32"],
+        )
+    deleted = [
+        request
+        for request in ecs.requests
+        if getattr(request, "security_group_id", None) == "sg-test"
+        and not hasattr(request, "ip_protocol")
+    ]
+    assert len(deleted) == 1
+
+
 def segment(value) -> str:
     raw = json.dumps(value, separators=(",", ":")).encode()
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()

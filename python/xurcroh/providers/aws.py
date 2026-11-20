@@ -303,7 +303,12 @@ class AwsNitroClient:
             document = cbor2.loads(payload)
         except cbor2.CBORError as error:
             raise ProviderError("Nitro COSE content is invalid") from error
-        if headers != {1: -35} or unprotected != {} or len(signature) != 96:
+        if (
+            headers != {1: -35}
+            or unprotected != {}
+            or not isinstance(signature, bytes)
+            or len(signature) != 96
+        ):
             raise ProviderError("Nitro attestation must use ES384")
         if not isinstance(document, dict):
             raise ProviderError("Nitro attestation payload is invalid")
@@ -346,12 +351,12 @@ class AwsNitroClient:
             public_key.curve, ec.SECP384R1
         ):
             raise ProviderError("Nitro attestation leaf key is not P-384")
-        r = int.from_bytes(signature[:48], "big")
-        s = int.from_bytes(signature[48:], "big")
-        sig_structure = cbor2.dumps(["Signature1", protected, b"", payload])
         try:
+            r = int.from_bytes(signature[:48], "big")
+            s = int.from_bytes(signature[48:], "big")
+            sig_structure = cbor2.dumps(["Signature1", protected, b"", payload])
             public_key.verify(encode_dss_signature(r, s), sig_structure, ec.ECDSA(hashes.SHA384()))
-        except InvalidSignature as error:
+        except (InvalidSignature, TypeError) as error:
             raise ProviderError("Nitro attestation COSE signature is invalid") from error
         return document
 

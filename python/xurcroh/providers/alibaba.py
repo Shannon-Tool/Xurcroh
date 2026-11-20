@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
 import json
 import os
 import re
@@ -206,6 +207,15 @@ class AlibabaConfidentialClient:
             raise ProviderError("Alibaba Cloud did not return a security group ID")
         return security_group_id
 
+    def _delete_security_group(self, security_group_id: str) -> None:
+        from alibabacloud_ecs20140526 import models
+
+        request = models.DeleteSecurityGroupRequest(
+            region_id=self.region_id,
+            security_group_id=security_group_id,
+        )
+        self._call("security-group deletion", self._ecs.delete_security_group, request)
+
     @staticmethod
     def _required(values: dict[str, Any], name: str) -> str:
         value = values.get(name)
@@ -259,7 +269,12 @@ class AlibabaConfidentialClient:
                 models.RunInstancesRequestTag(key="xurcroh:instance", value=label),
             ],
         )
-        result = self._call("instance creation", self._ecs.run_instances, request)
+        try:
+            result = self._call("instance creation", self._ecs.run_instances, request)
+        except ProviderError:
+            with contextlib.suppress(ProviderError):
+                self._delete_security_group(security_group_id)
+            raise
         instance_ids = result.body.instance_id_sets.instance_id_set
         if len(instance_ids) != 1:
             raise ProviderError("Alibaba Cloud did not return exactly one instance ID")
@@ -292,11 +307,7 @@ class AlibabaConfidentialClient:
                 raise ProviderError("Alibaba Cloud instance deletion timed out")
             time.sleep(2)
         for security_group_id in security_groups:
-            delete_group = models.DeleteSecurityGroupRequest(
-                region_id=self.region_id,
-                security_group_id=security_group_id,
-            )
-            self._call("security-group deletion", self._ecs.delete_security_group, delete_group)
+            self._delete_security_group(security_group_id)
 
     def remaining(self, instance_id: str) -> bool:
         from alibabacloud_ecs20140526 import models
