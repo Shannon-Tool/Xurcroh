@@ -79,7 +79,10 @@ class WorkerRegistry:
 
     def heartbeat(self, worker_id: str) -> WorkerRecord:
         with self._lock:
-            record = self.get(worker_id)
+            try:
+                record = self._workers[worker_id]
+            except KeyError as error:
+                raise ClusterUnavailableError(f"unknown worker: {worker_id}") from error
             record.last_heartbeat = time.time()
             return record
 
