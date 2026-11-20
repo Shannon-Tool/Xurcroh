@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from pathlib import Path
 
 import httpx
@@ -97,3 +98,103 @@ def test_tee_stage_sdk_exchanges_and_verifies_evidence(
             temperature=0,
         )
     assert response.usage.completion_tokens == 1
+
+
+def amd_document() -> dict[str, object]:
+    nonce = b"f" * 32
+    workload = b"workload"
+    artifact = b"artifact"
+    public_key = b"public-key"
+    report = bytearray(0x2A0)
+    report[0x50:0x90] = hashlib.sha256(nonce + workload + artifact + public_key).digest() + bytes(
+        32
+    )
+    return {
+        "vendor": "amd",
+        "nonce": nonce.hex(),
+        "report_data": hashlib.sha256(nonce + workload + artifact + public_key).hexdigest()
+        + "0" * 64,
+        "workload_hash": workload.hex(),
+        "artifact_hash": artifact.hex(),
+        "public_key_hash": public_key.hex(),
+        "report": base64.b64encode(bytes(report)).decode(),
+        "certificates": base64.b64encode(b"certificates").decode(),
+    }
+
+
+def test_amd_hardware_path_extracts_report_data_before_tempdir_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xurcroh.runtime.attestation import _verify_hardware
+
+    monkeypatch.setattr(
+        "xurcroh.runtime.attestation.SNPGuestVerifier.verify", lambda *values, **kwargs: None
+    )
+    document = amd_document()
+    signed = _verify_hardware("amd", document, bytes.fromhex(str(document["nonce"])))
+    assert signed[:32] == bytes.fromhex(str(document["report_data"]))[:32]
+
+
+def test_amd_hardware_path_converts_extraction_failure_to_attestation_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xurcroh.runtime.attestation import _verify_hardware
+
+    monkeypatch.setattr(
+        "xurcroh.runtime.attestation.SNPGuestVerifier.verify", lambda *values, **kwargs: None
+    )
+
+    def broken_extract(report):
+        raise OSError("report vanished")
+
+    monkeypatch.setattr(
+        "xurcroh.runtime.attestation.SNPGuestVerifier.extract_report_data", broken_extract
+    )
+    with pytest.raises(AttestationError, match="extract"):
+        _verify_hardware("amd", amd_document(), b"f" * 32)
+
+
+def test_worker_rejects_composite_evidence_not_bound_to_challenge_nonce() -> None:
+    challenge = b"c" * 32
+    component = amd_document()
+    component["nonce"] = (b"s" * 32).hex()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/challenge"):
+            return httpx.Response(200, json={"nonce": challenge.hex()})
+        return httpx.Response(200, json={"components": [component]})
+
+    client = RemoteAttestationClient(
+        httpx.Client(transport=httpx.MockTransport(handler)),
+        hardware_verifier=lambda vendor, document, nonce: bytes.fromhex(
+            str(document["report_data"])
+        ),
+    )
+    with pytest.raises(AttestationError, match="challenge nonce"):
+        client.verify_worker("https://worker.example")
+
+
+def test_worker_rejects_single_evidence_with_missing_or_stale_nonce() -> None:
+    challenge = b"c" * 32
+
+    def make_client(document: dict[str, object]) -> RemoteAttestationClient:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/challenge"):
+                return httpx.Response(200, json={"nonce": challenge.hex()})
+            return httpx.Response(200, json=document)
+
+        return RemoteAttestationClient(
+            httpx.Client(transport=httpx.MockTransport(handler)),
+            hardware_verifier=lambda vendor, document, nonce: bytes.fromhex(
+                str(document["report_data"])
+            ),
+        )
+
+    document = amd_document()
+    del document["nonce"]
+    with pytest.raises(AttestationError, match="challenge nonce"):
+        make_client(document).verify_worker("https://worker.example")
+    stale = amd_document()
+    stale["nonce"] = (b"s" * 32).hex()
+    with pytest.raises(AttestationError, match="challenge nonce"):
+        make_client(stale).verify_worker("https://worker.example")

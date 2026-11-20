@@ -6,10 +6,12 @@ import time
 from types import SimpleNamespace
 
 import httpx
+import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 
+from xurcroh.errors import ProviderError
 from xurcroh.providers.oci import OciConfidentialClient
 
 
@@ -122,7 +124,7 @@ def segment(value) -> str:
     return b64url(json.dumps(value, separators=(",", ":")).encode())
 
 
-def attestation_http(key, measurement):
+def attestation_http(key, measurement, snp_extra=None):
     public_key = key.public_key().public_bytes(
         serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
     )
@@ -145,17 +147,18 @@ def attestation_http(key, measurement):
                 },
             )
         nonce = json.loads(request.content)["eat_nonce"]
+        snp = {
+            "ear.status": "affirming",
+            "ear.appraisal-policy-id": "policy:SEVSNP",
+            "ear.trustworthiness-vector": {"hardware": 2, "runtime-opaque": 2},
+            "ear.veraison.reference-values": {"swid:oci-sev-snp": {"value": measurement}},
+        }
+        if snp_extra:
+            snp.update(snp_extra)
         claims = {
             "iat": int(time.time()),
             "eat_nonce": nonce,
-            "submods": {
-                "SEVSNP": {
-                    "ear.status": "affirming",
-                    "ear.appraisal-policy-id": "policy:SEVSNP",
-                    "ear.trustworthiness-vector": {"hardware": 2, "runtime-opaque": 2},
-                    "ear.veraison.annotated-evidence": {"measurements": [{"value": measurement}]},
-                }
-            },
+            "submods": {"SEVSNP": snp},
         }
         header = segment({"alg": "ES256", "typ": "JWT"})
         payload = segment(claims)
@@ -186,3 +189,35 @@ def test_oci_attestation_requires_fresh_affirming_snp_result() -> None:
         expected_measurements=["measurement-1"],
     )
     assert claims["submods"]["SEVSNP"]["ear.status"] == "affirming"
+
+
+def test_oci_attestation_rejects_measurement_only_in_annotated_evidence() -> None:
+    key = ec.generate_private_key(ec.SECP256R1())
+    http, public_key = attestation_http(
+        key,
+        "measurement-other",
+        snp_extra={"ear.veraison.annotated-evidence": {"note": "measurement-1 appeared here"}},
+    )
+    oci = client(attestation_client=http, verifier_public_key_pem=public_key)
+    with pytest.raises(ProviderError, match="measurements"):
+        oci.attest(
+            attester_url="https://attester.example:8895",
+            verifier_url="https://verifier.example:8443",
+            expected_measurements=["measurement-1"],
+        )
+
+
+def test_oci_attestation_rejects_appraisal_without_reference_values() -> None:
+    key = ec.generate_private_key(ec.SECP256R1())
+    http, public_key = attestation_http(
+        key,
+        "measurement-1",
+        snp_extra={"ear.veraison.reference-values": None},
+    )
+    oci = client(attestation_client=http, verifier_public_key_pem=public_key)
+    with pytest.raises(ProviderError, match="reference values"):
+        oci.attest(
+            attester_url="https://attester.example:8895",
+            verifier_url="https://verifier.example:8443",
+            expected_measurements=["measurement-1"],
+        )

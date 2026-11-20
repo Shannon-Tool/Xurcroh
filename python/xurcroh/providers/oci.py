@@ -33,15 +33,16 @@ def _https_url(value: str) -> str:
     return value.rstrip("/")
 
 
-def _strings(document: Any) -> Iterator[str]:
-    if isinstance(document, str):
-        yield document
-    elif isinstance(document, dict):
-        for value in document.values():
-            yield from _strings(value)
+def _reference_measurements(document: Any) -> Iterator[str]:
+    if isinstance(document, dict):
+        for key, value in document.items():
+            if key == "value" and isinstance(value, str):
+                yield value
+            else:
+                yield from _reference_measurements(value)
     elif isinstance(document, list):
         for value in document:
-            yield from _strings(value)
+            yield from _reference_measurements(value)
 
 
 class OciConfidentialClient:
@@ -308,7 +309,10 @@ class OciConfidentialClient:
             vector.get(name) != 2 for name in ("hardware", "runtime-opaque")
         ):
             raise ProviderError("SEV-SNP hardware or runtime opacity was not affirmed")
-        available = set(_strings(snp.get("ear.veraison.annotated-evidence")))
+        reference_values = snp.get("ear.veraison.reference-values")
+        if not isinstance(reference_values, (dict, list)) or not reference_values:
+            raise ProviderError("SEV-SNP appraisal has no reference values")
+        available = set(_reference_measurements(reference_values))
         if not set(expected_measurements).issubset(available):
             raise ProviderError("SEV-SNP workload measurements do not match")
         return claims

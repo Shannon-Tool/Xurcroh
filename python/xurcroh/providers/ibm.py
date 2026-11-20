@@ -186,6 +186,7 @@ class IbmConfidentialClient:
         evidence: AttestationEvidence,
         quote: bytes,
         collateral: DCAPCollateral,
+        expected_nonce: bytes,
     ) -> Any:
-        verifier = IntelDCAPVerifier(expected_nonce=evidence.nonce)
+        verifier = IntelDCAPVerifier(expected_nonce=expected_nonce)
         return verifier.verify(evidence, quote=quote, collateral=collateral)
