@@ -125,8 +125,12 @@ class DenseStage:
     def drop_request(self, request_id: str) -> None:
         self.runner.drop_request(request_id)
 
+    def drop_session(self, session_id: str) -> None:
+        self.runner.drop_session(session_id)
+
     def close(self) -> None:
         if not self.closed:
+            self.runner.close()
             for tensor in self._tensors.values():
                 tensor.zero_()
             self._tensors.clear()
@@ -357,6 +361,9 @@ def create_stage_app(
     @app.delete("/v1/stages/sessions/{session_id}", status_code=204)
     def close_session(session_id: str, request: Request) -> None:
         authorized_session(request)
+        drop_session = getattr(stage, "drop_session", None)
+        if drop_session is not None:
+            drop_session(session_id)
         stage.sessions.remove(session_id)
 
     return app

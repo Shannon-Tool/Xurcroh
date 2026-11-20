@@ -151,3 +151,128 @@ def test_native_controller_validates_library_and_tensor_contracts(
         controller.uniform_page_touch(tensor, stride=128)
     with pytest.raises(ValueError, match="stride of at least 128"):
         controller.uniform_page_touch(CudaTensor(torch.uint8, 128), stride=64)
+
+
+def test_burn_allocator_activation_is_idempotent(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from xurcroh import memory_native
+
+    library = tmp_path / "allocator.so"
+    library.write_bytes(b"test")
+    installed = []
+    monkeypatch.setattr(memory_native, "_burn_allocator_path", None)
+    monkeypatch.setattr(torch.cuda, "is_initialized", lambda: False)
+    monkeypatch.setattr(
+        torch.cuda.memory,
+        "CUDAPluggableAllocator",
+        lambda *args: installed.append(("constructed", args)),
+    )
+    monkeypatch.setattr(
+        torch.cuda.memory,
+        "change_current_allocator",
+        lambda allocator: installed.append(("changed", allocator)),
+    )
+    activate_burn_on_read_allocator(library)
+    activate_burn_on_read_allocator(library)
+    assert len(installed) == 2
+    with pytest.raises(CompatibilityError, match="already activated"):
+        activate_burn_on_read_allocator(tmp_path / "other.so")
+
+
+class _FakeCudaController:
+    def __init__(self, library) -> None:
+        self.library = library
+
+
+class _FakeQuicServer:
+    def local_addr(self) -> tuple[str, int]:
+        return ("127.0.0.1", 0)
+
+    def close(self) -> None:
+        return None
+
+    def accept(self):
+        raise ValueError("closed")
+
+
+def _build_cuda_worker(monkeypatch: pytest.MonkeyPatch, library, **overrides):
+    import xurcroh_quic
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding,
+        NoEncryption,
+        PrivateFormat,
+        PublicFormat,
+    )
+
+    from xurcroh.fortress import cuda_driver, native as fortress_native
+    from xurcroh.fortress import worker as worker_module
+    from xurcroh.fortress.compiler import compile_operation
+    from xurcroh.fortress.transport import encode_role_artifact
+
+    private = X25519PrivateKey.generate()
+    recipient_public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    operation = compile_operation(
+        torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
+    )
+    artifact = encode_role_artifact(operation, 0, recipient_public)
+    monkeypatch.setattr(cuda_driver, "collect_driver_diagnostics", lambda: {"passed": True})
+    monkeypatch.setattr(cuda_driver, "require_compatible_driver", lambda report: None)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.Tensor, "cuda", lambda self, *args, **kwargs: self)
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: None)
+    monkeypatch.setattr(fortress_native, "FortressNativeController", _FakeCudaController)
+    monkeypatch.setattr(
+        xurcroh_quic.TensorServer, "bind_mutual", lambda *args, **kwargs: _FakeQuicServer()
+    )
+    options = {
+        "artifacts": {"op": artifact},
+        "recipient_private_key": private.private_bytes(
+            Encoding.Raw, PrivateFormat.Raw, NoEncryption()
+        ),
+        "certificates": (b"cert",),
+        "private_key": b"key",
+        "client_ca": b"ca",
+        "device": "cuda",
+        "cuda_library": library,
+        "allow_unattested": True,
+    }
+    options.update(overrides)
+    return worker_module.FortressRoleWorker(**options)
+
+
+def test_fortress_cuda_worker_activates_burn_allocator_and_fails_closed(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, caplog
+) -> None:
+    import logging
+    from pathlib import Path
+
+    from xurcroh.fortress import worker as worker_module
+
+    library = tmp_path / "xurcroh_burn_alloc.so"
+    library.write_bytes(b"test")
+    activated: list[Path] = []
+    monkeypatch.setattr(
+        worker_module,
+        "activate_burn_on_read_allocator",
+        lambda path: activated.append(Path(path)),
+    )
+    worker = _build_cuda_worker(monkeypatch, library)
+    try:
+        assert activated == [library]
+        assert isinstance(worker._cuda_controller, _FakeCudaController)
+    finally:
+        worker.close()
+
+    def broken(path):
+        raise CompatibilityError("burn allocator library is unavailable")
+
+    monkeypatch.setattr(worker_module, "activate_burn_on_read_allocator", broken)
+    with pytest.raises(CompatibilityError, match="unavailable"):
+        _build_cuda_worker(monkeypatch, library)
+    with caplog.at_level(logging.ERROR):
+        worker = _build_cuda_worker(monkeypatch, library, strict=False)
+    try:
+        assert worker.device == "cuda"
+    finally:
+        worker.close()
+    assert any("burn-on-read allocator" in record.message for record in caplog.records)
