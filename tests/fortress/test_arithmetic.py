@@ -4,6 +4,7 @@ import pytest
 import torch
 
 from xurcroh.fortress.arithmetic import (
+    MAX_SHARE_COUNT,
     MAX_SIGNED_FIELD_VALUE,
     PRIME_MODULUS,
     QuantizedTensor,
@@ -78,6 +79,16 @@ def test_random_shares_reconstruct_and_refresh_without_changing_the_secret() -> 
     refreshed = refresh_shares(shares, first=0, second=1)
     assert torch.equal(combine_shares(refreshed), secret.remainder(PRIME_MODULUS))
     assert not torch.equal(refreshed[0], shares[0])
+
+
+def test_share_count_above_accumulation_bound_is_rejected() -> None:
+    secret = torch.zeros(1, dtype=torch.int64)
+    with pytest.raises(ValueError, match="accumulation bound"):
+        split_secret(secret, count=MAX_SHARE_COUNT + 1)
+    with pytest.raises(ValueError, match="accumulation bound"):
+        seeded_split_secret(secret, seed=bytes(range(32)), count=MAX_SHARE_COUNT + 1)
+    with pytest.raises(ValueError, match="accumulation bound"):
+        combine_shares([secret] * (MAX_SHARE_COUNT + 1))
 
 
 def test_seeded_shares_are_deterministic_and_computational_not_information_theoretic() -> None:
