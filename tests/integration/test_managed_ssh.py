@@ -575,9 +575,7 @@ def test_managed_official_gemma_vlm_image_inference_over_real_ssh(tmp_path: Path
         assert audio_response.usage.completion_tokens == 1
 
 
-def test_managed_video_generation_over_real_ssh(tiny_llama_path: Path, tmp_path: Path) -> None:
-    import pytest
-
+def _tiny_video_checkpoint(tiny_llama_path: Path, tmp_path: Path) -> Path:
     diffusers = pytest.importorskip("diffusers")
     transformers = pytest.importorskip("transformers")
     unet = diffusers.UNet3DConditionModel(
@@ -626,6 +624,11 @@ def test_managed_video_generation_over_real_ssh(tiny_llama_path: Path, tmp_path:
     )
     checkpoint = tmp_path / "video-model"
     pipeline.save_pretrained(checkpoint)
+    return checkpoint
+
+
+def test_managed_video_generation_over_real_ssh(tiny_llama_path: Path, tmp_path: Path) -> None:
+    checkpoint = _tiny_video_checkpoint(tiny_llama_path, tmp_path)
     with (
         ssh_testbed(tmp_path) as base,
         Xurcroh(
@@ -653,3 +656,34 @@ def test_managed_video_generation_over_real_ssh(tiny_llama_path: Path, tmp_path:
         assert response.data[0].b64_json
         assert response.execution.engine == "fortress-diffusion-grid"
         assert len(response.execution.worker_ids) == 12
+
+
+def test_managed_video_timeout_cancels_and_cleans_up(tiny_llama_path: Path, tmp_path: Path) -> None:
+    from xurcroh.errors import RequestTimeoutError
+
+    checkpoint = _tiny_video_checkpoint(tiny_llama_path, tmp_path)
+    with (
+        ssh_testbed(tmp_path) as base,
+        Xurcroh(
+            cluster=_cpu_workers(base),
+            model_path={
+                "tiny-video": {
+                    "path": str(checkpoint),
+                    "engine": "fortress",
+                    "fortress_seed": 731,
+                    "fortress_max_provider_fraction": 1.0,
+                }
+            },
+        ) as client,
+        pytest.raises(RequestTimeoutError, match=r"deadline|timeout"),
+    ):
+        client.videos.generate(
+            model="tiny-video",
+            prompt="ocean waves",
+            size="32x32",
+            frames=2,
+            fps=2,
+            steps=1,
+            seed=12,
+            timeout=0.01,
+        )
