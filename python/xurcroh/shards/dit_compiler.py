@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -156,6 +157,17 @@ def _compile_modulation(weights: ModulationWeights, basis: SignedPermutation) ->
     )
 
 
+def _fingerprint_weights(tensors: dict[str, torch.Tensor]) -> str:
+    digest = hashlib.sha256()
+    for name in sorted(tensors):
+        tensor = tensors[name].detach().cpu().contiguous()
+        digest.update(name.encode() + b"\0")
+        digest.update(repr(tuple(tensor.shape)).encode() + b"\0")
+        digest.update(str(tensor.dtype).encode() + b"\0")
+        digest.update(tensor.numpy().tobytes())
+    return digest.hexdigest()
+
+
 class DitCompiler:
     def compile(
         self,
@@ -164,8 +176,10 @@ class DitCompiler:
         *,
         boundary_key: bytes,
         recipient: StageRecipient,
-        seed: int,
+        seed: int | None = None,
     ) -> DitCompilationResult:
+        if seed is None:
+            seed = secrets.randbits(63)
         output_dir.mkdir(parents=True, exist_ok=True)
         latent_basis = sample_orthogonal(weights.input.shape[1], seed=seed + 17)
         latent_permutation = torch.randperm(
@@ -233,7 +247,7 @@ class DitCompiler:
             "latent_basis": latent_basis,
             "latent_permutation": latent_permutation,
         }
-        fingerprint = hashlib.sha256(weights.input.detach().cpu().numpy().tobytes()).hexdigest()
+        fingerprint = _fingerprint_weights(weights_to_tensors(weights))
         stage_path = output_dir / "dit-stage.xurcroh"
         boundary_path = output_dir / "dit-client-boundary.xurcroh"
         envelope_path = output_dir / "dit-stage.key.json"
