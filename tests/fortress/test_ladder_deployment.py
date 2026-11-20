@@ -22,7 +22,7 @@ def test_role_packages_match_manifest_and_exclude_client_boundaries(
         artifacts = load_role_artifacts(packages[worker.name])
         assert set(artifacts) == set(compiled.operations)
         for encoded in artifacts.values():
-            artifact = decode_role_artifact(encoded)
+            artifact = decode_role_artifact(encoded, allow_unattested=True)
             assert artifact.weight_index == worker.weight_index
             assert artifact.recipient_public.hex() == worker.recipient_public
         assert "model.embed_tokens.weight" not in artifacts
@@ -116,7 +116,7 @@ def test_placed_role_packages_contain_only_assigned_operations(
             elif paired is not None:
                 assert set(paired).isdisjoint(artifacts)
         for name, encoded in artifacts.items():
-            artifact = decode_role_artifact(encoded)
+            artifact = decode_role_artifact(encoded, allow_unattested=True)
             assert artifact.weight_index == worker.operation_roles[name][1]
             assert artifact.recipient_public.hex() == worker.recipient_public
     for operation in placement.operations:

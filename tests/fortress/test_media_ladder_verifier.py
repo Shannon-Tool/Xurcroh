@@ -62,6 +62,7 @@ def test_image_ladder_verifier_compares_latents_and_public_sdk(
                 certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],
+                allow_unattested=True,
             )
             worker.start()
             workers.append(worker)
@@ -173,6 +174,7 @@ def test_video_ladder_verifier_compares_latents_and_public_sdk(
                 certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],
+                allow_unattested=True,
             )
             worker.start()
             workers.append(worker)

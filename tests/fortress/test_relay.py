@@ -60,6 +60,7 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
                 onion_private_key=onion_private.private_bytes(
                     Encoding.Raw, PrivateFormat.Raw, NoEncryption()
                 ),
+                allow_unattested=True,
             )
             worker.start()
             workers.append(worker)

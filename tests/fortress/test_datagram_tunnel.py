@@ -261,6 +261,7 @@ def test_four_role_datagram_grid_returns_exact_product(
                         certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                         private_key=mtls_identities["server_key"],
                         client_ca=mtls_identities["ca"],
+                        allow_unattested=True,
                     )
                     worker.start()
                     workers.append(worker)

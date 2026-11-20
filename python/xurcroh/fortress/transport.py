@@ -19,8 +19,11 @@ import torch
 from xurcroh.errors import ProtocolError
 from xurcroh.fortress.arithmetic import (
     FIELD_MODULUS,
+    MAX_ACTIVATION_BITS,
     PRIME_MODULUS,
     activation_row_seed,
+    check_unreduced_product_bound,
+    quantized_weight_bound,
     seeded_share_seed,
 )
 from xurcroh.fortress.compiler import CompiledOperation
@@ -174,7 +177,19 @@ def encode_role_artifact(
     return json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
 
 
-def decode_role_artifact(encoded: bytes) -> RoleArtifact:
+def decode_role_artifact(
+    encoded: bytes,
+    *,
+    attest: Callable[[int], bool] | None = None,
+    allow_unattested: bool = False,
+) -> RoleArtifact:
+    if attest is not None and allow_unattested:
+        raise ProtocolError("allow_unattested cannot override a deployment attestation policy")
+    if attest is None and not allow_unattested:
+        raise ProtocolError(
+            "role artifact decode requires attestation evidence or an explicit "
+            "allow_unattested development opt-in"
+        )
     try:
         document = json.loads(encoded)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -217,7 +232,10 @@ def decode_role_artifact(encoded: bytes) -> RoleArtifact:
             )
         except (KeyError, TypeError, ValueError, AttributeError) as error:
             raise ProtocolError("role artifact fields are invalid") from error
-        plaintext = reconstruct_shard(bundle, bundle.slices, bundle.key_shares, lambda _: True)
+        if attest is None:
+            plaintext = reconstruct_shard(bundle, bundle.slices, bundle.key_shares, lambda _: True)
+        else:
+            plaintext = reconstruct_shard(bundle, bundle.slices, bundle.key_shares, attest)
         expected_length = shape[0] * shape[1] * 8
         if len(plaintext) != expected_length:
             raise ProtocolError("role artifact weight length does not match its shape")
@@ -885,6 +903,11 @@ class FortressRoleClient:
         rows = rows_by_share[0]
         if any(share.shape != rows.shape for share in rows_by_share):
             raise ValueError("activation share shapes must match")
+        check_unreduced_product_bound(
+            rows.shape[1],
+            2 ** (MAX_ACTIVATION_BITS - 1),
+            quantized_weight_bound(self.operation.quantized),
+        )
         outputs = []
         for row in range(rows.shape[0]):
             check_execution_health()

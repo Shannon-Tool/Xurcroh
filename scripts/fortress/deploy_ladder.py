@@ -129,6 +129,7 @@ def start_command(remote_root: str, name: str, device: str = "cpu") -> str:
         f"--certificate {root}/tls/{shlex.quote(name)}.crt "
         f"--private-key {root}/tls/{shlex.quote(name)}.key --ca {root}/tls/ca.crt "
         f"--host 0.0.0.0 --port 9444 --device {shlex.quote(device)} "
+        "--allow-unattested "
         f"--exit-status-file {root}/role.exit "
         f"</dev/null >{root}/role.log 2>&1 & "
         f"echo $! > {root}/role.pid"
