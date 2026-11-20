@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import threading
+import logging
 from typing import TYPE_CHECKING
 
 from xurcroh.config import ClusterConfig, ModelDefinition
@@ -17,6 +17,10 @@ async def provision_cluster(
 ) -> FortressDeployment:
     from xurcroh.fortress.deployment import FortressDeployment
 
+    logging.getLogger(__name__).debug(
+        "SDK provisioning ignores the controller endpoint %r; no controller is wired",
+        controller,
+    )
     del controller
     return FortressDeployment(cluster, models).start()
 
@@ -29,18 +33,4 @@ def provision_cluster_sync(
 ) -> FortressDeployment:
     from xurcroh.fortress.deployment import FortressDeployment
 
-    failure: list[BaseException] = []
-    result: list[FortressDeployment] = []
-
-    def run() -> None:
-        try:
-            result.append(FortressDeployment(cluster, models).start())
-        except BaseException as error:
-            failure.append(error)
-
-    thread = threading.Thread(target=run, name="xurcroh-provision")
-    thread.start()
-    thread.join()
-    if failure:
-        raise failure[0]
-    return result[0]
+    return FortressDeployment(cluster, models).start()
