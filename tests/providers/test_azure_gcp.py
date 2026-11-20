@@ -79,6 +79,11 @@ def test_azure_confidential_lifecycle() -> None:
     }
     assert any("publicIPAddresses/tee-worker-ip" in str(request.url) for request in seen)
     client.destroy(instance)
+    deleted_paths = [str(request.url) for request in seen if request.method == "DELETE"]
+    assert any("networkInterfaces/tee-worker-nic" in path for path in deleted_paths)
+    assert any("publicIPAddresses/tee-worker-ip" in path for path in deleted_paths)
+    assert any("virtualNetworks/tee-worker-vnet" in path for path in deleted_paths)
+    assert any("networkSecurityGroups/tee-worker-nsg" in path for path in deleted_paths)
     assert client.remaining(instance) is False
     assert client.charges(instance) == 2.5
 

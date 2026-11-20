@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 import httpx
@@ -229,11 +230,30 @@ class AzureConfidentialClient:
         return label
 
     def destroy(self, instance_id: str) -> None:
+        label = instance_label(str(instance_id).rsplit("/", 1)[-1])
         self._rest.request(
             "DELETE",
-            f"{self._group}/providers/Microsoft.Compute/virtualMachines/{instance_id}",
+            f"{self._group}/providers/Microsoft.Compute/virtualMachines/{label}",
             params={"api-version": "2024-07-01"},
         )
+        deadline = time.monotonic() + 300
+        while self.remaining(label):
+            if time.monotonic() >= deadline:
+                raise ProviderError("Azure confidential instance deletion timed out")
+            time.sleep(2)
+        network_root = f"{self._group}/providers/Microsoft.Network"
+        resources = (
+            f"{network_root}/networkInterfaces/{label}-nic",
+            f"{network_root}/publicIPAddresses/{label}-ip",
+            f"{network_root}/virtualNetworks/{label}-vnet",
+            f"{network_root}/networkSecurityGroups/{label}-nsg",
+        )
+        for path in resources:
+            self._rest.request(
+                "DELETE",
+                path,
+                params={"api-version": "2023-11-01"},
+            )
 
     def remaining(self, instance_id: str) -> bool:
         document = self._rest.request(
