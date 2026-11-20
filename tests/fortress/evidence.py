@@ -52,8 +52,12 @@ def exercise_adversarial_evidence(
     registry = CanaryRegistry(revoke=revoked.append)
     canary_secret = decoy_shares[0].numpy().tobytes()
     canary_id = registry.register(canary_secret, observers=observers)
-    for real in DecoyScheduler().plan(real_calls=1, total_calls=2):
+    requests_before = sum(client.request_count for client in clients.values())
+    plan = list(DecoyScheduler().plan(real_calls=1, total_calls=2))
+    decoy_calls = sum(1 for real in plan if not real)
+    for real in plan:
         clients[name].execute(real_shares if real else decoy_shares, request_id=f"{name}:mixed")
+    requests_after = sum(client.request_count for client in clients.values())
     tripped = registry.observe(canary_id, canary_secret)
     assert tripped
     assert revoked == list(observers)
@@ -65,8 +69,8 @@ def exercise_adversarial_evidence(
         real_shares,
     )
     return {
-        "decoy_calls": 1,
-        "decoy_role_requests": 8,
+        "decoy_calls": decoy_calls,
+        "decoy_role_requests": requests_after - requests_before,
         "canary_tripped": tripped,
         "canary_attributed_observers": revoked,
         "canary_method": "simulated external observation of an actually transmitted share",

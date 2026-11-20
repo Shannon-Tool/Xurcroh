@@ -25,4 +25,13 @@ def test_usp_and_cfg_parallelism_are_validated() -> None:
         attention_backend="flash",
         cache_dit=True,
     )
-    validate_parallelism(config)
+    assert validate_parallelism(config) is None
+    with pytest.raises(ValueError, match="PipeFusion cannot share"):
+        validate_parallelism(
+            ParallelismConfig(
+                ring_degree=2,
+                ulysses_degree=2,
+                pipefusion=True,
+                attention_backend="flash",
+            )
+        )

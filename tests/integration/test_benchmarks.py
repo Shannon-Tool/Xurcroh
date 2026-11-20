@@ -126,7 +126,10 @@ def test_video_benchmark_decodes_output_and_compares_reference(tmp_path: Path) -
         )
     assert report["decoded_frames"] == 2
     assert report["generated_frames_per_second"] > 0
-    assert report["quality"]["mean_squared_error"] >= 0
+    quality = report["quality"]
+    assert quality["mean_squared_error"] > 0
+    assert quality["psnr_db"] is not None
+    assert quality["psnr_db"] >= 20
 
 
 def test_transport_benchmark_requires_native_extension(monkeypatch) -> None:

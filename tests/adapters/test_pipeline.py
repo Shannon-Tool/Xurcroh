@@ -14,7 +14,7 @@ def test_pipeline_interceptor_round_trip_tamper_and_replay() -> None:
     payload = receiver.open(packet)
     assert payload == bytes(range(8))
 
-    with pytest.raises(ProtocolError):
+    with pytest.raises(ProtocolError, match="replay detected"):
         receiver.open(packet)
-    with pytest.raises(ProtocolError):
+    with pytest.raises(ProtocolError, match="packet authentication failed"):
         receiver.open(packet[:-1] + bytes([packet[-1] ^ 1]))

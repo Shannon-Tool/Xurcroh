@@ -105,7 +105,7 @@ def test_native_stage_timeout_aborts_wait(
     (tmp_path / "ca.pem").write_bytes(certificate)
     session = ClientStageSession(0, identities.recipients[0].public_key)
     try:
-        with pytest.raises(RequestTimeoutError):
+        with pytest.raises(RequestTimeoutError, match="native stage 0 timed out"):
             engine._execute_stage(
                 0,
                 torch.randn(1, 16, dtype=torch.float64),
