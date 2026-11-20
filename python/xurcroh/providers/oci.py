@@ -17,6 +17,7 @@ from xurcroh.errors import ProviderError
 from xurcroh.providers.cloud import instance_label
 
 SUPPORTED_SHAPES = {"VM.Standard.E5.Flex", "VM.Standard.E6.Flex"}
+EXPECTED_AUDIENCE = "xurcroh-attestation"
 
 
 def _https_url(value: str) -> str:
@@ -289,6 +290,9 @@ class OciConfidentialClient:
             )
         except (jwt.InvalidTokenError, ValueError) as error:
             raise ProviderError("Veraison appraisal signature is invalid") from error
+        audience = claims.get("aud")
+        if audience is not None and audience != EXPECTED_AUDIENCE:
+            raise ProviderError("Veraison appraisal audience is invalid")
         issued_at = claims.get("iat")
         if not isinstance(issued_at, (int, float)) or isinstance(issued_at, bool):
             raise ProviderError("Veraison appraisal timestamp is invalid")

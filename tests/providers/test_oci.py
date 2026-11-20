@@ -124,7 +124,7 @@ def segment(value) -> str:
     return b64url(json.dumps(value, separators=(",", ":")).encode())
 
 
-def attestation_http(key, measurement, snp_extra=None):
+def attestation_http(key, measurement, snp_extra=None, claims_extra=None):
     public_key = key.public_key().public_bytes(
         serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
     )
@@ -160,6 +160,8 @@ def attestation_http(key, measurement, snp_extra=None):
             "eat_nonce": nonce,
             "submods": {"SEVSNP": snp},
         }
+        if claims_extra:
+            claims.update(claims_extra)
         header = segment({"alg": "ES256", "typ": "JWT"})
         payload = segment(claims)
         der = key.sign(f"{header}.{payload}".encode(), ec.ECDSA(hashes.SHA256()))
@@ -200,6 +202,22 @@ def test_oci_attestation_rejects_measurement_only_in_annotated_evidence() -> Non
     )
     oci = client(attestation_client=http, verifier_public_key_pem=public_key)
     with pytest.raises(ProviderError, match="measurements"):
+        oci.attest(
+            attester_url="https://attester.example:8895",
+            verifier_url="https://verifier.example:8443",
+            expected_measurements=["measurement-1"],
+        )
+
+
+def test_oci_attestation_rejects_unexpected_audience() -> None:
+    key = ec.generate_private_key(ec.SECP256R1())
+    http, public_key = attestation_http(
+        key,
+        "measurement-1",
+        claims_extra={"aud": "other-service"},
+    )
+    oci = client(attestation_client=http, verifier_public_key_pem=public_key)
+    with pytest.raises(ProviderError, match="audience"):
         oci.attest(
             attester_url="https://attester.example:8895",
             verifier_url="https://verifier.example:8443",

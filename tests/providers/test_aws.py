@@ -196,6 +196,25 @@ def test_aws_attestation_rejects_wrong_measurement() -> None:
         )
 
 
+def test_aws_attestation_rejects_non_bytes_cose_signature() -> None:
+    root, leaf_key, leaf = certificate_pair()
+    pcrs = {index: bytes([index]) * 48 for index in range(3)}
+    nonce = b"fresh nonce"
+    document = attestation_document(root, leaf_key, leaf, pcrs, nonce)
+    cose = cbor2.loads(document)
+    tampered = cbor2.dumps(
+        cbor2.CBORTag(18, [cose.value[0], cose.value[1], cose.value[2], "a" * 96])
+    )
+    aws = client(root_certificate=root.public_bytes(serialization.Encoding.PEM))
+    with pytest.raises(ProviderError):
+        aws.verify_attestation_document(
+            tampered,
+            expected_pcrs=pcrs,
+            expected_nonce=nonce,
+            expected_public_key=b"session public key",
+        )
+
+
 def test_aws_kms_decrypt_requires_valid_attestation() -> None:
     document, root_pem, pcrs, nonce = verified_document()
     kms = FakeKMS()

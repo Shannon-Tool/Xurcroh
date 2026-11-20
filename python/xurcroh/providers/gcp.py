@@ -191,19 +191,27 @@ class GoogleConfidentialClient:
     def destroy(self, instance_id: str) -> None:
         zone = instance_id.split("/")[-3]
         label = instance_id.rsplit("/", 1)[-1]
-        self._rest.request(
-            "DELETE",
-            f"projects/{self.project_id}/zones/{zone}/instances/{label}",
-        )
-        deadline = time.monotonic() + 300
-        while self.remaining(instance_id):
-            if time.monotonic() >= deadline:
-                raise ProviderError("Google Cloud confidential instance deletion timed out")
-            time.sleep(2)
-        self._rest.request(
-            "DELETE",
-            f"projects/{self.project_id}/global/firewalls/{_firewall_name(label)}",
-        )
+        firewall = f"projects/{self.project_id}/global/firewalls/{_firewall_name(label)}"
+        try:
+            self._rest.request(
+                "DELETE",
+                f"projects/{self.project_id}/zones/{zone}/instances/{label}",
+            )
+            deadline = time.monotonic() + 300
+            while self.remaining(instance_id):
+                if time.monotonic() >= deadline:
+                    raise ProviderError("Google Cloud confidential instance deletion timed out")
+                time.sleep(2)
+        finally:
+            self._rest.request("DELETE", firewall)
+            deadline = time.monotonic() + 300
+            while self._rest.request("GET", firewall) is not None:
+                if time.monotonic() >= deadline:
+                    raise ProviderError(
+                        f"Google Cloud firewall rule {_firewall_name(label)} "
+                        "could not be confirmed deleted"
+                    )
+                time.sleep(2)
 
     def remaining(self, instance_id: str) -> bool:
         zone = instance_id.split("/")[-3]
