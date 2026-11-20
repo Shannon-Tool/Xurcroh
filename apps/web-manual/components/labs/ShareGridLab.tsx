@@ -33,7 +33,7 @@ export function ShareGridLab() {
       {state.error ? <p role="alert">Rejected: {state.error}</p> : null}
       <h3>Role ({role.activationShare},{role.weightShare}) exact signed product</h3>
       <pre>{role.product.map((value) => value.toString()).join(", ")}</pre>
-      <h3>Combined ring output</h3>
+      <h3>Combined field output</h3>
       <pre>{state.grid.combined.map((value) => value.toString()).join(", ")}</pre>
       <p className="small">Expected from the original integers: [19, 43]. A role is verified before its result can contribute.</p>
     </LabShell>
