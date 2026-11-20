@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, Literal, overload
@@ -101,6 +102,10 @@ class Xurcroh:
             )
             if ssh_workers and fortress_models:
                 self._cluster = self._cluster.model_copy(update={"provision_workers": True})
+                logging.getLogger(__name__).info(
+                    "Auto-enabling remote provisioning; hosts to be contacted: %s",
+                    ", ".join(worker.host for worker in self._cluster.workers if worker.host),
+                )
         self._runtime = RuntimeService(self._cluster, self._models)
         self.chat = Chat(self)
         self.images = Images(self)

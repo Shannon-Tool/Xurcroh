@@ -62,3 +62,35 @@ def test_ssh_secrets_are_redacted() -> None:
 def test_duplicate_model_names_are_rejected(tiny_model_path: Path) -> None:
     with pytest.raises(ConfigurationError, match="invalid model name"):
         ModelRegistry.normalize({"bad name!": tiny_model_path})
+
+
+def test_security_mapping_without_keyword_argument_is_honored() -> None:
+    cluster = ClusterConfig.normalize(
+        {
+            "workers": [{"name": "local", "endpoint": "local://cpu"}],
+            "security": {"mode": "development"},
+        }
+    )
+    assert cluster.security.mode == "development"
+
+
+def test_conflicting_security_keyword_and_mapping_value_is_rejected() -> None:
+    with pytest.raises(ConfigurationError, match="security"):
+        ClusterConfig.normalize(
+            {
+                "workers": [{"name": "local", "endpoint": "local://cpu"}],
+                "security": {"mode": "development"},
+            },
+            security={"mode": "tee", "require_attestation": True},
+        )
+
+
+def test_identical_security_keyword_and_mapping_value_is_accepted() -> None:
+    cluster = ClusterConfig.normalize(
+        {
+            "workers": [{"name": "local", "endpoint": "local://cpu"}],
+            "security": {"mode": "tee", "require_attestation": True},
+        },
+        security={"mode": "tee", "require_attestation": True},
+    )
+    assert cluster.security.mode == "tee"

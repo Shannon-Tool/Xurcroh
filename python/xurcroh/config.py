@@ -184,7 +184,15 @@ class ClusterConfig(StrictModel):
                 )
             workers.append(worker)
 
-        selected_security = security or advanced.pop("security", None) or SecurityConfig()
+        mapping_security = advanced.pop("security", None)
+        if security is not None and mapping_security is not None:
+            explicit_security = SecurityConfig.model_validate(security)
+            mapped_security = SecurityConfig.model_validate(mapping_security)
+            if explicit_security != mapped_security:
+                raise ConfigurationError(
+                    "cluster mapping 'security' conflicts with the security keyword argument"
+                )
+        selected_security = security or mapping_security or SecurityConfig()
         selected_provisioning = advanced.pop("provision_workers", provision_workers)
         if selected_provisioning is None:
             selected_provisioning = False
