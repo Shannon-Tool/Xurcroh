@@ -21,6 +21,9 @@ def response(body):
 class FakeECS:
     def __init__(self) -> None:
         self.requests = []
+        self.instances = [
+            SimpleNamespace(security_group_ids=SimpleNamespace(security_group_id=["sg-test"]))
+        ]
 
     def describe_available_resource(self, request):
         self.requests.append(request)
@@ -61,9 +64,14 @@ class FakeECS:
 
     def describe_instances(self, request):
         self.requests.append(request)
-        return response(SimpleNamespace(instances=SimpleNamespace(instance=[SimpleNamespace()])))
+        return response(SimpleNamespace(instances=SimpleNamespace(instance=self.instances)))
 
     def delete_instance(self, request):
+        self.requests.append(request)
+        self.instances = []
+        return response(SimpleNamespace())
+
+    def delete_security_group(self, request):
         self.requests.append(request)
         return response(SimpleNamespace())
 
@@ -131,7 +139,9 @@ def test_alibaba_confidential_gpu_lifecycle() -> None:
     assert {request.port_range for request in ingress} == {"22/22", "9444/9444"}
     assert alibaba.remaining(instance) is True
     alibaba.destroy(instance)
-    assert ecs.requests[-1].instance_id == instance
+    delete_request = next(request for request in ecs.requests if hasattr(request, "force"))
+    assert delete_request.instance_id == instance
+    assert ecs.requests[-1].security_group_id == "sg-test"
     assert alibaba.charges(instance) == 2.25
     assert billing.requests[0].instance_id == instance
 
