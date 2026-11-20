@@ -53,9 +53,9 @@ class DiffusionMediaBoundary:
             raise CapabilityError("source and generated latent shapes do not match")
         return source * (1 - request.strength) + initial * request.strength
 
-    def raw_inputs(
+    def _raw_inputs(
         self, request: ImageGenerationRequest
-    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any]]:
+    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any], int]:
         seed = request.seed if request.seed is not None else secrets.randbits(63)
         unet = getattr(self.pipeline, "unet", None)
         if unet is None:
@@ -87,16 +87,21 @@ class DiffusionMediaBoundary:
             "width": width,
             "height": height,
             "num_inference_steps": request.steps,
-            "generator_seed": seed,
             "strength": request.strength,
             "output_type": "latent",
         }
         initial = self._source_latent(request, initial)
+        return initial, prompt_embeds, parameters, seed
+
+    def raw_inputs(
+        self, request: ImageGenerationRequest
+    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any]]:
+        initial, prompt_embeds, parameters, _seed = self._raw_inputs(request)
         return initial, prompt_embeds, parameters
 
-    def raw_video_inputs(
+    def _raw_video_inputs(
         self, request: VideoGenerationRequest
-    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any]]:
+    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any], int]:
         image_request = ImageGenerationRequest(
             model=request.model,
             prompt=request.prompt,
@@ -104,7 +109,7 @@ class DiffusionMediaBoundary:
             steps=request.steps,
             seed=request.seed,
         )
-        initial, prompt_embeds, parameters = self.raw_inputs(image_request)
+        initial, prompt_embeds, parameters, transform_seed = self._raw_inputs(image_request)
         seed = request.seed if request.seed is not None else secrets.randbits(63)
         unet = getattr(self.pipeline, "unet", None)
         if unet is None:
@@ -114,13 +119,18 @@ class DiffusionMediaBoundary:
         generator = torch.Generator().manual_seed(seed)
         initial = torch.randn(shape, generator=generator, dtype=initial.dtype)
         parameters.update({"num_frames": request.frames, "fps": request.fps})
+        return initial, prompt_embeds, parameters, transform_seed
+
+    def raw_video_inputs(
+        self, request: VideoGenerationRequest
+    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any]]:
+        initial, prompt_embeds, parameters, _seed = self._raw_video_inputs(request)
         return initial, prompt_embeds, parameters
 
     def prepare(
         self, request: ImageGenerationRequest
     ) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
-        initial, prompt_embeds, parameters = self.raw_inputs(request)
-        seed = int(parameters["generator_seed"])
+        initial, prompt_embeds, parameters, seed = self._raw_inputs(request)
         channels = initial.shape[1]
         basis = sample_orthogonal(channels, seed=seed + 10007, dtype=torch.float32)
         latent_width, latent_height = initial.shape[-2:]
@@ -135,6 +145,7 @@ class DiffusionMediaBoundary:
                 "basis": basis,
                 "permutation": permutation,
                 "prompt_embeds": prompt_embeds,
+                "generator_seed": torch.tensor(seed, dtype=torch.int64),
             },
             parameters,
         )
@@ -162,8 +173,7 @@ class DiffusionMediaBoundary:
     def prepare_video(
         self, request: VideoGenerationRequest
     ) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
-        initial, prompt_embeds, parameters = self.raw_video_inputs(request)
-        seed = int(parameters["generator_seed"])
+        initial, prompt_embeds, parameters, seed = self._raw_video_inputs(request)
         channels = initial.shape[1]
         basis = sample_orthogonal(channels, seed=seed + 10007, dtype=torch.float32)
         permutation = torch.randperm(
@@ -177,6 +187,7 @@ class DiffusionMediaBoundary:
                 "basis": basis,
                 "permutation": permutation,
                 "prompt_embeds": prompt_embeds,
+                "generator_seed": torch.tensor(seed, dtype=torch.int64),
             },
             parameters,
         )

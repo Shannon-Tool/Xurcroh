@@ -51,6 +51,12 @@ class SafetensorsReader(TensorReader):
                 for key, filename in weight_map.items()
             ):
                 raise ModelLoadError("checkpoint index has an invalid weight_map")
+            for filename in weight_map.values():
+                if Path(filename).is_absolute() or ".." in Path(filename).parts:
+                    raise ModelLoadError(
+                        "checkpoint weight_map filename escapes the checkpoint directory: "
+                        f"{filename}"
+                    )
             self.weight_map = weight_map
         elif (root / "model.safetensors").is_file():
             self.weight_map = {}

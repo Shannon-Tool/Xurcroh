@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import json
+from pathlib import Path
 
 import pytest
 import torch
@@ -9,7 +11,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
 
 from xurcroh.adapters.pipeline import PipelineTensorInterceptor
-from xurcroh.errors import ProtocolError
+from xurcroh.errors import ModelLoadError, ProtocolError
 from xurcroh.runtime.media_sessions import (
     ProtectedMediaSessionStore,
     encode_public,
@@ -79,3 +81,55 @@ def test_media_session_directions_use_distinct_keys_for_the_same_sequence() -> N
     with pytest.raises(ProtocolError, match="authentication"):
         open_tensors(request, "shared-request", client_receiver)
     store.close()
+
+
+def _assert_no_seed_material_in_parameters(
+    tensors: dict[str, torch.Tensor], parameters: dict[str, object]
+) -> None:
+    from xurcroh.algebra.orthogonal import sample_orthogonal
+
+    assert "generator_seed" not in parameters
+    assert "generator_seed" in tensors
+    basis = tensors["basis"]
+    permutation = tensors["permutation"]
+    channels = basis.shape[0]
+    positions = permutation.numel()
+    for value in parameters.values():
+        if isinstance(value, bool) or not isinstance(value, int):
+            continue
+        candidate_basis = sample_orthogonal(channels, seed=value + 10007, dtype=torch.float32)
+        assert not torch.equal(candidate_basis, basis)
+        candidate_permutation = torch.randperm(
+            positions, generator=torch.Generator().manual_seed(value + 10009)
+        )
+        assert not torch.equal(candidate_permutation, permutation)
+
+
+def test_prepare_seals_generator_seed_and_parameters_reveal_no_transform_secret() -> None:
+    from models.test_diffusion_engine import TinyNeuralPipeline
+    from xurcroh.requests import ImageGenerationRequest, VideoGenerationRequest
+    from xurcroh.runtime.media_boundary import DiffusionMediaBoundary
+
+    boundary = DiffusionMediaBoundary(TinyNeuralPipeline())
+    image = ImageGenerationRequest(model="tiny", prompt="city", size="8x8", steps=2, seed=411)
+    tensors, parameters = boundary.prepare(image)
+    _assert_no_seed_material_in_parameters(tensors, parameters)
+
+    video = VideoGenerationRequest(
+        model="tiny", prompt="waves", size="8x8", frames=2, fps=2, steps=2, seed=413
+    )
+    video_tensors, video_parameters = boundary.prepare_video(video)
+    _assert_no_seed_material_in_parameters(video_tensors, video_parameters)
+
+
+def test_safetensors_weight_map_traversal_fails_closed(tmp_path: Path) -> None:
+    from xurcroh.formats.safetensors import SafetensorsReader
+
+    root = tmp_path / "checkpoint"
+    root.mkdir()
+    (root / "config.json").write_text('{"model_type": "tiny"}')
+    index_path = root / "model.safetensors.index.json"
+    for filename in ("../outside.safetensors", "/etc/xurcroh-escape.safetensors"):
+        index_path.write_text(json.dumps({"weight_map": {"weight": filename}}))
+        with pytest.raises(ModelLoadError, match="escapes"):
+            SafetensorsReader(root)
