@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Current verification revision: `9043219ea1e199db08f8e8583a1bcab7bbf8f1ca`
+- Current verification revision: `59184478f5bbc30aaf1c96e4cd832fc6fe882186`
 - Local implementation: **standard suite and current static checks passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -36,8 +36,8 @@ The two-model managed test has not completed on this host. At `90a99a6`, its 24 
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **621 passed, 36 deselected** in 970.52 seconds at `9043219ea1e199db08f8e8583a1bcab7bbf8f1ca`; slow managed/video tests have separate results |
-| Python branch coverage | **80.83%**, above the 80% requirement at `9043219` |
+| Python unit/integration/security tests | **621 passed, 1 skipped, 36 deselected** in 886.71 seconds at `59184478f5bbc30aaf1c96e4cd832fc6fe882186`; slow managed/video tests have separate results |
+| Python branch coverage | **80.81%**, above the 80% requirement at `5918447` |
 | Ruff format and lint | Passed across 347 Python files at `9043219` |
 | Strict mypy, 165 source files | Passed at `9043219` |
 | Rust tests | **31 passed** at `9043219` |
@@ -53,7 +53,7 @@ The two-model managed test has not completed on this host. At `90a99a6`, its 24 
 | Secret scanning | Gitleaks 8.30.1 scanned 434 commits across `--all` at `9043219`; no leaks found; release archive checksum verified |
 | Sealed worker image | Static Dockerfile/Kubernetes checks passed at `9043219`; CI builds, exact-role smoke, SBOM, image identity, and Trivy are configured, but no local Docker execution is claimed |
 
-The final Python run used `OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1` on the six-GiB development host with no concurrent build. Earlier resource-contended attempts reached 617 passes and exposed different timing/thread-resource failures while clean Rust builds were running concurrently; each affected test passed in isolation. One intermediate run also exposed an unseeded miniature MoE fixture whose random weights could exceed its 0.02 tolerance; the fixture is now seeded and passed ten isolated runs before the clean 621-test run above. These reruns are recorded because they are local evidence, but the run above is the final full-suite result.
+The final Python run used `OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1` on the six-GiB development host with no concurrent build. Earlier resource-contended attempts reached 617 passes and exposed different timing/thread-resource failures while clean Rust builds were running concurrently; each affected test passed in isolation. One intermediate run also exposed an unseeded miniature MoE fixture whose random weights could exceed its 0.02 tolerance; the fixture is now seeded and passed ten isolated runs. The concurrent 12-relay startup validation is explicit about the same host limitation and skips below eight GiB RAM; it remains executable on suitable CI. These reruns are recorded because they are local evidence, but the run above is the final full-suite result.
 
 Fortress request deadlines are now installed as context-local state around text, image, and video execution and checked between additive-grid matrix rows. This closes the observed managed-video case where a single denoising step could continue beyond the public 900-second timeout because the old callback ran only between steps. The check does not claim preemption inside one native kernel call; hardware-bound preemption remains a physical validation concern.
 
@@ -61,7 +61,7 @@ At `1dc0558a35b9dd85d07f50d08193aafe3b01ef2d`, the committed managed-video timeo
 
 The integrated deployment now generates per-operation placements and packages only assigned artifacts, uses operation-specific SDK roles, supports verified external-provider teardown, records live role resources, and checks GPU capacity before launch. Media verification covers configured multi-denoiser and editing/I2V workflows. Text verification covers streaming, cancellation, concurrency, and real multi-model smoke. Original models load only after compiled references are released. Signed predecessor evidence is mandatory for every non-root rung, and operator-saliency REAP pruning consistently filters expert reads and routers. These are local implementation and miniature-model results, not official full-checkpoint or independent-host acceptance.
 
-`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The prior wheel comparison preserved Maturin's CycloneDX dependency inventory while normalizing checkout paths, compiler paths, file modes, ZIP encoding, and `RECORD`. Its cross-host SHA-256 values were `57a3e9c309ac80ed575eeedee09ea64d8cf13d2ff6b3f6ca3d3feb3a335cbaa0` for the Python wheel and `113652e94e084a89c0908a3dedc8a09ce843edd29258ce0c90eb85c93232b6c2` for the native wheel. This is automated cross-machine evidence, not second-party attestation. The current clean-build comparison at `9043219ea1e199db08f8e8583a1bcab7bbf8f1ca` produced matching SHA-256 values `76b45d038ccdde714bd555932663ac3b7c072b4f114ae44c36b4c76be776f2c1` (Python) and `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2` (native).
+`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The prior wheel comparison preserved Maturin's CycloneDX dependency inventory while normalizing checkout paths, compiler paths, file modes, ZIP encoding, and `RECORD`. Its cross-host SHA-256 values were `57a3e9c309ac80ed575eeedee09ea64d8cf13d2ff6b3f6ca3d3feb3a335cbaa0` for the Python wheel and `113652e94e084a89c0908a3dedc8a09ce843edd29258ce0c90eb85c93232b6c2` for the native wheel. This is automated cross-machine evidence, not second-party attestation. The current clean-build comparison at `9043219ea1e199db08f8e8583a1bcab7bbf8f1ca` produced matching SHA-256 values `76b45d038ccdde714bd555932663ac3b7c072b4f114ae44c36b4c76be776f2c1` (Python) and `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2` (native). No `python/` runtime source changed after that build; later commits affect tests, provider smoke tooling, or documentation only.
 
 Primary commands:
 
