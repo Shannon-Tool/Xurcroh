@@ -49,6 +49,8 @@ def test_azure_confidential_lifecycle() -> None:
     )
     offer = client.offers()[0]
     assert offer["tee_type"] == "sev-snp"
+    assert offer["attested"] is False
+    assert offer["attestation_required"] is True
     assert offer["gpu_memory_bytes"] == 94 * 1024**3
     instance = client.create(
         offer,
@@ -124,6 +126,8 @@ def test_google_confidential_lifecycle() -> None:
     assert len(offers) == 1
     offer = offers[0]
     assert offer["tee_type"] == "tdx"
+    assert offer["attested"] is False
+    assert offer["attestation_required"] is True
     instance = client.create(
         offer,
         image="ubuntu-2204-lts",
