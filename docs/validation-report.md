@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Current verification revision: `89f13679b355303ca083f6153a4c7ab551a63a64`
+- Current verification revision: `a5e50ff65b84f8d3c7fa43466e51b72edaf1fa0f`
 - Local implementation: **standard suite and current static checks passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -36,26 +36,28 @@ The two-model managed test has not completed on this host. At `90a99a6`, its 24 
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **584 passed, 35 deselected** in 967.70 seconds at `89f13679b355303ca083f6153a4c7ab551a63a64`; slow managed/video tests have separate results |
-| Python branch coverage | **81.43%**, above the 80% requirement at `89f1367` |
-| Ruff format and lint | Passed across 330 Python files at `89f1367` |
-| Strict mypy, 157 source files | Passed at `89f1367` |
-| Rust tests | **31 passed** at `89f1367` |
-| Rust formatting, Clippy, RustSec | Passed at `89f1367`; no known advisories |
-| Frontend interaction tests | **35 passed** at `89f1367` |
-| Frontend typecheck, lint, production build, content validation | Passed at `89f1367`; 22 sections, equations, links, and Mermaid syntax validated |
-| Offline ladder/handoff validation | All 22 command forms validated without provider contact at `89f1367`, including signed predecessor arguments and real multi-model smoke |
-| ProVerif model and protocol fuzzing | ProVerif 2.05 confirms activation secrecy, response secrecy, and client/server establishment correspondence at `89f1367`; strict result checking is enforced. All three fuzz targets completed without crashes: 2,016,328 frame, 379,105 AEAD, and 29,877 HPKE executions; newer hosted runs are blocked before startup |
-| Clean reproducible wheel builds | Matched at `89f13679b355303ca083f6153a4c7ab551a63a64`: Python `cc290113901e958231812a178245ecedf2b91d4c07f57f9cf2a06b90ae9cf9da`, native `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2`; current hosted rebuild remains billing-blocked |
-| `pip-audit` | No known vulnerabilities in audited dependencies at `89f1367`; local CPU torch/torchvision and Xurcroh packages remain skipped as detailed below |
-| `npm audit` | 0 vulnerabilities at `89f1367` |
-| Quantized checkpoint reader fuzzing | 100 mutations at `89f1367`: 51 accepted, 49 rejected, no unexpected failure |
-| Secret scanning | Gitleaks 8.30.1 scanned 409 commits across `--all` at `89f1367`; no leaks found; release archive checksum verified |
-| Sealed worker image | Static Dockerfile/Kubernetes checks passed at `89f1367`; CI builds, exact-role smoke, SBOM, image identity, and Trivy are configured, but no local Docker execution is claimed |
+| Python unit/integration/security tests | **618 passed, 35 deselected** in 980.16 seconds at `a5e50ff65b84f8d3c7fa43466e51b72edaf1fa0f`; slow managed/video tests have separate results |
+| Python branch coverage | **80.83%**, above the 80% requirement at `a5e50ff` |
+| Ruff format and lint | Passed across 347 Python files at `a5e50ff` |
+| Strict mypy, 165 source files | Passed at `a5e50ff` |
+| Rust tests | **31 passed** at `a5e50ff` |
+| Rust formatting, Clippy, RustSec | Passed at `a5e50ff`; no known advisories |
+| Frontend interaction tests | **35 passed** at `a5e50ff` |
+| Frontend typecheck, lint, production build, content validation | Passed at `a5e50ff`; 22 sections, equations, links, and Mermaid syntax validated |
+| Offline ladder/handoff validation | All 22 command forms validated without provider contact at `a5e50ff`, including signed predecessor arguments and real multi-model smoke |
+| ProVerif model and protocol fuzzing | ProVerif confirms activation secrecy, response secrecy, and client/server establishment correspondence at `a5e50ff`; strict result checking is enforced. All three ASan fuzz targets completed without crashes: 1,994,827 frame, 342,399 AEAD, and 29,294 HPKE executions; newer hosted runs are blocked before startup |
+| Clean reproducible wheel builds | Matched at `a5e50ff65b84f8d3c7fa43466e51b72edaf1fa0f`: Python `9e99081a8eb2b88661530726d5d8927db2f2a3cd2436b2747bbc5b20924a65a3`, native `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2`; current hosted rebuild remains billing-blocked |
+| `pip-audit` | No known vulnerabilities in audited dependencies at `a5e50ff`; local CPU torch/torchvision and Xurcroh packages remain skipped as detailed below |
+| `npm audit` | 0 vulnerabilities at `a5e50ff` |
+| Quantized checkpoint reader fuzzing | 100 mutations at `a5e50ff`: 51 accepted, 49 rejected, no unexpected failure |
+| Secret scanning | Gitleaks 8.30.1 scanned 419 commits across `--all` at `a5e50ff`; no leaks found; release archive checksum verified |
+| Sealed worker image | Static Dockerfile/Kubernetes checks passed at `a5e50ff`; CI builds, exact-role smoke, SBOM, image identity, and Trivy are configured, but no local Docker execution is claimed |
+
+The final Python run used `OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1` on the six-GiB development host with no concurrent build. Two earlier resource-contended attempts reached 617 passes and exposed different timing/thread-resource failures while clean Rust builds were running concurrently; each affected test passed in isolation and the clean run above is the final evidence. No numerical or security assertion changed during those reruns.
 
 The integrated deployment now generates per-operation placements and packages only assigned artifacts, uses operation-specific SDK roles, supports verified external-provider teardown, records live role resources, and checks GPU capacity before launch. Media verification covers configured multi-denoiser and editing/I2V workflows. Text verification covers streaming, cancellation, concurrency, and real multi-model smoke. Original models load only after compiled references are released. Signed predecessor evidence is mandatory for every non-root rung, and operator-saliency REAP pruning consistently filters expert reads and routers. These are local implementation and miniature-model results, not official full-checkpoint or independent-host acceptance.
 
-`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The prior wheel comparison preserved Maturin's CycloneDX dependency inventory while normalizing checkout paths, compiler paths, file modes, ZIP encoding, and `RECORD`. Its cross-host SHA-256 values were `57a3e9c309ac80ed575eeedee09ea64d8cf13d2ff6b3f6ca3d3feb3a335cbaa0` for the Python wheel and `113652e94e084a89c0908a3dedc8a09ce843edd29258ce0c90eb85c93232b6c2` for the native wheel. This is automated cross-machine evidence, not second-party attestation. The current local reproducibility run at `b8d16b8` produced matching SHA-256 values `99e5fcf98b2e67fc7cf02a2c74bb1baa8642c37e1af75b9ae6868649486c86bb` (Python) and `f4489d0e3191a7d4c89b1fb85903f2c09075f3fcb631625c2430d0a9fbfa57e6` (native).
+`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The prior wheel comparison preserved Maturin's CycloneDX dependency inventory while normalizing checkout paths, compiler paths, file modes, ZIP encoding, and `RECORD`. Its cross-host SHA-256 values were `57a3e9c309ac80ed575eeedee09ea64d8cf13d2ff6b3f6ca3d3feb3a335cbaa0` for the Python wheel and `113652e94e084a89c0908a3dedc8a09ce843edd29258ce0c90eb85c93232b6c2` for the native wheel. This is automated cross-machine evidence, not second-party attestation. The current clean-build comparison at `a5e50ff65b84f8d3c7fa43466e51b72edaf1fa0f` produced matching SHA-256 values `9e99081a8eb2b88661530726d5d8927db2f2a3cd2436b2747bbc5b20924a65a3` (Python) and `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2` (native).
 
 Primary commands:
 
