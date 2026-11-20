@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import jwt
 
 from xurcroh.attestation import (
     AttestationEvidence,
@@ -21,16 +22,27 @@ from xurcroh.errors import AttestationError
 
 
 class NVIDIARemoteVerifier:
+    """NRAS-backed verifier.
+
+    The NRAS decision field must be exactly True; a missing ``verified`` field
+    is a failure, not an acceptance. The EAT/JWT token signature can only be
+    checked when NVIDIA's NRAS verification key is pinned via
+    ``verifier_public_key_pem``; without a pinned key the token's authenticity
+    is not independently established and deployments must pin the key.
+    """
+
     def __init__(
         self,
         *,
         client: httpx.Client,
         base_url: str = "https://nras.attestation.nvidia.com/v3/attest/gpu",
+        verifier_public_key_pem: bytes | None = None,
     ) -> None:
         if not base_url.startswith("https://"):
             raise ValueError("NVIDIA remote attestation requires HTTPS")
         self._client = client
         self._base_url = base_url
+        self._verifier_public_key = verifier_public_key_pem
 
     def verify(self, evidence: AttestationEvidence, document: dict[str, Any]) -> None:
         encoded_report = document["report"]
@@ -52,7 +64,7 @@ class NVIDIARemoteVerifier:
             result = response.json()
         except (httpx.HTTPError, ValueError) as error:
             raise AttestationError("NVIDIA remote attestation failed") from error
-        if result.get("verified") is False:
+        if result.get("verified") is not True:
             raise AttestationError("NVIDIA remote attestation failed")
         returned_nonce = result.get("nonce")
         if returned_nonce is not None and returned_nonce != evidence.nonce.hex():
@@ -60,6 +72,21 @@ class NVIDIARemoteVerifier:
         token = result.get("token") or result.get("eat") or result.get("jwt")
         if not isinstance(token, str) or not token:
             raise AttestationError("NVIDIA remote attestation token is missing")
+        if self._verifier_public_key is not None:
+            self._verify_token(token, evidence.nonce)
+
+    def _verify_token(self, token: str, nonce: bytes) -> None:
+        try:
+            claims = jwt.decode(
+                token,
+                self._verifier_public_key,
+                algorithms=["ES256"],
+                options={"verify_aud": False},
+            )
+        except (jwt.InvalidTokenError, ValueError) as error:
+            raise AttestationError("NVIDIA remote attestation token is invalid") from error
+        if claims.get("eat_nonce") != nonce.hex():
+            raise AttestationError("NVIDIA remote attestation token nonce mismatch")
 
 
 def _verify_hardware(vendor: str, document: dict[str, Any], nonce: bytes) -> bytes:
@@ -81,7 +108,10 @@ def _verify_hardware(vendor: str, document: dict[str, Any], nonce: bytes) -> byt
             SNPGuestVerifier(expected_nonce=nonce).verify(
                 evidence, certificates=certificates, report=report
             )
-        return SNPGuestVerifier.extract_report_data(report)
+            try:
+                return SNPGuestVerifier.extract_report_data(report)
+            except OSError as error:
+                raise AttestationError("SEV-SNP report data could not be extracted") from error
     if vendor == "intel":
         collateral_data = document["collateral"]
         collateral = DCAPCollateral(
@@ -103,8 +133,8 @@ def _verify_hardware(vendor: str, document: dict[str, Any], nonce: bytes) -> byt
         )
         return IntelDCAPVerifier.extract_report_data(quote)
     if vendor == "nvidia":
-        return NVIDIAAttestationVerifier.extract_report_data(
-            base64.b64decode(document["report"], validate=True)
+        raise AttestationError(
+            "NVIDIA evidence has no locally verifiable hardware signature; use NRAS"
         )
     raise AttestationError("unsupported attestation vendor")
 
@@ -115,16 +145,28 @@ class RemoteAttestationClient:
         client: httpx.Client,
         *,
         hardware_verifier: Callable[[str, dict[str, Any], bytes], bytes] | None = None,
+        nras_public_key_pem: bytes | None = None,
     ) -> None:
         self._client = client
         self._default_hardware_verifier = hardware_verifier is None
         self._hardware_verifier = hardware_verifier or _verify_hardware
+        self._nras_public_key = nras_public_key_pem
 
     @staticmethod
     def _endpoint(endpoint: str) -> str:
         if endpoint.startswith("http+dev://"):
             return "http://" + endpoint.removeprefix("http+dev://")
         return endpoint.rstrip("/")
+
+    @staticmethod
+    def _challenge_nonce(document: dict[str, Any], nonce: bytes) -> None:
+        declared = document.get("nonce")
+        try:
+            matches = isinstance(declared, str) and bytes.fromhex(declared) == nonce
+        except ValueError:
+            matches = False
+        if not matches:
+            raise AttestationError("attestation evidence is not bound to the challenge nonce")
 
     def verify_worker(self, endpoint: str) -> None:
         base = self._endpoint(endpoint)
@@ -144,21 +186,25 @@ class RemoteAttestationClient:
             required = document.get("required_vendors")
             self.verify_components(
                 components,
+                nonce=nonce,
                 required_vendors=set(required) if required is not None else None,
             )
             return
         vendor = str(document.get("vendor", ""))
-        evidence_nonce = bytes.fromhex(document.get("nonce", nonce.hex()))
+        self._challenge_nonce(document, nonce)
         evidence = AttestationEvidence(
             vendor=vendor,
-            nonce=evidence_nonce,
+            nonce=nonce,
             report_data=str(document["report_data"]),
             workload_hash=bytes.fromhex(document["workload_hash"]),
             artifact_hash=bytes.fromhex(document["artifact_hash"]),
             public_key_hash=bytes.fromhex(document["public_key_hash"]),
         )
         if vendor == "nvidia" and self._default_hardware_verifier:
-            NVIDIARemoteVerifier(client=self._client).verify(evidence, document)
+            NVIDIARemoteVerifier(
+                client=self._client, verifier_public_key_pem=self._nras_public_key
+            ).verify(evidence, document)
+            return
         signed_report_data = self._hardware_verifier(vendor, document, nonce)
         AttestationVerifier(expected_nonce=nonce).verify_binding(evidence, signed_report_data)
 
@@ -166,6 +212,7 @@ class RemoteAttestationClient:
         self,
         documents: list[dict[str, Any]],
         *,
+        nonce: bytes,
         required_vendors: set[str] | None = None,
     ) -> None:
         if not documents:
@@ -177,21 +224,23 @@ class RemoteAttestationClient:
             raise AttestationError("required attestation vendor is missing")
         for document in documents:
             vendor = str(document["vendor"])
-            evidence_nonce = bytes.fromhex(document["nonce"])
+            self._challenge_nonce(document, nonce)
             evidence = AttestationEvidence(
                 vendor=vendor,
-                nonce=evidence_nonce,
+                nonce=nonce,
                 report_data=str(document["report_data"]),
                 workload_hash=bytes.fromhex(document["workload_hash"]),
                 artifact_hash=bytes.fromhex(document["artifact_hash"]),
                 public_key_hash=bytes.fromhex(document["public_key_hash"]),
             )
             if vendor == "nvidia":
-                NVIDIARemoteVerifier(client=self._client).verify(evidence, document)
-            signed_report_data = self._hardware_verifier(vendor, document, evidence_nonce)
-            AttestationVerifier(expected_nonce=evidence_nonce).verify_binding(
-                evidence, signed_report_data
-            )
+                NVIDIARemoteVerifier(
+                    client=self._client, verifier_public_key_pem=self._nras_public_key
+                ).verify(evidence, document)
+                if self._default_hardware_verifier:
+                    continue
+            signed_report_data = self._hardware_verifier(vendor, document, nonce)
+            AttestationVerifier(expected_nonce=nonce).verify_binding(evidence, signed_report_data)
 
     def close(self) -> None:
         return None

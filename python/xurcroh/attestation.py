@@ -5,13 +5,25 @@ import hmac
 import json
 import shutil
 import subprocess
-import sys
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
+
 from xurcroh.errors import AttestationError, CompatibilityError
+
+# SHA-256 of the DER SubjectPublicKeyInfo of Intel's "Intel SGX Root CA",
+# computed from the certificate Intel publishes at
+# https://certificates.trustedservices.intel.com/Intel_SGX_Provisioning_Certification_RootCA.pem
+# (certificate SHA-256 44a0196b2b99f889b8e149e95b807a350e7424964399e885a7cbb8ccfab674d3).
+# DCAP collateral is attester-supplied, so the trusted root is pinned by key
+# rather than taken from the evidence.
+INTEL_SGX_ROOT_CA_SPKI_SHA256 = bytes.fromhex(
+    "a0af031289f5d5d4132f9186068a7fc13628633ba235777472e29b6b6c67a49e"
+)
 
 
 @dataclass(frozen=True)
@@ -94,18 +106,9 @@ class NVIDIAAttestationVerifier(AttestationVerifier):
         return signed
 
     def verify(self, evidence: AttestationEvidence, *, report: bytes) -> None:
-        self.verify_binding(evidence, self.extract_report_data(report))
-        result = subprocess.run(  # noqa: S603 - current Python executable, no shell
-            [sys.executable, "-m", "verifier.cc_admin", "--nonce", evidence.nonce.hex()],
-            capture_output=True,
-            text=True,
-            check=False,
+        raise AttestationError(
+            "NVIDIA attestation cannot be verified locally; remote NRAS verification is required"
         )
-        output = (result.stdout + result.stderr).lower()
-        if result.returncode != 0 or "devtools" in output or "fail" in output:
-            raise AttestationError(
-                "NVIDIA confidential GPU attestation failed or devtools is enabled"
-            )
 
 
 @dataclass(frozen=True)
@@ -122,6 +125,30 @@ class DCAPCollateral:
 
 
 class IntelDCAPVerifier(AttestationVerifier):
+    def __init__(
+        self,
+        *,
+        expected_nonce: bytes,
+        expected_root_ca_spki_sha256: bytes = INTEL_SGX_ROOT_CA_SPKI_SHA256,
+    ) -> None:
+        super().__init__(expected_nonce=expected_nonce)
+        self.expected_root_ca_spki_sha256 = expected_root_ca_spki_sha256
+
+    def _verify_collateral_root(self, collateral: DCAPCollateral) -> None:
+        try:
+            certificate = x509.load_pem_x509_certificate(collateral.trusted_root_ca.encode("ascii"))
+            spki = certificate.public_key().public_bytes(
+                serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+        except (ValueError, AttributeError, UnicodeEncodeError) as error:
+            raise AttestationError("DCAP trusted root CA is not a valid PEM certificate") from error
+        if not hmac.compare_digest(
+            hashlib.sha256(spki).digest(), self.expected_root_ca_spki_sha256
+        ):
+            raise AttestationError(
+                "DCAP trusted root CA does not match the pinned Intel SGX root CA"
+            )
+
     @staticmethod
     def extract_report_data(quote: bytes) -> bytes:
         if len(quote) < 1024:
@@ -136,6 +163,7 @@ class IntelDCAPVerifier(AttestationVerifier):
         collateral: DCAPCollateral,
     ) -> Any:
         self.verify_binding(evidence, self.extract_report_data(quote))
+        self._verify_collateral_root(collateral)
         try:
             import sgx_dcap_quote_verify
         except ImportError as error:

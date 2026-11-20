@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from xurcroh.attestation import AttestationEvidence
+from xurcroh.errors import AttestationError
 from xurcroh.providers.ibm import IbmConfidentialClient
 
 
@@ -132,7 +135,7 @@ def test_ibm_uses_intel_dcap_verifier(monkeypatch) -> None:
     ibm = client()
     evidence = AttestationEvidence(
         vendor="intel",
-        nonce=b"nonce",
+        nonce=b"attester-chosen",
         report_data="",
         workload_hash=b"workload",
         artifact_hash=b"artifact",
@@ -143,6 +146,7 @@ def test_ibm_uses_intel_dcap_verifier(monkeypatch) -> None:
 
     def verify(verifier, received_evidence, **values):
         assert received_evidence == evidence
+        called["expected_nonce"] = verifier.expected_nonce
         called.update(values)
         return SimpleNamespace(ok=True)
 
@@ -151,6 +155,30 @@ def test_ibm_uses_intel_dcap_verifier(monkeypatch) -> None:
         evidence=evidence,
         quote=b"quote",
         collateral=collateral,
+        expected_nonce=b"challenger-nonce",
     )
     assert result.ok is True
-    assert called == {"quote": b"quote", "collateral": collateral}
+    assert called == {
+        "expected_nonce": b"challenger-nonce",
+        "quote": b"quote",
+        "collateral": collateral,
+    }
+
+
+def test_ibm_verify_attestation_rejects_nonce_not_matching_challenge() -> None:
+    ibm = client()
+    evidence = AttestationEvidence(
+        vendor="intel",
+        nonce=b"attester-chosen",
+        report_data="",
+        workload_hash=b"workload",
+        artifact_hash=b"artifact",
+        public_key_hash=b"key",
+    )
+    with pytest.raises(AttestationError, match="nonce"):
+        ibm.verify_attestation(
+            evidence=evidence,
+            quote=bytes(1024),
+            collateral=object(),
+            expected_nonce=b"challenger-nonce",
+        )
