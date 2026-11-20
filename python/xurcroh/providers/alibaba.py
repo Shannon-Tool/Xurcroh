@@ -262,12 +262,35 @@ class AlibabaConfidentialClient:
     def destroy(self, instance_id: str) -> None:
         from alibabacloud_ecs20140526 import models
 
+        lookup_request = models.DescribeInstancesRequest(
+            region_id=self.region_id,
+            instance_ids=json.dumps([instance_id], separators=(",", ":")),
+        )
+        lookup = self._call("instance lookup", self._ecs.describe_instances, lookup_request)
+        instances = lookup.body.instances.instance if lookup.body.instances else []
+        if len(instances) > 1:
+            raise ProviderError("Alibaba Cloud returned duplicate instance identities")
+        security_groups = []
+        if instances:
+            group_ids = instances[0].security_group_ids
+            security_groups = list(group_ids.security_group_id or []) if group_ids else []
         request = models.DeleteInstanceRequest(
             instance_id=instance_id,
             force=True,
             terminate_subscription=True,
         )
         self._call("instance deletion", self._ecs.delete_instance, request)
+        deadline = time.monotonic() + 300
+        while self.remaining(instance_id):
+            if time.monotonic() >= deadline:
+                raise ProviderError("Alibaba Cloud instance deletion timed out")
+            time.sleep(2)
+        for security_group_id in security_groups:
+            delete_group = models.DeleteSecurityGroupRequest(
+                region_id=self.region_id,
+                security_group_id=security_group_id,
+            )
+            self._call("security-group deletion", self._ecs.delete_security_group, delete_group)
 
     def remaining(self, instance_id: str) -> bool:
         from alibabacloud_ecs20140526 import models
