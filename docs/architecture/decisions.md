@@ -108,3 +108,11 @@ The installed OCI 2.192 SDK does not expose the initially assumed `is_confidenti
 AWS enclaves have no external network or SSH. `NitroParentRelay` therefore carries length-framed opaque UDP datagrams between one configured UDP peer and the enclave's AF_VSOCK endpoint. It does not terminate TLS, HPKE, or application sessions and adds no confidentiality guarantee. Parent provisioning, enclave PCR policy, and physical AF_VSOCK behavior remain separate acceptance tests.
 
 All new cloud adapters implement `destroy`, `remaining`, and `charges`; non-USD bills fail rather than being mislabeled as dollars. Built-in teardown uses `ProviderRegistry.with_defaults()` so these providers cannot be accidentally bypassed as unknown external plugins. API tests use mocks and local socket fixtures only. No provider was contacted, no cloud resource was created, and no physical attestation or production-acceptance claim is made.
+
+
+
+## ADR-018: Request deadlines inside long Fortress operations
+
+Diffusion progress callbacks execute between denoising steps. A pipeline configured with one step can therefore remain inside that step beyond the public request timeout without another callback. Xurcroh now installs cancellation and a monotonic execution deadline in context-local state around Fortress text, image, and video execution. `FortressRoleClient.execute` checks that state before and after every additive-grid matrix row, so long multi-operation layers cannot silently exceed the request deadline.
+
+This is cooperative enforcement: it does not claim preemption inside one native kernel call or an arbitrary third-party C extension. Cover-traffic threads have separate context state and do not inherit a user-request deadline. The managed-video timeout observed on the six-GiB host was stopped after exceeding its explicit 900-second bound; regressions now verify context expiry, row-level enforcement, and video-pipeline deadline propagation. Physical preemption and cleanup behavior under GPU load remain hardware-validation concerns.
