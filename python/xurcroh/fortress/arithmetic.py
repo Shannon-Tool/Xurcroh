@@ -128,7 +128,8 @@ def quantized_weight_bound(quantized: QuantizedTensor) -> int:
     if quantized.values is not None:
         return int((quantized.values - quantized.zero_point).abs().max().item())
     # compiler.compile_operation quantizes every weight with symmetric_quantize(bits=4)
-    return 2 ** (WEIGHT_QUANTIZATION_BITS - 1)
+    bound: int = 2 ** (WEIGHT_QUANTIZATION_BITS - 1)
+    return bound
 
 
 def quantized_matmul(left: QuantizedTensor, right: QuantizedTensor) -> QuantizedProduct:
