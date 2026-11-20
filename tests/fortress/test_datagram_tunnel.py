@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import threading
 from pathlib import Path
@@ -10,6 +11,19 @@ import torch
 import xurcroh_quic
 from tests.fortress.conftest import MutualTLSIdentities
 from tests.integration.test_ssh_executor import ssh_testbed
+
+
+def _host_memory_gb() -> float:
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / (1024**3)
+    except (OSError, ValueError, AttributeError):
+        return 0.0
+
+
+requires_relay_validation_host = pytest.mark.skipif(
+    _host_memory_gb() < 8,
+    reason="concurrent datagram relay validation requires a host with at least 8 GiB RAM",
+)
 
 
 def test_datagram_relays_carry_real_mutual_tls_quic(
@@ -279,6 +293,7 @@ def test_four_role_datagram_grid_returns_exact_product(
     asyncio.run(exercise())
 
 
+@requires_relay_validation_host
 def test_concurrent_relay_startup_has_unique_ready_endpoints(
     tmp_path: Path, mtls_identities: MutualTLSIdentities
 ) -> None:
