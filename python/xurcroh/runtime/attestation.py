@@ -76,10 +76,12 @@ class NVIDIARemoteVerifier:
             self._verify_token(token, evidence.nonce)
 
     def _verify_token(self, token: str, nonce: bytes) -> None:
+        key = self._verifier_public_key
+        assert key is not None
         try:
             claims = jwt.decode(
                 token,
-                self._verifier_public_key,
+                key,
                 algorithms=["ES256"],
                 options={"verify_aud": False},
             )
