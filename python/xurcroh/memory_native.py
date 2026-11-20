@@ -7,17 +7,25 @@ import torch
 
 from xurcroh.errors import CompatibilityError
 
+_burn_allocator_path: Path | None = None
+
 
 def activate_burn_on_read_allocator(library_path: str | Path) -> None:
+    global _burn_allocator_path
+    path = Path(library_path)
+    if _burn_allocator_path is not None:
+        if _burn_allocator_path == path:
+            return
+        raise CompatibilityError("a burn allocator is already activated")
     if torch.cuda.is_initialized():  # type: ignore[no-untyped-call]
         raise CompatibilityError("burn allocator must be activated before any CUDA allocation")
-    path = Path(library_path)
     if not path.is_file():
         raise CompatibilityError(f"burn allocator library is unavailable: {path}")
     allocator = torch.cuda.memory.CUDAPluggableAllocator(
         str(path), "xurcroh_burn_malloc", "xurcroh_burn_free"
     )
     torch.cuda.memory.change_current_allocator(allocator)
+    _burn_allocator_path = path
 
 
 class NativeMemoryController:

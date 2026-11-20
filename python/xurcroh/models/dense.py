@@ -148,6 +148,24 @@ class DenseStageRunner:
                 key.zero_()
                 value.zero_()
 
+    def drop_session(self, session_id: str) -> None:
+        prefix = f"{session_id}:"
+        with self._cache_lock:
+            caches = [self._caches.pop(key) for key in list(self._caches) if key.startswith(prefix)]
+        for cache in caches:
+            for key, value in cache:
+                key.zero_()
+                value.zero_()
+
+    def close(self) -> None:
+        with self._cache_lock:
+            caches = list(self._caches.values())
+            self._caches.clear()
+        for cache in caches:
+            for key, value in cache:
+                key.zero_()
+                value.zero_()
+
     def run_cached(self, request_id: str, hidden: torch.Tensor) -> torch.Tensor:
         with self._cache_lock:
             previous = self._caches.get(request_id, [])
