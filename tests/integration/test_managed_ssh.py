@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -10,6 +11,19 @@ from Xurcroh import Xurcroh
 from xurcroh.config import WorkerConfig
 
 pytestmark = pytest.mark.slow
+
+
+def _host_memory_gb() -> float:
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / (1024**3)
+    except (OSError, ValueError, AttributeError):
+        return 0.0
+
+
+requires_video_validation_host = pytest.mark.skipif(
+    _host_memory_gb() < 8,
+    reason="managed video success validation requires a host with at least 8 GiB RAM",
+)
 
 
 def _cpu_workers(base: WorkerConfig) -> list[WorkerConfig]:
@@ -627,6 +641,7 @@ def _tiny_video_checkpoint(tiny_llama_path: Path, tmp_path: Path) -> Path:
     return checkpoint
 
 
+@requires_video_validation_host
 def test_managed_video_generation_over_real_ssh(tiny_llama_path: Path, tmp_path: Path) -> None:
     checkpoint = _tiny_video_checkpoint(tiny_llama_path, tmp_path)
     with (
