@@ -132,7 +132,8 @@ class AlibabaConfidentialClient:
                             "gpu_memory_bytes": 96 * 1024**3,
                             "cpu_vendor": "Intel",
                             "country": zone.zone_id,
-                            "attested": True,
+                            "attested": False,
+                            "attestation_required": True,
                             "managed": True,
                         }
                     )

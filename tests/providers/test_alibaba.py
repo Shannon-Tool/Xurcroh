@@ -101,6 +101,8 @@ def test_alibaba_confidential_gpu_lifecycle() -> None:
     offer = alibaba.offers()[0]
     assert offer["id"] == "ecs.gn8v-tee.4xlarge"
     assert offer["tee_type"] == "tdx"
+    assert offer["attested"] is False
+    assert offer["attestation_required"] is True
     assert offer["gpu_memory_bytes"] == 96 * 1024**3
     instance = alibaba.create(
         offer,

@@ -78,7 +78,8 @@ class GoogleConfidentialClient:
                     "gpu_memory_bytes": 80 * 1024**3,
                     "cpu_vendor": "Intel",
                     "country": name,
-                    "attested": True,
+                    "attested": False,
+                    "attestation_required": True,
                     "managed": True,
                 }
             )

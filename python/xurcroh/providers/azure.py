@@ -47,7 +47,8 @@ class AzureConfidentialClient:
         return f"{self._subscription}/resourceGroups/{self.resource_group}"
 
     def offers(self, gpu_name: str | None = None) -> list[dict[str, Any]]:
-        del gpu_name
+        if gpu_name and "h100" not in gpu_name.lower():
+            return []
         document = self._rest.request(
             "GET",
             f"{self._subscription}/providers/Microsoft.Compute/skus",
@@ -62,7 +63,8 @@ class AzureConfidentialClient:
                 "gpu_memory_bytes": 94 * 1024**3,
                 "cpu_vendor": "AMD",
                 "country": sku["locations"][0],
-                "attested": True,
+                "attested": False,
+                "attestation_required": True,
                 "managed": True,
             }
             for sku in document.get("value", [])
