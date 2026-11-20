@@ -458,7 +458,9 @@ def test_qwen3_moe_fused_experts_execute_fortress_operations(tmp_path: Path) -> 
         num_experts_per_tok=1,
         max_position_embeddings=128,
     )
-    model = Qwen3MoeForCausalLM(config)
+    with torch.random.fork_rng():
+        torch.manual_seed(731)
+        model = Qwen3MoeForCausalLM(config)
     model.save_pretrained(tmp_path, safe_serialization=True)
     reference = Qwen3MoeForCausalLM.from_pretrained(
         tmp_path, dtype=torch.float32, local_files_only=True
