@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Current verification revision: `d5e18bfa54d5f875a77109e21461e72b28fc5d2f`
+- Current verification revision: `f710eb055b82ccf0f6b42e6b86434b4cabcc233d`
 - Local implementation: **standard suite and current static checks passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -36,22 +36,22 @@ The two-model managed test has not completed on this host. At `90a99a6`, its 24 
 
 | Check | Actual result |
 |---|---|
-| Python unit/integration/security tests | **621 passed, 36 deselected** in 953.64 seconds at `d5e18bfa54d5f875a77109e21461e72b28fc5d2f`; slow managed/video tests have separate results |
-| Python branch coverage | **80.82%**, above the 80% requirement at `d5e18bf` |
-| Ruff format and lint | Passed across 347 Python files at `d5e18bf` |
-| Strict mypy, 165 source files | Passed at `d5e18bf` |
-| Rust tests | **31 passed** at `d5e18bf` |
-| Rust formatting, Clippy, RustSec | Passed at `d5e18bf`; no known advisories |
-| Frontend interaction tests | **35 passed** at `d5e18bf` |
-| Frontend typecheck, lint, production build, content validation | Passed at `d5e18bf`; 22 sections, equations, links, and Mermaid syntax validated |
-| Offline ladder/handoff validation | All 22 command forms validated without provider contact at `d5e18bf`, including signed predecessor arguments and real multi-model smoke |
-| ProVerif model and protocol fuzzing | ProVerif confirms activation secrecy, response secrecy, and client/server establishment correspondence at `d5e18bf`; strict result checking is enforced. All three ASan fuzz targets completed without crashes: 2,034,454 frame, 375,022 AEAD, and 30,607 HPKE executions; newer hosted runs are blocked before startup |
-| Clean reproducible wheel builds | Matched at `d5e18bfa54d5f875a77109e21461e72b28fc5d2f`: Python `3bc91f8755d7b6ac87e7e253133c1cfeaf3951ea1797e50b0b06c5bfb1e686a2`, native `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2`; current hosted rebuild remains billing-blocked |
-| `pip-audit` | No known vulnerabilities in audited dependencies at `d5e18bf`; local CPU torch/torchvision and Xurcroh packages remain skipped as detailed below |
-| `npm audit` | 0 vulnerabilities at `d5e18bf` |
-| Quantized checkpoint reader fuzzing | 100 mutations at `d5e18bf`: 51 accepted, 49 rejected, no unexpected failure |
-| Secret scanning | Gitleaks 8.30.1 scanned 430 commits across `--all` at `d5e18bf`; no leaks found; release archive checksum verified |
-| Sealed worker image | Static Dockerfile/Kubernetes checks passed at `d5e18bf`; CI builds, exact-role smoke, SBOM, image identity, and Trivy are configured, but no local Docker execution is claimed |
+| Python unit/integration/security tests | **621 passed, 36 deselected** in 982.01 seconds at `f710eb055b82ccf0f6b42e6b86434b4cabcc233d`; slow managed/video tests have separate results |
+| Python branch coverage | **80.83%**, above the 80% requirement at `f710eb0` |
+| Ruff format and lint | Passed across 347 Python files at `f710eb0` |
+| Strict mypy, 165 source files | Passed at `f710eb0` |
+| Rust tests | **31 passed** at `f710eb0` |
+| Rust formatting, Clippy, RustSec | Passed at `f710eb0`; no known advisories |
+| Frontend interaction tests | **35 passed** at `f710eb0` |
+| Frontend typecheck, lint, production build, content validation | Passed at `f710eb0`; 22 sections, equations, links, and Mermaid syntax validated |
+| Offline ladder/handoff validation | All 22 command forms validated without provider contact at `f710eb0`, including signed predecessor arguments and real multi-model smoke |
+| ProVerif model and protocol fuzzing | ProVerif confirms activation secrecy, response secrecy, and client/server establishment correspondence at `f710eb0`; strict result checking is enforced. All three ASan fuzz targets completed without crashes: 2,032,060 frame, 392,496 AEAD, and 31,058 HPKE executions; newer hosted runs are blocked before startup |
+| Clean reproducible wheel builds | Matched at `f710eb055b82ccf0f6b42e6b86434b4cabcc233d`: Python `07895d983b1aaef2ac412e2bd0a4d82067b0cc416cc840dc693782fd5298654b`, native `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2`; current hosted rebuild remains billing-blocked |
+| `pip-audit` | No known vulnerabilities in audited dependencies at `f710eb0`; local CPU torch/torchvision and Xurcroh packages remain skipped as detailed below |
+| `npm audit` | 0 vulnerabilities at `f710eb0` |
+| Quantized checkpoint reader fuzzing | 100 mutations at `f710eb0`: 51 accepted, 49 rejected, no unexpected failure |
+| Secret scanning | Gitleaks 8.30.1 scanned 432 commits across `--all` at `f710eb0`; no leaks found; release archive checksum verified |
+| Sealed worker image | Static Dockerfile/Kubernetes checks passed at `f710eb0`; CI builds, exact-role smoke, SBOM, image identity, and Trivy are configured, but no local Docker execution is claimed |
 
 The final Python run used `OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1` on the six-GiB development host with no concurrent build. Earlier resource-contended attempts reached 617 passes and exposed different timing/thread-resource failures while clean Rust builds were running concurrently; each affected test passed in isolation. One intermediate run also exposed an unseeded miniature MoE fixture whose random weights could exceed its 0.02 tolerance; the fixture is now seeded and passed ten isolated runs before the clean 621-test run above. These reruns are recorded because they are local evidence, but the run above is the final full-suite result.
 
@@ -61,7 +61,7 @@ At `1dc0558a35b9dd85d07f50d08193aafe3b01ef2d`, the committed managed-video timeo
 
 The integrated deployment now generates per-operation placements and packages only assigned artifacts, uses operation-specific SDK roles, supports verified external-provider teardown, records live role resources, and checks GPU capacity before launch. Media verification covers configured multi-denoiser and editing/I2V workflows. Text verification covers streaming, cancellation, concurrency, and real multi-model smoke. Original models load only after compiled references are released. Signed predecessor evidence is mandatory for every non-root rung, and operator-saliency REAP pruning consistently filters expert reads and routers. These are local implementation and miniature-model results, not official full-checkpoint or independent-host acceptance.
 
-`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The prior wheel comparison preserved Maturin's CycloneDX dependency inventory while normalizing checkout paths, compiler paths, file modes, ZIP encoding, and `RECORD`. Its cross-host SHA-256 values were `57a3e9c309ac80ed575eeedee09ea64d8cf13d2ff6b3f6ca3d3feb3a335cbaa0` for the Python wheel and `113652e94e084a89c0908a3dedc8a09ce843edd29258ce0c90eb85c93232b6c2` for the native wheel. This is automated cross-machine evidence, not second-party attestation. The current clean-build comparison at `d5e18bfa54d5f875a77109e21461e72b28fc5d2f` produced matching SHA-256 values `3bc91f8755d7b6ac87e7e253133c1cfeaf3951ea1797e50b0b06c5bfb1e686a2` (Python) and `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2` (native).
+`pip-audit` explicitly skips the local CPU PyTorch/torchvision wheels and local Xurcroh packages because they are not available from PyPI; those packages are not silently described as audited. Docker/Kubernetes manifests have static tests, but no local Docker image build or cluster application is claimed. The prior wheel comparison preserved Maturin's CycloneDX dependency inventory while normalizing checkout paths, compiler paths, file modes, ZIP encoding, and `RECORD`. Its cross-host SHA-256 values were `57a3e9c309ac80ed575eeedee09ea64d8cf13d2ff6b3f6ca3d3feb3a335cbaa0` for the Python wheel and `113652e94e084a89c0908a3dedc8a09ce843edd29258ce0c90eb85c93232b6c2` for the native wheel. This is automated cross-machine evidence, not second-party attestation. The current clean-build comparison at `f710eb055b82ccf0f6b42e6b86434b4cabcc233d` produced matching SHA-256 values `07895d983b1aaef2ac412e2bd0a4d82067b0cc416cc840dc693782fd5298654b` (Python) and `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2` (native).
 
 Primary commands:
 
@@ -234,6 +234,6 @@ All tracked instances from these attempts were destroyed; a direct provider quer
 
 At `79582191ece6e690bec403ecdb57cdeae71befee`, built-in provider adapters cover Azure NCC40ads H100 v5, Google A3 HighGPU TDX, Alibaba gn8v-tee, OCI E5/E6 SEV-SNP, AWS Nitro Enclaves, and IBM VPC TDX. The first three are confidential-GPU paths; the latter three are explicitly CPU-only. GCP G4 is unsupported. Each adapter implements discovery, create/destroy, remaining-instance checks, and charge reporting. The standard bootstrap now installs the complete `cloud` extra and the compatible IBM/AWS/OCI dependency set.
 
-The initial adapter slice reported **43 provider tests passed** at `7958219`. Subsequent integration regressions bring the current focused provider/lifecycle total to **52 passed**. These tests use mocked provider APIs and generated certificates, not physical cloud infrastructure. They cover confidential configuration flags, scoped ingress, GCP availability filtering and `UNNEST(labels)` billing with bound parameters, Alibaba OIDC policy/runtime validation, OCI Veraison nonce/measurement appraisal, AWS COSE/certificate/PCR/nonce validation, optional Cost Explorer pagination, attested KMS requests, IBM DCAP delegation, and AF_VSOCK framing. Four relay tests execute real local UDP/socketpair forwarding with peer filtering and opaque datagram round trips. Four smoke-harness tests cover create/charge/destroy and recovery. Teardown tests verify built-in provider registration, charge-before-destroy ordering, continued destruction when billing fails, and Azure deletion of the per-worker NIC, public IP, vNet, and NSG after the VM disappears.
+The initial adapter slice reported **43 provider tests passed** at `7958219`. Subsequent integration regressions bring the current focused provider/lifecycle total to **52 passed**. These tests use mocked provider APIs and generated certificates, not physical cloud infrastructure. They cover confidential configuration flags, scoped ingress, GCP availability filtering and `UNNEST(labels)` billing with bound parameters, Alibaba OIDC policy/runtime validation, OCI Veraison nonce/measurement appraisal, AWS COSE/certificate/PCR/nonce validation, optional Cost Explorer pagination, attested KMS requests, IBM DCAP delegation, and AF_VSOCK framing. Four relay tests execute real local UDP/socketpair forwarding with peer filtering and opaque datagram round trips. Four smoke-harness tests cover create/charge/destroy and recovery. Teardown tests verify built-in provider registration, charge-before-destroy ordering, continued destruction when billing fails, Azure deletion of the per-worker NIC, public IP, vNet, and NSG after the VM disappears, and Alibaba deletion of the attached worker security group after instance termination.
 
 No physical Azure, Google, Alibaba, OCI, AWS, or IBM instance was launched, no cloud charge was incurred, and no physical provider attestation result is claimed. Provider availability, image compatibility, API response shapes, trust collateral, AF_VSOCK kernel support, cost-export contents, and independent destruction remain hardware-validation gates in `docs/gpu-agent-handoff.md`.
