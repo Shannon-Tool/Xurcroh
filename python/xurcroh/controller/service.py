@@ -82,8 +82,27 @@ class CircuitStore:
         with self._lock:
             self._circuits.pop(circuit_id, None)
 
+    def _purge_expired(self) -> None:
+        now = time.time()
+        for circuit_id in [
+            circuit_id
+            for circuit_id, (created, _, _) in self._circuits.items()
+            if now - created > self.ttl_seconds
+        ]:
+            self._circuits.pop(circuit_id, None)
+
+    def list(self, owner: str) -> tuple[Circuit, ...]:
+        with self._lock:
+            self._purge_expired()
+            return tuple(
+                circuit
+                for _, circuit, expected_owner in self._circuits.values()
+                if owner == expected_owner
+            )
+
     def active_count(self) -> int:
         with self._lock:
+            self._purge_expired()
             return len(self._circuits)
 
 
@@ -163,6 +182,12 @@ def create_controller_app(
         )
         return {"worker_id": record.worker_id, "status": "registered"}
 
+    @app.post("/v1/workers/{worker_id}/heartbeat")
+    def heartbeat(worker_id: str, request: Request) -> dict[str, Any]:
+        owner(request)
+        record = worker_registry.heartbeat(worker_id)
+        return {"worker_id": record.worker_id, "status": "alive"}
+
     @app.get("/v1/workers")
     def workers(request: Request) -> tuple[WorkerRecord, ...]:
         owner(request)
@@ -172,6 +197,10 @@ def create_controller_app(
     def capabilities(worker_id: str, request: Request) -> WorkerRecord:
         owner(request)
         return worker_registry.get(worker_id)
+
+    @app.get("/v1/circuits")
+    def list_circuits(request: Request) -> tuple[Circuit, ...]:
+        return circuits.list(owner(request))
 
     @app.post("/v1/circuits")
     def create_circuit(request: CircuitRequest, http_request: Request) -> Circuit:
