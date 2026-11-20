@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 
 import httpx
+import pytest
 
+from xurcroh.errors import ProviderError
 from xurcroh.providers.azure import AzureConfidentialClient
 from xurcroh.providers.gcp import (
     GoogleConfidentialClient,
@@ -19,6 +21,7 @@ class Credential:
 
 def test_azure_confidential_lifecycle() -> None:
     seen = []
+    deleted = set()
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
@@ -36,10 +39,25 @@ def test_azure_confidential_lifecycle() -> None:
                 },
             )
         if path.endswith("/Microsoft.CostManagement/query"):
-            return httpx.Response(200, json={"properties": {"rows": [[2.5, "USD"]]}})
+            return httpx.Response(
+                200,
+                json={
+                    "properties": {
+                        "rows": [
+                            [
+                                2.5,
+                                "/subscriptions/sub/resourceGroups/xurcroh-tee/providers/Microsoft.Compute/virtualMachines/tee-worker",
+                                20261101,
+                                "USD",
+                            ]
+                        ]
+                    }
+                },
+            )
         if request.method == "DELETE":
+            deleted.add(path)
             return httpx.Response(200, json={})
-        if request.method == "GET" and "virtualMachines/tee-worker" in path:
+        if request.method == "GET" and ("virtualMachines/tee-worker" in path or path in deleted):
             return httpx.Response(404, json={})
         return httpx.Response(200, json={"properties": {"provisioningState": "Succeeded"}})
 
@@ -201,3 +219,65 @@ def test_google_billing_uses_bound_parameters() -> None:
     assert "UNNEST(labels)" in payload["query"]
     assert "label.key = 'xurcroh_instance'" in payload["query"]
     assert "label.value = @instance_label" in payload["query"]
+
+
+def test_azure_charges_fail_closed_on_empty_rows() -> None:
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path.endswith("/Microsoft.CostManagement/query"):
+            return httpx.Response(200, json={"properties": {"rows": []}})
+        return httpx.Response(200, json={})
+
+    client = AzureConfidentialClient(
+        subscription_id="sub",
+        credential=Credential(),
+        client=httpx.Client(
+            base_url="https://management.azure.com",
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+    with pytest.raises(ProviderError):
+        client.charges("tee-worker")
+    query = next(
+        request for request in seen if request.url.path.endswith("/Microsoft.CostManagement/query")
+    )
+    assert "/subscriptions/sub/resourceGroups/xurcroh-tee/" in str(query.url)
+    body = json.loads(query.content)
+    assert body["timeframe"] == "MonthToDate"
+
+
+def test_azure_destroy_cleans_up_network_when_vm_wait_fails(monkeypatch) -> None:
+    seen = []
+    deleted = set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        path = request.url.path
+        if request.method == "DELETE":
+            deleted.add(path)
+            return httpx.Response(200, json={})
+        if request.method == "GET" and "virtualMachines/tee-worker" in path:
+            return httpx.Response(200, json={"properties": {"provisioningState": "Succeeded"}})
+        if request.method == "GET" and path in deleted:
+            return httpx.Response(404, json={})
+        return httpx.Response(200, json={"properties": {"provisioningState": "Succeeded"}})
+
+    client = AzureConfidentialClient(
+        subscription_id="sub",
+        credential=Credential(),
+        client=httpx.Client(
+            base_url="https://management.azure.com",
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+    clock = iter([0.0, 301.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0])
+    monkeypatch.setattr("xurcroh.providers.azure.time.monotonic", lambda: next(clock))
+    with pytest.raises(ProviderError, match="timed out"):
+        client.destroy("tee-worker")
+    deleted_paths = [str(request.url) for request in seen if request.method == "DELETE"]
+    assert any("networkInterfaces/tee-worker-nic" in path for path in deleted_paths)
+    assert any("publicIPAddresses/tee-worker-ip" in path for path in deleted_paths)
+    assert any("virtualNetworks/tee-worker-vnet" in path for path in deleted_paths)
+    assert any("networkSecurityGroups/tee-worker-nsg" in path for path in deleted_paths)

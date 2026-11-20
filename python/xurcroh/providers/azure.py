@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import time
 from typing import Any
@@ -236,11 +237,6 @@ class AzureConfidentialClient:
             f"{self._group}/providers/Microsoft.Compute/virtualMachines/{label}",
             params={"api-version": "2024-07-01"},
         )
-        deadline = time.monotonic() + 300
-        while self.remaining(label):
-            if time.monotonic() >= deadline:
-                raise ProviderError("Azure confidential instance deletion timed out")
-            time.sleep(2)
         network_root = f"{self._group}/providers/Microsoft.Network"
         resources = (
             f"{network_root}/networkInterfaces/{label}-nic",
@@ -248,12 +244,36 @@ class AzureConfidentialClient:
             f"{network_root}/virtualNetworks/{label}-vnet",
             f"{network_root}/networkSecurityGroups/{label}-nsg",
         )
+        try:
+            deadline = time.monotonic() + 300
+            while self.remaining(label):
+                if time.monotonic() >= deadline:
+                    raise ProviderError("Azure confidential instance deletion timed out")
+                time.sleep(2)
+        finally:
+            self._destroy_network(resources)
+
+    def _destroy_network(self, resources: tuple[str, ...]) -> None:
+        pending = []
         for path in resources:
-            self._rest.request(
-                "DELETE",
-                path,
-                params={"api-version": "2023-11-01"},
-            )
+            with contextlib.suppress(ProviderError):
+                self._rest.request(
+                    "DELETE",
+                    path,
+                    params={"api-version": "2023-11-01"},
+                )
+            pending.append(path)
+        deadline = time.monotonic() + 120
+        while pending:
+            if time.monotonic() >= deadline:
+                names = ", ".join(path.rsplit("/", 1)[-1] for path in pending)
+                raise ProviderError(f"Azure network resources still deprovisioning: {names}")
+            for path in list(pending):
+                document = self._rest.request("GET", path, params={"api-version": "2023-11-01"})
+                if document is None:
+                    pending.remove(path)
+            if pending:
+                time.sleep(2)
 
     def remaining(self, instance_id: str) -> bool:
         document = self._rest.request(
@@ -264,24 +284,30 @@ class AzureConfidentialClient:
         return document is not None
 
     def charges(self, instance_id: str) -> float:
+        label = instance_label(str(instance_id).rsplit("/", 1)[-1])
         document = self._rest.request(
             "POST",
-            f"{self._subscription}/providers/Microsoft.CostManagement/query",
+            f"{self._group}/providers/Microsoft.CostManagement/query",
             params={"api-version": "2023-11-01"},
             json={
                 "type": "ActualCost",
+                "timeframe": "MonthToDate",
                 "dataSet": {
                     "granularity": "Daily",
                     "aggregation": {"totalCost": {"name": "PreTaxCost", "function": "Sum"}},
-                    "filter": {
-                        "dimensions": {
-                            "name": "ResourceId",
-                            "operator": "In",
-                            "values": [instance_id],
-                        }
-                    },
+                    "grouping": [{"type": "Dimension", "name": "ResourceId"}],
                 },
             },
         )
-        rows = document.get("properties", {}).get("rows", [])
-        return sum(float(row[0]) for row in rows)
+        rows = (document or {}).get("properties", {}).get("rows", [])
+        matched = [
+            float(row[0])
+            for row in rows
+            if len(row) > 1
+            and isinstance(row[1], str)
+            and "/providers/Microsoft.Compute/virtualMachines/" in row[1]
+            and row[1].endswith(f"/{label}")
+        ]
+        if not matched:
+            raise ProviderError(f"no Azure cost rows matched instance {label}")
+        return sum(matched)
