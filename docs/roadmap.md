@@ -88,9 +88,10 @@ code.
 
 ### 3.1 Arithmetic
 
-Everything outsourced to a server is integer arithmetic modulo 2^32 (benchmark a prime field as the
-alternative). Weights are quantized to about 4 bits and activations are fixed-point at 8–12 bits, so
-true results fit the ring. In this ring a uniformly random mask is a true one-time pad: hiding is
+Everything outsourced to a server is integer arithmetic in the prime field `2^32-5` (the prime just
+below `2^32`, chosen so field elements still fit 32-bit words). Weights are quantized to about 4
+bits and activations are fixed-point at 8–12 bits, so true results fit the field. In this field a
+uniformly random mask is a true one-time pad: hiding is
 information-theoretic, and Freivalds checks are mathematically sound. Rescaling after each product
 is done by the client in the clear, which avoids the hardest part of general MPC.
 
