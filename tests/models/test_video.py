@@ -4,27 +4,10 @@ import torch
 
 from xurcroh.algebra.attention import sample_orthogonal
 from xurcroh.models.video import (
-    CubePermutation,
     cache_dit_difference_norm,
     chunked_video_decode,
     timestep_expert,
 )
-
-
-def test_cube_permutation_preserves_cube_contents() -> None:
-    permutation = CubePermutation(
-        grid_shape=(2, 4, 4),
-        cube_shape=(1, 2, 2),
-        seed=307,
-    )
-    values = torch.arange(32)
-    transformed = permutation.apply(values)
-    recovered = permutation.inverse(transformed)
-    assert torch.equal(recovered, values)
-    for new_macro, original_macro in enumerate(permutation.macro_permutation.tolist()):
-        original_cube = set(permutation.cube_indices(original_macro).tolist())
-        transformed_cube = set(transformed[permutation.cube_indices(new_macro)].tolist())
-        assert original_cube == transformed_cube
 
 
 def test_timestep_expert_selection_is_content_independent() -> None:

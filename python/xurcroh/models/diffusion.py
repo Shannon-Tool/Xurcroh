@@ -8,19 +8,6 @@ import torch
 from xurcroh.algebra.attention import AttentionWeights
 
 
-@dataclass(frozen=True)
-class LatentTransform:
-    basis: torch.Tensor
-    permutation: torch.Tensor
-
-    def apply(self, latent: torch.Tensor) -> torch.Tensor:
-        return latent[self.permutation] @ self.basis.T
-
-    def recover(self, latent: torch.Tensor) -> torch.Tensor:
-        inverse = torch.argsort(self.permutation)
-        return (latent @ self.basis)[inverse]
-
-
 class FlowEulerScheduler:
     def __init__(self, timesteps: list[float]) -> None:
         if len(timesteps) < 2 or any(later >= earlier for earlier, later in pairwise(timesteps)):

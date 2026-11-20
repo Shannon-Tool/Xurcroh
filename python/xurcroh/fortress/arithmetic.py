@@ -15,6 +15,7 @@ PRIME_MODULUS = 2**32 - 5
 FIELD_MODULUS = PRIME_MODULUS
 MAX_SIGNED_RING_VALUE = 2**31 - 1
 MAX_SIGNED_FIELD_VALUE = PRIME_MODULUS // 2
+MAX_SHARE_COUNT = 2**20
 MAX_ACTIVATION_BITS = 12
 WEIGHT_QUANTIZATION_BITS = 4
 
@@ -175,6 +176,8 @@ def signed_field(values: torch.Tensor) -> torch.Tensor:
 def split_secret(secret: torch.Tensor, *, count: int, modulus: int = FIELD_MODULUS) -> ShareGrid:
     if count < 2:
         raise ValueError("additive sharing requires at least two roles")
+    if count > MAX_SHARE_COUNT:
+        raise ValueError("share count exceeds the int64 accumulation bound")
     if secret.dtype != torch.int64:
         raise ValueError("shared secrets must use int64")
     canonical = secret.remainder(modulus)
@@ -186,6 +189,8 @@ def split_secret(secret: torch.Tensor, *, count: int, modulus: int = FIELD_MODUL
 def combine_shares(shares: list[torch.Tensor], *, modulus: int = FIELD_MODULUS) -> torch.Tensor:
     if not shares:
         raise ValueError("at least one share is required")
+    if len(shares) > MAX_SHARE_COUNT:
+        raise ValueError("share count exceeds the int64 accumulation bound")
     return torch.sum(torch.stack(shares), dim=0).remainder(modulus)
 
 
@@ -242,6 +247,8 @@ def activation_row_seed(seed: bytes, row: int) -> bytes:
 def seeded_split_secret(secret: torch.Tensor, *, seed: bytes, count: int) -> ShareGrid:
     if count < 2:
         raise ValueError("additive sharing requires at least two roles")
+    if count > MAX_SHARE_COUNT:
+        raise ValueError("share count exceeds the int64 accumulation bound")
     if secret.dtype != torch.int64:
         raise ValueError("shared secrets must use int64")
     canonical = secret.remainder(FIELD_MODULUS)

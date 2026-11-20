@@ -22,7 +22,7 @@ export function ShareGridLab() {
   }, [epoch, tamper]);
   const role = state.grid.roles[Math.min(playback.index, 3)]!;
   return (
-    <LabShell id="share-grid" title="Additive share-grid laboratory" caption="Four independent role computations reconstruct xWᵀ modulo 2³². Epoch changes refresh deterministic teaching shares; production uses independent random shares.">
+    <LabShell id="share-grid" title="Additive share-grid laboratory" caption="Four independent role computations reconstruct xWᵀ in the prime field 2³²−5 (the prime just below 2³²). Epoch changes refresh deterministic teaching shares; production uses independent random shares.">
       <div className="lab-controls">
         <label>Share epoch
           <input type="number" min="0" max="20" value={epoch} onChange={(event) => { setEpoch(Number(event.target.value)); playback.onReset(); }} />
