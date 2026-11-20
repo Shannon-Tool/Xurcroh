@@ -1,13 +1,27 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import re
+import time
 from typing import Any
 
 import httpx
 
 from xurcroh.errors import ProviderError
 from xurcroh.providers.cloud import CloudRESTClient, allowed_source_ranges, instance_label
+
+
+def _network_digest(label: str) -> str:
+    return hashlib.sha256(label.encode("ascii")).hexdigest()
+
+
+def _instance_network_tag(label: str) -> str:
+    return f"xurcroh-{_network_digest(label)[:24]}"
+
+
+def _firewall_name(label: str) -> str:
+    return f"xurcroh-fw-{_network_digest(label)[:20]}"
 
 
 class GoogleConfidentialClient:
@@ -85,10 +99,11 @@ class GoogleConfidentialClient:
             )
         return offers
 
-    def _ensure_firewall(self, source_ranges: list[str]) -> None:
-        path = f"projects/{self.project_id}/global/firewalls/xurcroh-tee-ingress"
+    def _ensure_firewall(self, label: str, source_ranges: list[str]) -> None:
+        name = _firewall_name(label)
+        path = f"projects/{self.project_id}/global/firewalls/{name}"
         payload = {
-            "name": "xurcroh-tee-ingress",
+            "name": name,
             "network": "global/networks/default",
             "direction": "INGRESS",
             "priority": 1000,
@@ -97,7 +112,7 @@ class GoogleConfidentialClient:
                 {"IPProtocol": "tcp", "ports": ["22"]},
                 {"IPProtocol": "udp", "ports": ["9444"]},
             ],
-            "targetTags": ["xurcroh-tee"],
+            "targetTags": [_instance_network_tag(label)],
         }
         if self._rest.request("GET", path) is None:
             self._rest.request(
@@ -118,7 +133,7 @@ class GoogleConfidentialClient:
         ):
             raise ValueError("an SSH public key is required")
         source_ranges = allowed_source_ranges(values.get("allowed_source_ranges"))
-        self._ensure_firewall(source_ranges)
+        self._ensure_firewall(label, source_ranges)
         zone = str(offer["country"])
         source_image = values.get(
             "source_image",
@@ -127,7 +142,7 @@ class GoogleConfidentialClient:
         payload = {
             "name": label,
             "labels": {"xurcroh_instance": label.replace("-", "_")},
-            "tags": {"items": ["xurcroh-tee"]},
+            "tags": {"items": [_instance_network_tag(label)]},
             "machineType": f"zones/{zone}/machineTypes/a3-highgpu-1g",
             "confidentialInstanceConfig": {"confidentialInstanceType": "TDX"},
             "scheduling": {
@@ -179,6 +194,15 @@ class GoogleConfidentialClient:
         self._rest.request(
             "DELETE",
             f"projects/{self.project_id}/zones/{zone}/instances/{label}",
+        )
+        deadline = time.monotonic() + 300
+        while self.remaining(instance_id):
+            if time.monotonic() >= deadline:
+                raise ProviderError("Google Cloud confidential instance deletion timed out")
+            time.sleep(2)
+        self._rest.request(
+            "DELETE",
+            f"projects/{self.project_id}/global/firewalls/{_firewall_name(label)}",
         )
 
     def remaining(self, instance_id: str) -> bool:

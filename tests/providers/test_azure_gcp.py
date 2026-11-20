@@ -5,7 +5,11 @@ import json
 import httpx
 
 from xurcroh.providers.azure import AzureConfidentialClient
-from xurcroh.providers.gcp import GoogleConfidentialClient
+from xurcroh.providers.gcp import (
+    GoogleConfidentialClient,
+    _firewall_name,
+    _instance_network_tag,
+)
 
 
 class Credential:
@@ -150,15 +154,18 @@ def test_google_confidential_lifecycle() -> None:
     assert payload["confidentialInstanceConfig"]["confidentialInstanceType"] == "TDX"
     assert payload["scheduling"]["provisioningModel"] == "SPOT"
     assert payload["shieldedInstanceConfig"]["enableSecureBoot"] is True
-    assert payload["tags"]["items"] == ["xurcroh-tee"]
+    assert payload["tags"]["items"] == [_instance_network_tag("tee-worker")]
     firewall = next(
         json.loads(request.content)
         for request in seen
         if request.method == "POST" and "global/firewalls" in str(request.url)
     )
+    assert firewall["name"] == _firewall_name("tee-worker")
     assert firewall["sourceRanges"] == ["192.0.2.10/32"]
-    assert firewall["targetTags"] == ["xurcroh-tee"]
+    assert firewall["targetTags"] == [_instance_network_tag("tee-worker")]
     client.destroy(instance)
+    deleted_paths = [str(request.url) for request in seen if request.method == "DELETE"]
+    assert any(f"global/firewalls/{_firewall_name('tee-worker')}" in path for path in deleted_paths)
     assert client.remaining(instance) is False
     assert client.charges(instance) == 2.5
 
