@@ -74,17 +74,18 @@ def measure_timing_classifier(observations: list[tuple[float, bool]]) -> TimingC
     cover_count = len(observations) - real_count
     if not real_count or not cover_count:
         raise ValueError("timing classification requires real and cover observations")
+    real_sum = sum(duration for duration, cover in observations if not cover)
+    cover_sum = sum(duration for duration, cover in observations if cover)
     correct = 0
     correct_real = 0
     correct_cover = 0
-    for index, (duration, cover) in enumerate(observations):
-        remaining = observations[:index] + observations[index + 1 :]
-        real_mean = sum(value for value, label in remaining if not label) / sum(
-            not label for _, label in remaining
-        )
-        cover_mean = sum(value for value, label in remaining if label) / sum(
-            label for _, label in remaining
-        )
+    for duration, cover in observations:
+        remaining_real_sum = real_sum - (0 if cover else duration)
+        remaining_cover_sum = cover_sum - (duration if cover else 0)
+        remaining_real_count = real_count - (0 if cover else 1)
+        remaining_cover_count = cover_count - (1 if cover else 0)
+        real_mean = remaining_real_sum / remaining_real_count
+        cover_mean = remaining_cover_sum / remaining_cover_count
         predicted_cover = abs(duration - cover_mean) < abs(duration - real_mean)
         correct += predicted_cover == cover
         correct_real += not cover and not predicted_cover
