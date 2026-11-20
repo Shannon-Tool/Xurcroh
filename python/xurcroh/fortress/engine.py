@@ -76,9 +76,13 @@ class FortressEngine:
     def _inference_scope(
         self, started: float, timeout: float, cancelled: threading.Event
     ) -> Iterator[None]:
+        from xurcroh.fortress.transport import execution_health
         from xurcroh.runtime.generation import bounded_execution
 
-        with bounded_execution(self._inference_lock, cancelled, started, timeout, self.name):
+        with (
+            bounded_execution(self._inference_lock, cancelled, started, timeout, self.name),
+            execution_health(cancelled, started + timeout),
+        ):
             yield
 
     def _identity(self) -> MutualTLSIdentity:

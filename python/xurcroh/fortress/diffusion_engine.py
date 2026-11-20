@@ -112,6 +112,7 @@ class FortressDiffusionEngine(FortressEngine):
         cancelled: Any,
         timeout: float,
     ) -> ImageGenerationResponse:
+        from xurcroh.fortress.transport import execution_health
         from xurcroh.runtime.generation import check_request_health
         from xurcroh.runtime.vlm import _decode_image
 
@@ -154,7 +155,8 @@ class FortressDiffusionEngine(FortressEngine):
         parameters = {
             key: value for key, value in parameters.items() if _accepts_parameter(signature, key)
         }
-        result = self._boundary.pipeline(**parameters)
+        with execution_health(cancelled, started + timeout):
+            result = self._boundary.pipeline(**parameters)
         if supports_latent_decode:
             encoded = self._boundary.decode(result.images, request)
         else:
@@ -175,6 +177,7 @@ class FortressDiffusionEngine(FortressEngine):
         cancelled: Any,
         timeout: float,
     ) -> VideoGenerationResponse:
+        from xurcroh.fortress.transport import execution_health
         from xurcroh.runtime.generation import check_request_health
         from xurcroh.runtime.vlm import _decode_image
 
@@ -207,7 +210,8 @@ class FortressDiffusionEngine(FortressEngine):
         parameters = {
             key: value for key, value in parameters.items() if _accepts_parameter(signature, key)
         }
-        result = self._boundary.pipeline(**parameters)
+        with execution_health(cancelled, started + timeout):
+            result = self._boundary.pipeline(**parameters)
         frames = getattr(result, "frames", None)
         if frames is None:
             raise CapabilityError("video pipeline did not return latent frames")
