@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from tests.fortress.conftest import MutualTLSIdentities
 
+from xurcroh.errors import AttestationError, ProtocolError
 from xurcroh.fortress.arithmetic import PRIME_MODULUS, split_secret
 from xurcroh.fortress.compiler import compile_operation
 from xurcroh.fortress.grid import RoleExecutionError
@@ -33,7 +34,7 @@ def test_role_artifact_reconstructs_only_its_own_weight_share() -> None:
         torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
     )
     encoded = encode_role_artifact(operation, weight_index=1, recipient_public=bytes(range(32)))
-    artifact = decode_role_artifact(encoded)
+    artifact = decode_role_artifact(encoded, allow_unattested=True)
     assert artifact.weight_index == 1
     assert torch.equal(artifact.matrix, operation.shares[1].matrix)
     assert artifact.recipient_public == bytes(range(32))
@@ -55,13 +56,46 @@ def test_seeded_role_artifact_expands_without_storing_the_weight_matrix() -> Non
     document = json.loads(encoded)
     assert document["format"] == "xurcroh-fortress-role-v2"
     assert "storage" not in document
-    artifact = decode_role_artifact(encoded)
+    artifact = decode_role_artifact(encoded, allow_unattested=True)
     assert torch.equal(artifact.matrix, operation.shares[0].matrix)
     final = json.loads(
         encode_role_artifact(operation, weight_index=2, recipient_public=bytes(range(32)))
     )
     assert final["format"] == "xurcroh-fortress-role-v1"
     assert "storage" in final
+
+
+def test_decode_role_artifact_fails_closed_without_attestation() -> None:
+    operation = compile_operation(
+        torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
+    )
+    encoded = encode_role_artifact(operation, weight_index=0, recipient_public=bytes(range(32)))
+    with pytest.raises(ProtocolError, match="attestation"):
+        decode_role_artifact(encoded)
+
+
+def test_decode_role_artifact_enforces_attestation_callback() -> None:
+    operation = compile_operation(
+        torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
+    )
+    encoded = encode_role_artifact(operation, weight_index=0, recipient_public=bytes(range(32)))
+    verified: list[int] = []
+    artifact = decode_role_artifact(encoded, attest=lambda index: verified.append(index) is None)
+    assert verified
+    assert artifact.weight_index == 0
+    with pytest.raises(AttestationError):
+        decode_role_artifact(encoded, attest=lambda index: False)
+
+
+def test_decode_role_artifact_allow_unattested_opt_in_refused_with_policy() -> None:
+    operation = compile_operation(
+        torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
+    )
+    encoded = encode_role_artifact(operation, weight_index=0, recipient_public=bytes(range(32)))
+    artifact = decode_role_artifact(encoded, allow_unattested=True)
+    assert artifact.weight_index == 0
+    with pytest.raises(ProtocolError, match="allow_unattested"):
+        decode_role_artifact(encoded, attest=lambda index: True, allow_unattested=True)
 
 
 def test_grid_runtime_rejects_duplicate_role_coordinates(
@@ -112,6 +146,7 @@ def test_direct_grid_recovers_after_role_connection_loss(
             private_key=mtls_identities["server_key"],
             client_ca=mtls_identities["ca"],
             address=record.get("address", "127.0.0.1:0"),
+            allow_unattested=True,
         )
         worker.start()
         record.update(worker=worker, address=worker.address)
@@ -176,6 +211,7 @@ def test_real_grid_transport_is_exact_and_isolates_duplicate_request_ids(
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],
                 rotation_interval=1,
+                allow_unattested=True,
             )
             worker.start()
             workers.append(worker)
@@ -265,6 +301,7 @@ def test_three_by_three_grid_executes_exactly(
                     certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                     private_key=mtls_identities["server_key"],
                     client_ca=mtls_identities["ca"],
+                    allow_unattested=True,
                 )
                 worker.start()
                 workers.append(worker)
@@ -382,6 +419,7 @@ def test_integrity_failure_quarantines_the_role_client(
                     certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                     private_key=mtls_identities["server_key"],
                     client_ca=mtls_identities["ca"],
+                    allow_unattested=True,
                 )
                 worker.start()
                 workers.append(worker)
@@ -518,10 +556,14 @@ def test_role_client_checks_execution_health_between_rows() -> None:
     from types import SimpleNamespace
 
     from xurcroh.errors import RequestTimeoutError
+    from xurcroh.fortress.arithmetic import QuantizedTensor
     from xurcroh.fortress.transport import execution_health
 
     client = FortressRoleClient.__new__(FortressRoleClient)
-    client.operation = SimpleNamespace(shares={0: None, 1: None})
+    client.operation = SimpleNamespace(
+        shares={0: None, 1: None},
+        quantized=QuantizedTensor(torch.ones(2, 2, dtype=torch.int64), 1.0, 0),
+    )
     client.seeded_activations = False
     client._runtime = None
     client._closed = False

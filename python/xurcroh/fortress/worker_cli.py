@@ -44,6 +44,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--host", default="0.0.0.0")  # noqa: S104
     parser.add_argument("--port", type=int, default=9444)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
+    parser.add_argument(
+        "--allow-unattested",
+        action="store_true",
+        help="explicit opt-in for non-TEE execution without hardware attestation",
+    )
     parser.add_argument("--exit-status-file", type=Path)
     parser.add_argument("--ready-file", type=Path)
     parser.add_argument("--pid-file", type=Path)
@@ -58,6 +63,7 @@ def main(argv: list[str] | None = None) -> None:
             client_ca=args.ca.read_bytes(),
             address=f"{args.host}:{args.port}",
             device=args.device,
+            allow_unattested=args.allow_unattested,
         )
         stopped = threading.Event()
 

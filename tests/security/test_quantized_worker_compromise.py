@@ -33,7 +33,7 @@ def test_assigned_quantized_role_has_only_its_weight_share_and_no_client_secrets
     document = json.loads(encoded)
     assert "input_basis" not in document and "output_basis" not in document
     assert "trellis" not in document and "q_weight" not in document
-    artifact = decode_role_artifact(encoded)
+    artifact = decode_role_artifact(encoded, allow_unattested=True)
     assigned = artifact.matrix
     shares = materialize_weight_shares(operation)
     torch.testing.assert_close(assigned, shares[0], rtol=0, atol=0)

@@ -5,7 +5,7 @@ import logging
 import os
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
-from xurcroh.errors import ProtocolError
+from xurcroh.errors import CompatibilityError, ProtocolError
 from xurcroh.fortress.arithmetic import FIELD_MODULUS, _seeded_uniform
 from xurcroh.fortress.native import canonical_field_words
 from xurcroh.fortress.transport import (
@@ -23,6 +23,7 @@ from xurcroh.fortress.transport import (
     pad_packet,
     unpad_packet,
 )
+from xurcroh.memory_native import activate_burn_on_read_allocator
 from xurcroh.runtime.stage_sessions import SESSION_ENVELOPE_BYTES, StageSessionStore
 
 MAX_ROLE_PACKET_BYTES = 16 * 1024 * 1024
@@ -46,8 +47,19 @@ class FortressRoleWorker:
         onion_private_key: bytes | None = None,
         device: str = "cpu",
         cuda_library: str | Path | None = None,
+        strict: bool = True,
+        attest: Callable[[int], bool] | None = None,
+        allow_unattested: bool = False,
     ) -> None:
         import xurcroh_quic
+
+        if attest is not None and allow_unattested:
+            raise ValueError("allow_unattested cannot override a deployment attestation policy")
+        if attest is None and not allow_unattested:
+            raise ValueError(
+                "Fortress role worker requires an attestation callback or "
+                "allow_unattested=True for non-TEE development deployments"
+            )
 
         if frame_bytes < 256:
             raise ValueError("fixed frame size is too small")
@@ -64,7 +76,8 @@ class FortressRoleWorker:
         if not serialized:
             raise ValueError("Fortress role worker requires at least one operation")
         self.artifacts = {
-            name: decode_role_artifact(artifact) for name, artifact in serialized.items()
+            name: decode_role_artifact(artifact, attest=attest, allow_unattested=allow_unattested)
+            for name, artifact in serialized.items()
         }
         weight_indices = {artifact.weight_index for artifact in self.artifacts.values()}
         if len(weight_indices) != 1:
@@ -82,6 +95,22 @@ class FortressRoleWorker:
         self._cuda_controller: Any = None
         self._cuda_weights: dict[str, torch.Tensor] = {}
         if device == "cuda":
+            library = (
+                cuda_library
+                or os.environ.get("XURCROH_NATIVE_LIBRARY")
+                or Path(__file__).resolve().parents[3] / "native/build/xurcroh_burn_alloc.so"
+            )
+            if not Path(library).is_file():
+                raise ValueError("Fortress CUDA worker requires the compiled native library")
+            try:
+                activate_burn_on_read_allocator(library)
+            except CompatibilityError as error:
+                if strict:
+                    raise
+                logging.getLogger(__name__).error(
+                    "burn-on-read allocator is not active; CUDA allocations are not zeroed: %s",
+                    error,
+                )
             from xurcroh.fortress.cuda_driver import (
                 collect_driver_diagnostics,
                 require_compatible_driver,
@@ -92,13 +121,6 @@ class FortressRoleWorker:
                 raise ValueError("Fortress CUDA worker requires an available CUDA device")
             from xurcroh.fortress.native import FortressNativeController
 
-            library = (
-                cuda_library
-                or os.environ.get("XURCROH_NATIVE_LIBRARY")
-                or Path(__file__).resolve().parents[3] / "native/build/xurcroh_burn_alloc.so"
-            )
-            if not Path(library).is_file():
-                raise ValueError("Fortress CUDA worker requires the compiled native library")
             self._cuda_controller = FortressNativeController(library)
             self._cuda_weights = {
                 name: artifact.matrix.remainder(FIELD_MODULUS).to(torch.int32).T.contiguous().cuda()

@@ -4,9 +4,11 @@ import pytest
 import torch
 
 from xurcroh.fortress.arithmetic import (
+    MAX_SIGNED_FIELD_VALUE,
     PRIME_MODULUS,
     QuantizedTensor,
     ShareSecurity,
+    check_unreduced_product_bound,
     combine_shares,
     freivalds_challenge,
     quantized_matmul,
@@ -16,6 +18,33 @@ from xurcroh.fortress.arithmetic import (
     symmetric_quantize,
     verify_freivalds,
 )
+
+
+def test_unreduced_product_bound_rejects_configurations_past_signed_field_limit() -> None:
+    activation_bound = 2 ** (12 - 1)
+    weight_bound = 2 ** (4 - 1)
+    largest_inner = MAX_SIGNED_FIELD_VALUE // (activation_bound * weight_bound)
+    check_unreduced_product_bound(largest_inner, activation_bound, weight_bound)
+    with pytest.raises(OverflowError, match="field"):
+        check_unreduced_product_bound(largest_inner + 1, activation_bound, weight_bound)
+
+
+def test_combiner_rejects_ring_overflow_before_grid_dispatch() -> None:
+    from xurcroh.fortress.combiner import FortressCombiner
+    from xurcroh.fortress.compiler import compile_operation
+
+    weight = torch.full((1, 150_000), 2 ** (4 - 1) - 1, dtype=torch.int64)
+    operation = compile_operation(weight, threshold=2, slice_count=3)
+    combiner = FortressCombiner(
+        layers=[],
+        operations={"op": operation},
+        query_heads=1,
+        kv_heads=1,
+        final_norm=torch.ones(1, dtype=torch.float64),
+        lm_head=torch.ones(1, 1, dtype=torch.float64),
+    )
+    with pytest.raises(OverflowError, match="field"):
+        combiner._linear("op", torch.zeros(150_000, dtype=torch.float64))
 
 
 def test_quantized_matmul_is_exact_and_rejects_ring_overflow() -> None:

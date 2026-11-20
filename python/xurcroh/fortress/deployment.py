@@ -530,7 +530,8 @@ class FortressDeployment:
             f"--artifact-dir {remote}/artifacts --recipient-key {remote}/recipient.key "
             f"--certificate {remote}/tls/{service}.crt --private-key {remote}/tls/{service}.key "
             f"--ca {remote}/tls/ca.crt --host 0.0.0.0 --port {role.port} --device {device} "
-            f"--ready-file {shlex.quote(str(ready))} --exit-status-file {remote}/role.exit "
+            + ("--allow-unattested " if self.cluster.security.mode != "tee" else "")
+            + f"--ready-file {shlex.quote(str(ready))} --exit-status-file {remote}/role.exit "
             f"--pid-file {shlex.quote(str(role_root / 'role.pid'))} "
             f"</dev/null >{remote}/role.log 2>&1"
         )

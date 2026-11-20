@@ -8,7 +8,14 @@ import torch
 
 from xurcroh.algebra.attention import apply_rope
 from xurcroh.algebra.rmsnorm import unit_rms_norm
-from xurcroh.fortress.arithmetic import quantize_activations, signed_field, split_secret
+from xurcroh.fortress.arithmetic import (
+    MAX_ACTIVATION_BITS,
+    check_unreduced_product_bound,
+    quantize_activations,
+    quantized_weight_bound,
+    signed_field,
+    split_secret,
+)
 from xurcroh.fortress.compiler import (
     CompiledOperation,
     apply_input_basis,
@@ -48,7 +55,7 @@ class FortressCombiner:
         activation_bits: int = 12,
         grid_clients: dict[str, FortressRoleClient] | None = None,
     ) -> None:
-        if not 8 <= activation_bits <= 12:
+        if not 8 <= activation_bits <= MAX_ACTIVATION_BITS:
             raise ValueError("Fortress activations must use 8-12 bits")
         self.layers = layers
         self.operations = operations
@@ -81,6 +88,11 @@ class FortressCombiner:
         operation = self.operations[name]
         transformed = apply_input_basis(operation, hidden)
         activation = quantize_activations(transformed, bits=self.activation_bits)
+        check_unreduced_product_bound(
+            activation.values.shape[-1],
+            2 ** (self.activation_bits - 1),
+            quantized_weight_bound(operation.quantized),
+        )
         shares = split_secret(activation.values, count=len(operation.shares)).shares
         product = (
             execute_grid(shares, operation.shares)

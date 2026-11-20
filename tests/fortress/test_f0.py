@@ -44,6 +44,7 @@ def _role_process(
         certificates=(identities["server_certificate"], identities["ca"]),
         private_key=identities["server_key"],
         client_ca=identities["ca"],
+        allow_unattested=True,
     )
     worker.start()
     ready.send(worker.address)

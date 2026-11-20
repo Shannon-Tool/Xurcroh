@@ -63,6 +63,7 @@ def test_public_sdk_executes_remote_fortress_grid(
                 certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],
+                allow_unattested=True,
             )
             worker.start()
             workers.append(worker)
@@ -215,6 +216,7 @@ def test_public_sdk_executes_split_operation_grids(
                 certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],
+                allow_unattested=True,
             )
             worker.start()
             workers.append(worker)

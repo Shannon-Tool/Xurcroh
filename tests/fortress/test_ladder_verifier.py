@@ -57,6 +57,7 @@ def test_ladder_verifier_compares_remote_tensors_and_public_sdk(
                 certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],
+                allow_unattested=True,
             )
             worker.start()
             workers.append(worker)

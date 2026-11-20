@@ -121,8 +121,13 @@ class FortressEngine:
                     assigned_role = json.loads(worker.labels["operation_roles"])[operation_name]
                     if not isinstance(assigned_role, list) or len(assigned_role) != 2:
                         raise ValueError("operation role must contain two indexes")
-                    activation_index = int(assigned_role[0])
-                    weight_index = int(assigned_role[1])
+                    if any(
+                        isinstance(value, bool) or not isinstance(value, int)
+                        for value in assigned_role
+                    ):
+                        raise ValueError("operation role indexes must be integers")
+                    activation_index = assigned_role[0]
+                    weight_index = assigned_role[1]
                 else:
                     activation_index = int(worker.labels["activation_index"])
                     weight_index = int(worker.labels["weight_index"])

@@ -15,6 +15,8 @@ PRIME_MODULUS = 2**32 - 5
 FIELD_MODULUS = PRIME_MODULUS
 MAX_SIGNED_RING_VALUE = 2**31 - 1
 MAX_SIGNED_FIELD_VALUE = PRIME_MODULUS // 2
+MAX_ACTIVATION_BITS = 12
+WEIGHT_QUANTIZATION_BITS = 4
 
 
 @dataclass(frozen=True)
@@ -117,6 +119,18 @@ def quantize_activations(values: torch.Tensor, *, bits: int) -> ActivationQuanti
     return ActivationQuantization(quantized.to(torch.int64), scales, 0)
 
 
+def check_unreduced_product_bound(inner: int, left_bound: int, right_bound: int) -> None:
+    if left_bound * right_bound * inner > MAX_SIGNED_FIELD_VALUE:
+        raise OverflowError("unreduced product exceeds the signed field decoding bound")
+
+
+def quantized_weight_bound(quantized: QuantizedTensor) -> int:
+    if quantized.values is not None:
+        return int((quantized.values - quantized.zero_point).abs().max().item())
+    # compiler.compile_operation quantizes every weight with symmetric_quantize(bits=4)
+    return 2 ** (WEIGHT_QUANTIZATION_BITS - 1)
+
+
 def quantized_matmul(left: QuantizedTensor, right: QuantizedTensor) -> QuantizedProduct:
     if left.dimensions[1] != right.dimensions[0]:
         raise ValueError("matrix dimensions do not match")
@@ -125,8 +139,7 @@ def quantized_matmul(left: QuantizedTensor, right: QuantizedTensor) -> Quantized
     inner = left_values.shape[1]
     left_bound = int(left_values.abs().max().item()) if left_values.numel() else 0
     right_bound = int(right_values.abs().max().item()) if right_values.numel() else 0
-    if left_bound * right_bound * inner > MAX_SIGNED_FIELD_VALUE:
-        raise OverflowError("unreduced product exceeds the signed field decoding bound")
+    check_unreduced_product_bound(inner, left_bound, right_bound)
     return QuantizedProduct(left_values @ right_values, left.scale * right.scale)
 
 
