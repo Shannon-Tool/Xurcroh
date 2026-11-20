@@ -81,3 +81,45 @@ def test_public_sdk_generates_image_with_fortress_diffusion(tmp_path: Path, shar
         )
     assert response.data[0].b64_json
     assert response.execution.engine == "fortress-diffusion-local"
+
+
+def test_video_pipeline_runs_inside_request_execution_deadline() -> None:
+    import time
+    from types import SimpleNamespace
+
+    from xurcroh.errors import RequestTimeoutError
+    from xurcroh.fortress.transport import check_execution_health
+    from xurcroh.requests import VideoGenerationRequest
+
+    class SlowPipeline:
+        def __call__(self, **parameters):
+            del parameters
+            time.sleep(0.03)
+            check_execution_health()
+            return SimpleNamespace(frames=[object()])
+
+    engine = FortressDiffusionEngine.__new__(FortressDiffusionEngine)
+    engine._load = lambda: None
+    engine._boundary = SimpleNamespace(
+        pipeline=SlowPipeline(),
+        decode_video=lambda frames, request: b"video",
+    )
+    engine._seed = lambda request: 1
+    engine.worker_ids = ["local"]
+    engine.engine_name = "fortress-diffusion-local"
+    request = VideoGenerationRequest(
+        model="tiny-video",
+        prompt="waves",
+        size="32x32",
+        frames=2,
+        fps=2,
+        steps=1,
+    )
+    with pytest.raises(RequestTimeoutError, match="deadline"):
+        engine.generate_video(
+            request,
+            request_id="video-timeout",
+            security_mode="development",
+            cancelled=threading.Event(),
+            timeout=0.01,
+        )

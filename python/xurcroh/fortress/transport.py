@@ -8,8 +8,9 @@ import secrets
 import threading
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -26,6 +27,34 @@ from xurcroh.fortress.compiler import CompiledOperation
 from xurcroh.fortress.grid import RoleExecutionError, WeightShare
 from xurcroh.fortress.storage import DispersedShard, reconstruct_shard
 from xurcroh.runtime.stage_sessions import ClientStageSession
+
+_execution_health: ContextVar[tuple[threading.Event, float] | None] = ContextVar(
+    "xurcroh_execution_health", default=None
+)
+
+
+@contextlib.contextmanager
+def execution_health(cancelled: threading.Event, deadline: float) -> Iterator[None]:
+    token = _execution_health.set((cancelled, deadline))
+    try:
+        yield
+    finally:
+        _execution_health.reset(token)
+
+
+def check_execution_health() -> None:
+    state = _execution_health.get()
+    if state is None:
+        return
+    cancelled, deadline = state
+    if cancelled.is_set():
+        from xurcroh.errors import RequestCancelledError
+
+        raise RequestCancelledError("request was cancelled")
+    if time.monotonic() >= deadline:
+        from xurcroh.errors import RequestTimeoutError
+
+        raise RequestTimeoutError("request exceeded its execution deadline")
 
 
 @dataclass(frozen=True)
@@ -856,19 +885,22 @@ class FortressRoleClient:
         rows = rows_by_share[0]
         if any(share.shape != rows.shape for share in rows_by_share):
             raise ValueError("activation share shapes must match")
-        outputs = [
-            self._execute_token(
-                [share[row] for share in rows_by_share],
-                correlation_id,
-                row,
-                activation_seed=(
-                    activation_row_seed(activation_seed, row)
-                    if activation_seed is not None
-                    else None
-                ),
+        outputs = []
+        for row in range(rows.shape[0]):
+            check_execution_health()
+            outputs.append(
+                self._execute_token(
+                    [share[row] for share in rows_by_share],
+                    correlation_id,
+                    row,
+                    activation_seed=(
+                        activation_row_seed(activation_seed, row)
+                        if activation_seed is not None
+                        else None
+                    ),
+                )
             )
-            for row in range(rows.shape[0])
-        ]
+        check_execution_health()
         return outputs[0] if vector_input else torch.stack(outputs)
 
     def close(self) -> None:

@@ -489,3 +489,71 @@ def test_seeded_activation_wire_format_expands_exact_share() -> None:
     name, activation = worker._decode_activation(payload)
     assert name == "op"
     assert torch.equal(activation, _seeded_uniform(seed, (3,)))
+
+
+def test_execution_health_expires_and_cancels() -> None:
+    import threading
+
+    from xurcroh.errors import RequestCancelledError, RequestTimeoutError
+    from xurcroh.fortress.transport import check_execution_health, execution_health
+
+    with (
+        execution_health(threading.Event(), time.monotonic() - 0.001),
+        pytest.raises(RequestTimeoutError, match="deadline"),
+    ):
+        check_execution_health()
+
+    cancelled = threading.Event()
+    cancelled.set()
+    with (
+        execution_health(cancelled, time.monotonic() + 60),
+        pytest.raises(RequestCancelledError, match="cancelled"),
+    ):
+        check_execution_health()
+
+
+def test_role_client_checks_execution_health_between_rows() -> None:
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from types import SimpleNamespace
+
+    from xurcroh.errors import RequestTimeoutError
+    from xurcroh.fortress.transport import execution_health
+
+    client = FortressRoleClient.__new__(FortressRoleClient)
+    client.operation = SimpleNamespace(shares={0: None, 1: None})
+    client.seeded_activations = False
+    client._runtime = None
+    client._closed = False
+    client._quarantined = None
+    client._cover_error = None
+    client._lock = threading.Lock()
+    client.request_count = 0
+    client.bytes_sent = 0
+    client.bytes_received = 0
+    client.cover_request_count = 0
+    client.cover_bytes_sent = 0
+    client.cover_bytes_received = 0
+    client._executor = ThreadPoolExecutor(max_workers=1)
+    client._transports = {}
+
+    def execute_token(
+        activation_shares, request_id, sequence, *, cover=False, activation_seed=None
+    ):
+        del activation_shares, request_id, cover, activation_seed
+        time.sleep(0.08)
+        return torch.tensor([[sequence]], dtype=torch.int64)
+
+    client._execute_token = execute_token
+    shares = [
+        torch.tensor([[1, 2], [3, 4]], dtype=torch.int64),
+        torch.tensor([[5, 6], [7, 8]], dtype=torch.int64),
+    ]
+    try:
+        with (
+            execution_health(threading.Event(), time.monotonic() + 0.05),
+            pytest.raises(RequestTimeoutError, match="deadline"),
+        ):
+            client.execute(shares, request_id="row-timeout")
+    finally:
+        client._executor.shutdown(wait=True)
