@@ -115,3 +115,45 @@ def test_lifecycle_fails_when_instance_remains(tmp_path: Path) -> None:
             registry=adapters,
         )
     assert calls[-1] == ("destroy", "vm-1")
+
+
+def test_lifecycle_marks_final_charge_query_unavailable_after_destroy(
+    tmp_path: Path,
+) -> None:
+    smoke = module()
+    remaining = [True]
+    charge_calls = []
+
+    def charges(offer, instance_id):
+        del offer, instance_id
+        charge_calls.append(True)
+        if len(charge_calls) > 1:
+            raise ProviderError("billing query is unavailable after deletion")
+        return 1.25
+
+    adapters = ProviderRegistry()
+    adapters.register(
+        "ibm",
+        ProviderAdapter(
+            offers=lambda gpu_name: [{"id": "shape", "provider_id": "ibm"}],
+            create=lambda offer, **values: "vm-1",
+            destroy=lambda instance_id: remaining.__setitem__(0, False),
+            charges=charges,
+            remaining=lambda offer, instance_id: remaining[0],
+        ),
+    )
+    values = tmp_path / "values.json"
+    values.write_text("{}")
+    report = smoke.run_lifecycle(
+        provider="ibm",
+        offer_id="shape",
+        values_path=values,
+        state_path=tmp_path / "state.json",
+        registry=adapters,
+    )
+    assert report["status"] == "destroyed"
+    assert report["remaining"] is False
+    assert report["charges_before_usd"] == 1.25
+    assert report["charges_after_usd"] is None
+    assert report["charge_query_after_destroy_available"] is False
+    assert report["charges_finalized"] is False

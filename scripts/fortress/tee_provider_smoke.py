@@ -108,7 +108,15 @@ def run_lifecycle(
             },
         )
         raise ProviderError("provider still reports the instance after destruction")
-    charges_after = registry.charges(offer, instance_id)
+    try:
+        charges_after = registry.charges(offer, instance_id)
+    except Exception as error:
+        charges_after = None
+        charge_query_available = False
+        charge_query_error = type(error).__name__
+    else:
+        charge_query_available = True
+        charge_query_error = None
     report = {
         "schema_version": 1,
         "provider_id": provider,
@@ -119,6 +127,9 @@ def run_lifecycle(
         "remaining": False,
         "charges_before_usd": charges_before,
         "charges_after_usd": charges_after,
+        "charge_query_after_destroy_available": charge_query_available,
+        "charge_query_error": charge_query_error,
+        "charges_finalized": False,
         "status": "destroyed",
     }
     _write_json(state_path, {**report, "offer": offer})
