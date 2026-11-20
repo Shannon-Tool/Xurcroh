@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
@@ -214,9 +215,15 @@ def test_ssh_waits_for_transport_readiness(monkeypatch: pytest.MonkeyPatch) -> N
             type("Result", (), {"returncode": 0, "stderr": ""})(),
         ]
     )
-    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: next(results))
+    calls: list[Any] = []
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: calls.append(args) or next(results),
+    )
     monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
-    module.wait_for_ssh({"ssh_user": "root", "host": "192.0.2.1"}, timeout=60)
+    assert module.wait_for_ssh({"ssh_user": "root", "host": "192.0.2.1"}, timeout=60) is None
+    assert len(calls) == 2
 
 
 def test_ssh_rejects_authentication_failure(monkeypatch: pytest.MonkeyPatch) -> None:

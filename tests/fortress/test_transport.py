@@ -435,7 +435,7 @@ def test_integrity_failure_quarantines_the_role_client(
         client = FortressRoleClient(operation, roles, identity, cover_interval=60)
         operation.shares[0].challenge.v.add_(1)
         shares = split_secret(torch.tensor([5, 7], dtype=torch.int64), count=2).shares
-        with pytest.raises(RoleExecutionError):
+        with pytest.raises(RoleExecutionError, match="Freivalds check failed"):
             client.execute(shares)
         with pytest.raises(ProtocolError, match="quarantined"):
             client.execute(shares)
