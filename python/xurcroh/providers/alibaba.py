@@ -19,6 +19,8 @@ from xurcroh.providers.cloud import CloudRESTClient, allowed_source_ranges, inst
 
 ATTESTATION_ISSUER = "https://attest.cn-beijing.aliyuncs.com"
 
+_MISSING = object()
+
 
 def _decode_segment(value: str) -> bytes:
     if re.fullmatch(r"[A-Za-z0-9_-]+", value) is None:
@@ -48,6 +50,7 @@ class AlibabaConfidentialClient:
         billing_client: Any = None,
         attestation_client: httpx.Client | None = None,
         attestation_policy_ids: list[str] | None = None,
+        allow_missing_appraisal: bool = False,
     ) -> None:
         self.region_id = region_id or os.environ.get("ALIBABA_REGION_ID", "cn-beijing")
         if ecs_client is None or billing_client is None:
@@ -87,6 +90,9 @@ class AlibabaConfidentialClient:
         self._attestation_policy_ids = tuple(
             policy.strip() for policy in configured_policies if policy.strip()
         )
+        self._allow_missing_appraisal = allow_missing_appraisal or os.environ.get(
+            "ALIBABA_ATTESTATION_ALLOW_MISSING_APPRAISAL", ""
+        ).strip().lower() in {"1", "true", "yes"}
 
     @staticmethod
     def _call(operation: str, function: Any, request: Any) -> Any:
@@ -393,8 +399,16 @@ class AlibabaConfidentialClient:
         return claims
 
     @staticmethod
+    def _appraisal_value(customized: dict[str, Any], name: str) -> Any:
+        node: Any = customized
+        for part in name.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return _MISSING
+            node = node[part]
+        return node
+
     def _validate_claims(
-        claims: dict[str, Any], policies: tuple[str, ...], runtime_data: dict[str, str]
+        self, claims: dict[str, Any], policies: tuple[str, ...], runtime_data: dict[str, str]
     ) -> None:
         audience = claims.get("aud")
         valid_audience = audience == ATTESTATION_ISSUER or (
@@ -423,3 +437,13 @@ class AlibabaConfidentialClient:
         evaluated = {report.get("policy-id") for report in reports if isinstance(report, dict)}
         if not set(policies).issubset(evaluated):
             raise ProviderError("Alibaba attestation policy appraisal is incomplete")
+        debug = self._appraisal_value(customized, "tdx.td_attributes.debug")
+        gpu_result = self._appraisal_value(customized, "nvgpu.gpu.x-acs-overall-att-result")
+        if (debug is _MISSING or gpu_result is _MISSING) and not self._allow_missing_appraisal:
+            raise ProviderError("Alibaba attestation appraisal claims are missing")
+        if debug is not _MISSING and debug is not False:
+            raise ProviderError("Alibaba attestation reports a debug-enabled TD")
+        if gpu_result is not _MISSING and not (
+            isinstance(gpu_result, str) and gpu_result.lower() == "pass"
+        ):
+            raise ProviderError("Alibaba attestation reports a failing GPU appraisal")

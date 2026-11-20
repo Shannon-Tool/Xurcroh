@@ -92,13 +92,20 @@ class FakeBilling:
         return response(SimpleNamespace(success=True, data=data))
 
 
-def client(ecs=None, billing=None, attestation_client=None, attestation_policy_ids=None):
+def client(
+    ecs=None,
+    billing=None,
+    attestation_client=None,
+    attestation_policy_ids=None,
+    allow_missing_appraisal=False,
+):
     return AlibabaConfidentialClient(
         region_id="cn-beijing",
         ecs_client=ecs or FakeECS(),
         billing_client=billing or FakeBilling(),
         attestation_client=attestation_client,
         attestation_policy_ids=attestation_policy_ids,
+        allow_missing_appraisal=allow_missing_appraisal,
     )
 
 
@@ -205,7 +212,11 @@ def test_alibaba_attestation_verifies_oidc_and_policy_binding() -> None:
         "exp": now + 600,
         "tee": "acstdxnvgpu",
         "evaluation-reports": [{"policy-id": "policy-gpu"}],
-        "customized_claims": {"runtime_data": {"raw": "Y2hhbGxlbmdl"}},
+        "customized_claims": {
+            "runtime_data": {"raw": "Y2hhbGxlbmdl"},
+            "tdx": {"td_attributes": {"debug": False}},
+            "nvgpu": {"gpu": {"x-acs-overall-att-result": "pass"}},
+        },
     }
     alibaba = client(
         attestation_client=attestation_fixture(claims),
@@ -233,6 +244,64 @@ def test_alibaba_attestation_rejects_missing_policy() -> None:
     )
     with pytest.raises(ProviderError, match="policy"):
         alibaba.attest("ZXZpZGVuY2U", runtime_data={"raw": "Y2hhbGxlbmdl"})
+
+
+def appraisal_claims(debug=False, gpu_result="pass"):
+    now = int(time.time())
+    customized = {"runtime_data": {"raw": "Y2hhbGxlbmdl"}}
+    if debug is not None:
+        customized["tdx"] = {"td_attributes": {"debug": debug}}
+    if gpu_result is not None:
+        customized["nvgpu"] = {"gpu": {"x-acs-overall-att-result": gpu_result}}
+    return {
+        "iss": "https://attest.cn-beijing.aliyuncs.com",
+        "aud": "https://attest.cn-beijing.aliyuncs.com",
+        "iat": now,
+        "nbf": now,
+        "exp": now + 600,
+        "tee": "acstdxnvgpu",
+        "evaluation-reports": [{"policy-id": "policy-gpu"}],
+        "customized_claims": customized,
+    }
+
+
+def test_alibaba_attestation_rejects_debug_td() -> None:
+    alibaba = client(
+        attestation_client=attestation_fixture(appraisal_claims(debug=True)),
+        attestation_policy_ids=["policy-gpu"],
+    )
+    with pytest.raises(ProviderError, match="debug"):
+        alibaba.attest("ZXZpZGVuY2U", runtime_data={"raw": "Y2hhbGxlbmdl"})
+
+
+def test_alibaba_attestation_rejects_failing_gpu_appraisal() -> None:
+    alibaba = client(
+        attestation_client=attestation_fixture(appraisal_claims(gpu_result="fail")),
+        attestation_policy_ids=["policy-gpu"],
+    )
+    with pytest.raises(ProviderError, match="GPU"):
+        alibaba.attest("ZXZpZGVuY2U", runtime_data={"raw": "Y2hhbGxlbmdl"})
+
+
+def test_alibaba_attestation_rejects_missing_appraisal_by_default() -> None:
+    claims = appraisal_claims(debug=None, gpu_result=None)
+    alibaba = client(
+        attestation_client=attestation_fixture(claims),
+        attestation_policy_ids=["policy-gpu"],
+    )
+    with pytest.raises(ProviderError, match="appraisal"):
+        alibaba.attest("ZXZpZGVuY2U", runtime_data={"raw": "Y2hhbGxlbmdl"})
+
+
+def test_alibaba_attestation_allows_missing_appraisal_when_configured() -> None:
+    claims = appraisal_claims(debug=None, gpu_result=None)
+    alibaba = client(
+        attestation_client=attestation_fixture(claims),
+        attestation_policy_ids=["policy-gpu"],
+        allow_missing_appraisal=True,
+    )
+    result = alibaba.attest("ZXZpZGVuY2U", runtime_data={"raw": "Y2hhbGxlbmdl"})
+    assert result["tee"] == "acstdxnvgpu"
 
 
 def test_alibaba_rejects_unapproved_image() -> None:
