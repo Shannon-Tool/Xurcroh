@@ -1,7 +1,6 @@
-export const RING = 1n << 32n;
-export const PRIME = RING - 5n;
+export const PRIME = (1n << 32n) - 5n;
 
-export function mod(value: bigint, modulus: bigint = RING): bigint {
+export function mod(value: bigint, modulus: bigint = PRIME): bigint {
   return ((value % modulus) + modulus) % modulus;
 }
 
