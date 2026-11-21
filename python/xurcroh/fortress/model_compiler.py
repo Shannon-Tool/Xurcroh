@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from xurcroh.algebra.modulation import SignedPermutation
-from xurcroh.errors import ConfigurationError
+from xurcroh.errors import CapabilityError, ConfigurationError
 from xurcroh.formats import TensorReader
 from xurcroh.fortress.combiner import FortressCombiner, FortressLayerMetadata
 from xurcroh.fortress.compiler import CompiledOperation, compile_operation, reap_prune_experts
@@ -62,6 +62,22 @@ def _layer_family(names: list[str]) -> tuple[str, list[int]]:
         raise ConfigurationError("checkpoint contains no transformer layers")
     family = max(families, key=lambda name: len(families[name]))
     return family, sorted(families[family])
+
+
+_EXPERT_INDEX = re.compile(r"\.experts\.(\d+)\.")
+
+
+def _expert_layout(prefix: str, layer_names: list[str]) -> tuple[str, str, bool]:
+    """Locate a layer's routed experts.
+
+    Returns the expert prefix, the router weight name and whether the layer also
+    keeps a dense feed-forward block. Most MoE families replace the feed-forward
+    block (``mlp.experts`` routed by ``mlp.gate``); Gemma 4 runs routed experts
+    beside it (``experts`` routed by ``router.proj``).
+    """
+    if any(name.startswith(f"{prefix}.experts.") for name in layer_names):
+        return f"{prefix}.experts", f"{prefix}.router.proj.weight", True
+    return f"{prefix}.mlp.experts", f"{prefix}.mlp.gate.weight", False
 
 
 def load_reap_saliency(path: str | Path) -> dict[int, dict[int, float]]:
@@ -156,22 +172,22 @@ def discover_fortress_operations(
         for projection in ("q_proj", "k_proj", "v_proj", "o_proj"):
             add(f"{attention_prefix}.{projection}.weight")
         mlp_prefix = f"{prefix}.mlp"
+        expert_prefix, router_name, dense = _expert_layout(prefix, layer_names)
         expert_indices = sorted(
             {
                 int(match.group(1))
                 for name in layer_names
-                if (match := re.search(r"mlp\.experts\.(\d+)\.", name))
+                if name.startswith(expert_prefix + ".") and (match := _EXPERT_INDEX.search(name))
             }
         )
         if expert_indices:
             expert_mapping = _reap_expert_mapping(
                 expert_indices, index, reap_keep_fraction, reap_saliency
             )
-            for original_expert, expert in expert_mapping.items():
+            for expert in expert_mapping.values():
                 for projection in ("gate_proj", "up_proj", "down_proj"):
-                    source = f"{mlp_prefix}.experts.{original_expert}.{projection}.weight"
-                    add(source.replace(f".experts.{original_expert}.", f".experts.{expert}."))
-        else:
+                    add(f"{expert_prefix}.{expert}.{projection}.weight")
+        if dense or not expert_indices:
             for projection in ("gate_proj", "up_proj", "down_proj"):
                 add(f"{mlp_prefix}.{projection}.weight")
         selected = {operation.identifier + ".weight" for operation in discovered}
@@ -184,7 +200,7 @@ def discover_fortress_operations(
                 and ".per_layer_" not in name
                 and ".router." not in name
                 and ".experts." not in name
-                and name != f"{mlp_prefix}.gate.weight"
+                and name != router_name
             ):
                 add(operation_name)
     return discovered
@@ -310,15 +326,17 @@ def compile_fortress_checkpoint(
     kv_heads = int(config.get("num_key_value_heads", query_heads))
     head_dimension = int(config.get("head_dim", config["hidden_size"] // query_heads))
     layers: list[FortressLayerMetadata] = []
+    retained_experts: list[list[int]] = []
     operations: dict[str, CompiledOperation] = {}
     for index in layer_indices:
         prefix = f"{layer_family}.{index}"
         layer_names = [name for name in names if name.startswith(prefix + ".")]
+        expert_prefix, router_name, dense = _expert_layout(prefix, layer_names)
         expert_indices = sorted(
             {
                 int(match.group(1))
                 for name in layer_names
-                if (match := re.search(r"mlp\.experts\.(\d+)\.", name))
+                if name.startswith(expert_prefix + ".") and (match := _EXPERT_INDEX.search(name))
             }
         )
         if expert_indices != list(range(len(expert_indices))):
@@ -326,11 +344,13 @@ def compile_fortress_checkpoint(
         expert_mapping = _reap_expert_mapping(
             expert_indices, index, reap_keep_fraction, reap_saliency
         )
+        retained_experts.append(sorted(expert_mapping))
         if expert_indices:
             layer_names = [
                 name
                 for name in layer_names
-                if (match := re.search(r"mlp\.experts\.(\d+)\.", name)) is None
+                if not name.startswith(expert_prefix + ".")
+                or (match := _EXPERT_INDEX.search(name)) is None
                 or int(match.group(1)) in expert_mapping
             ]
         tensors = reader.read_tensors(layer_names)
@@ -358,8 +378,8 @@ def compile_fortress_checkpoint(
             for original_expert, expert in expert_mapping.items():
                 for projection in ("gate_proj", "up_proj", "down_proj"):
                     _compile_matrix(
-                        f"{mlp_prefix}.experts.{expert}.{projection}",
-                        tensors[f"{mlp_prefix}.experts.{original_expert}.{projection}.weight"],
+                        f"{expert_prefix}.{expert}.{projection}",
+                        tensors[f"{expert_prefix}.{original_expert}.{projection}.weight"],
                         operations,
                         threshold=threshold,
                         slice_count=slice_count,
@@ -370,7 +390,7 @@ def compile_fortress_checkpoint(
                         retain_quantized=retain_quantized,
                         operation_sink=operation_sink,
                     )
-        else:
+        if dense or not expert_indices:
             for projection in ("gate_proj", "up_proj", "down_proj"):
                 _compile_matrix(
                     f"{mlp_prefix}.{projection}",
@@ -394,7 +414,7 @@ def compile_fortress_checkpoint(
                 and ".per_layer_" not in name
                 and ".router." not in name
                 and ".experts." not in name
-                and name != f"{mlp_prefix}.gate.weight"
+                and name != router_name
             ):
                 _compile_matrix(
                     operation_name,
@@ -410,14 +430,18 @@ def compile_fortress_checkpoint(
                     operation_sink=operation_sink,
                 )
         router = (
-            tensors[f"{mlp_prefix}.gate.weight"][list(expert_mapping)]
-            .to(torch.float64)
-            .contiguous()
+            tensors[router_name][list(expert_mapping)].to(torch.float64).contiguous()
             if expert_indices
             else None
         )
         top_k = min(
-            int(config.get("num_experts_per_tok", config.get("moe_top_k", config.get("top_k", 1)))),
+            int(
+                config.get("num_experts_per_tok")
+                or config.get("top_k_experts")
+                or config.get("moe_top_k")
+                or config.get("top_k")
+                or 1
+            ),
             len(expert_mapping) if expert_indices else 1,
         )
         layers.append(
@@ -481,6 +505,17 @@ def compile_fortress_checkpoint(
     from transformers.models.auto.configuration_auto import CONFIG_MAPPING
 
     model = None
+    if (
+        load_model
+        and reader.source_format != "safetensors"
+        and reader.config.get("model_type") not in CONFIG_MAPPING
+    ):
+        # A quantized container has no other executable form: compiling it
+        # without a decoder would hand back a checkpoint that cannot run.
+        raise CapabilityError(
+            f"{reader.source_format.upper()} model type {reader.config.get('model_type')!r} "
+            "has no Fortress text decoder"
+        )
     if load_model and reader.config.get("model_type") in CONFIG_MAPPING:
         if load_full_multimodal:
             if reader.config.get("model_type") not in {"gemma4", "qwen3_5"}:
@@ -515,11 +550,24 @@ def compile_fortress_checkpoint(
                 if layer.router is None:
                     continue
                 mlp = model.model.layers[index].mlp
+                if not hasattr(mlp, "gate"):
+                    raise CapabilityError(
+                        "REAP pruning is not implemented for routers outside the feed-forward block"
+                    )
                 mlp.gate.weight = torch.nn.Parameter(
                     layer.router.to(mlp.gate.weight.dtype), requires_grad=False
                 )
                 mlp.gate.num_experts = layer.router.shape[0]
                 mlp.gate.top_k = layer.top_k
+                # Per-expert router state is pruned with the experts it scores.
+                correction = getattr(mlp.gate, "e_score_correction_bias", None)
+                if correction is not None:
+                    mlp.gate.e_score_correction_bias = correction[retained_experts[index]].clone()
+                groups = int(getattr(mlp.gate, "num_group", 1))
+                if layer.router.shape[0] % groups != 0:
+                    raise ConfigurationError(
+                        "REAP must retain a multiple of the router group count in every layer"
+                    )
                 mlp.num_experts = layer.router.shape[0]
         if not load_full_multimodal and reader.config.get("model_type") not in {
             "gemma4",

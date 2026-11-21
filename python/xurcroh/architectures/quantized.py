@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 
 from xurcroh.architectures.base import ArchitectureAdapter, CanonicalReader
+from xurcroh.errors import ModelLoadError
 from xurcroh.formats import TensorReader
 
 _COMPANIONS = {
@@ -29,8 +30,25 @@ class QuantizedSafetensorsReader(CanonicalReader):
     def __init__(self, source: TensorReader) -> None:
         super().__init__(source)
         self._logical: dict[str, str] = {}
+        # Checkpoints that store experts as one stacked tensor expose each
+        # expert projection under the same per-expert name as unstacked ones.
+        self._stacked: dict[str, tuple[str, int, str]] = {}
         names: list[str] = []
         for raw in source.tensor_names():
+            if raw.endswith((".experts.gate_up_proj", ".experts.down_proj")):
+                shape = source.tensor_shapes([raw])[raw]
+                if len(shape) != 3:
+                    raise ModelLoadError(f"stacked expert tensor is not three-dimensional: {raw}")
+                prefix, kind = raw.rsplit(".", 1)
+                projections = ("gate_proj", "up_proj") if kind == "gate_up_proj" else ("down_proj",)
+                if kind == "gate_up_proj" and shape[1] % 2 != 0:
+                    raise ModelLoadError(f"stacked gate/up expert tensor has an odd width: {raw}")
+                for expert in range(shape[0]):
+                    for projection in projections:
+                        logical = f"{prefix}.{expert}.{projection}.weight"
+                        self._stacked[logical] = (raw, expert, projection)
+                        names.append(logical)
+                continue
             parts = raw.rsplit(".", 1)
             if len(parts) == 2 and parts[0] and parts[1] in {"q_weight", "qweight", "trellis"}:
                 logical = parts[0] + ".weight"
@@ -66,6 +84,11 @@ class QuantizedSafetensorsReader(CanonicalReader):
         self._ensure_open()
         shapes: dict[str, tuple[int, ...]] = {}
         for name in names:
+            if name in self._stacked:
+                stacked_raw, _, projection = self._stacked[name]
+                _, rows, columns = self.source.tensor_shapes([stacked_raw])[stacked_raw]
+                shapes[name] = (rows if projection == "down_proj" else rows // 2, columns)
+                continue
             raw = self._logical.get(name)
             if raw is None:
                 shapes[name] = self.source.tensor_shapes([name])[name]
@@ -98,7 +121,20 @@ class QuantizedSafetensorsReader(CanonicalReader):
     def read_tensors(self, names: list[str]) -> dict[str, torch.Tensor]:
         self._ensure_open()
         output = {}
+        cached_name: str | None = None
+        cached: torch.Tensor | None = None
         for name in names:
+            if name in self._stacked:
+                stacked_raw, expert, projection = self._stacked[name]
+                if cached_name != stacked_raw or cached is None:
+                    cached_name = stacked_raw
+                    cached = self.source.read_tensors([stacked_raw])[stacked_raw]
+                matrix = cached[expert]
+                if projection != "down_proj":
+                    half = matrix.shape[0] // 2
+                    matrix = matrix[:half] if projection == "gate_proj" else matrix[half:]
+                output[name] = matrix.clone()
+                continue
             raw = self._logical.get(name, name)
             expected = self._output_size(name) if name in self._logical else None
             if name in self._logical:
@@ -110,6 +146,8 @@ class QuantizedSafetensorsReader(CanonicalReader):
         return output
 
     def read_columns(self, name: str, columns: slice) -> torch.Tensor:
+        if name in self._stacked:
+            return self.read_tensors([name])[name][columns, :]
         return self.source.read_operation(self._logical.get(name, name), columns)
 
 
