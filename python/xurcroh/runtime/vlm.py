@@ -29,6 +29,7 @@ from xurcroh.runtime.generation import (
     GenerationSummary,
     bounded_execution,
     check_request_health,
+    effective_seed,
 )
 
 
@@ -200,8 +201,9 @@ class LocalVisionLanguageEngine:
         with bounded_execution(self._inference_lock, cancelled, started, timeout, self.name):
             inputs, prompt_tokens = self._inputs(request)
             check_request_health(cancelled, started, timeout)
-            if request.seed is not None:
-                torch.manual_seed(request.seed)
+            seed = effective_seed(request)
+            if seed is not None:
+                torch.manual_seed(seed)
             parameters: dict[str, Any] = {
                 **inputs,
                 "max_new_tokens": request.max_tokens,
@@ -257,6 +259,7 @@ class LocalVisionLanguageEngine:
                     completion_tokens=len(completion_ids),
                     finish_reason=finish_reason,
                     duration_ms=(time.monotonic() - started) * 1000,
+                    seed=seed,
                 ),
             )
 

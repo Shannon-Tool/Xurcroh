@@ -37,6 +37,7 @@ from xurcroh.runtime.attestation import RemoteAttestationClient
 from xurcroh.runtime.generation import (
     GenerationEvent,
     GenerationSummary,
+    TokenSampler,
     check_request_health,
     normalize_stop_token_ids,
     stopping_strings,
@@ -495,6 +496,7 @@ class DenseStageEngine:
         text = ""
         finish_reason: Literal["stop", "length"] = "length"
         stops = stopping_strings(request)
+        sampler = TokenSampler(request)
         for token_index in range(request.max_tokens):
             check_request_health(cancelled, started, timeout)
             boundary_input = token_ids if token_index == 0 else token_ids[:, -1:]
@@ -515,7 +517,7 @@ class DenseStageEngine:
             final_residual = self._residuals.get(request_id, {}).get(len(self.workers) - 1)
             if final_residual is not None:
                 hidden = hidden + final_residual
-            next_token = self.boundary.sample(hidden[-1:], request)
+            next_token = self.boundary.sample(hidden[-1:], sampler)
             token_id = int(next_token.item())
             completion_ids.append(token_id)
             updated = cast(str, self._tokenizer.decode(completion_ids, skip_special_tokens=True))
@@ -539,6 +541,7 @@ class DenseStageEngine:
                 completion_tokens=len(completion_ids),
                 finish_reason=finish_reason,
                 duration_ms=duration_ms,
+                seed=sampler.seed,
             ),
         )
 

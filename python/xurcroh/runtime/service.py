@@ -282,8 +282,11 @@ class RuntimeService:
         duration_ms: float,
         engine_name: str,
         worker_ids: list[str],
+        *,
+        seed: int | None = None,
     ) -> ExecutionMetadata:
         return ExecutionMetadata(
+            seed=seed,
             request_id=request_id,
             engine=engine_name,
             worker_ids=worker_ids,
@@ -339,6 +342,7 @@ class RuntimeService:
                     summary.duration_ms,
                     engine.engine_name,
                     getattr(engine, "worker_ids", [engine.worker_id]),
+                    seed=summary.seed,
                 ),
             )
         except Exception as error:
@@ -431,6 +435,7 @@ class RuntimeService:
                                 event.summary.duration_ms,
                                 engine.engine_name,
                                 getattr(engine, "worker_ids", [engine.worker_id]),
+                                seed=event.summary.seed,
                             ),
                         )
             except Exception as error:

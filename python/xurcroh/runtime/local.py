@@ -16,10 +16,10 @@ from xurcroh.requests import CompletionRequest
 from xurcroh.runtime.generation import (
     GenerationEvent,
     GenerationSummary,
+    TokenSampler,
     bounded_execution,
     check_request_health,
     normalize_stop_token_ids,
-    sample_next_token,
     stopping_strings,
 )
 
@@ -136,11 +136,12 @@ class LocalTransformersEngine:
             text = ""
             finish_reason: Literal["stop", "length"] = "length"
             stops = stopping_strings(request)
+            sampler = TokenSampler(request)
             for _ in range(request.max_tokens):
                 check_request_health(cancelled, started, timeout)
                 with torch.inference_mode():
                     outputs = self._model(input_ids=current, past_key_values=past, use_cache=True)
-                    next_token = sample_next_token(outputs.logits[:, -1, :], request)
+                    next_token = sampler(outputs.logits[:, -1, :])
                     token_id = int(next_token.item())
                     completion_ids.append(token_id)
                     updated_text = self._tokenizer.decode(completion_ids, skip_special_tokens=True)
@@ -165,6 +166,7 @@ class LocalTransformersEngine:
                     completion_tokens=len(completion_ids),
                     finish_reason=finish_reason,
                     duration_ms=duration_ms,
+                    seed=sampler.seed,
                 ),
             )
 

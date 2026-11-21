@@ -89,8 +89,11 @@ class FortressDiffusionEngine(FortressEngine):
                 self.close()
                 raise
 
-    def _metadata(self, request_id: str, started: float, security_mode: str) -> ExecutionMetadata:
+    def _metadata(
+        self, request_id: str, started: float, security_mode: str, seed: int
+    ) -> ExecutionMetadata:
         return ExecutionMetadata(
+            seed=seed,
             request_id=request_id,
             engine=self.engine_name,
             worker_ids=self.worker_ids,
@@ -167,7 +170,7 @@ class FortressDiffusionEngine(FortressEngine):
         return ImageGenerationResponse(
             created=int(time.time()),
             data=[GeneratedImage(b64_json=base64.b64encode(encoded).decode())],
-            execution=self._metadata(request_id, started, security_mode),
+            execution=self._metadata(request_id, started, security_mode, seed),
         )
 
     def generate_video(
@@ -228,7 +231,7 @@ class FortressDiffusionEngine(FortressEngine):
         return VideoGenerationResponse(
             created=int(time.time()),
             data=[GeneratedVideo(b64_json=base64.b64encode(encoded).decode())],
-            execution=self._metadata(request_id, started, security_mode),
+            execution=self._metadata(request_id, started, security_mode, seed),
         )
 
 
