@@ -49,8 +49,15 @@ because a failed check aborts the request and quarantines the role.
 
 - Only the local mode exists. There is no hosted gateway, so no trace is "operator-asserted" yet.
 - The signing key is generated per client process. The signature shows a trace was not changed after
-  that client produced it. It is not anchored in a public log, so the last row of the table above is
-  not yet delivered.
+  that client produced it.
+- Each trace's hash is appended to a Merkle log (`xurcroh.merkle_log`, RFC 6962 hashing) and
+  `client.tasks.proof(task_id)` returns an inclusion proof against a signed tree head;
+  `xurcroh verify --proof proof.json --log-key <hex>` checks it. The logged value is a hash of the
+  trace, which already holds only salted commitments, so the log reveals nothing about a request.
+  This log lives inside the client process and its key is generated per process. It detects a trace
+  changed after logging, but it is not public and has no independent witness, so the last row of
+  the table above is not yet delivered. A hosted log service and consistency checking between tree
+  heads are still to be built on the same proofs.
 - Link and session suites in `transport` are the configured ones. The negotiated TLS key-exchange
   group is not yet read from the live handshake.
 - Workers do not yet sign anything; worker labels such as country and CPU vendor are operator

@@ -76,9 +76,16 @@ class Tasks:
     def trace(self, task_id: str) -> dict[str, Any]:
         return self._client._runtime.trace(task_id)
 
+    def proof(self, task_id: str) -> dict[str, Any]:
+        return self._client._runtime.trace_proof(task_id)
+
     @property
     def public_key(self) -> bytes:
         return self._client._runtime.trace_public_key
+
+    @property
+    def log_key(self) -> bytes:
+        return self._client._runtime.trace_log_key
 
 
 class Xurcroh:

@@ -22,6 +22,13 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from xurcroh.errors import ConfigurationError, XurcrohError
+from xurcroh.merkle_log import (
+    MerkleLog,
+    MerkleProofError,
+    leaf_hash,
+    verify_inclusion,
+    verify_tree_head,
+)
 
 TRACE_FORMAT = "xurcroh-task-trace-v1"
 SAMPLER = "xurcroh-multinomial-v2"
@@ -130,6 +137,34 @@ def verify_trace(
     return report
 
 
+def trace_digest(document: Mapping[str, Any]) -> bytes:
+    """The value logged for a trace: a hash that reveals none of its contents."""
+
+    return hashlib.sha256(canonical(document)).digest()
+
+
+def verify_trace_proof(
+    document: Mapping[str, Any], proof: Mapping[str, Any], *, log_key: bytes
+) -> int:
+    """Check that exactly this trace is in the log signed by ``log_key``; return the tree size.
+
+    A trace changed after it was logged no longer matches its logged hash.
+    """
+
+    try:
+        size, root = verify_tree_head(proof["tree_head"], log_key)
+        verify_inclusion(
+            leaf_hash(trace_digest(document)),
+            int(proof["leaf_index"]),
+            size,
+            [bytes.fromhex(node) for node in proof["path"]],
+            root,
+        )
+    except (KeyError, TypeError, ValueError, MerkleProofError) as error:
+        raise TraceError(f"trace is not in the log: {error}") from error
+    return size
+
+
 def describe_trace(document: Mapping[str, Any]) -> list[str]:
     """Render the facts of a verified trace as plain lines for a person to read."""
 
@@ -154,7 +189,27 @@ class TraceStore:
         self._limit = limit
         self._key = signing_key or Ed25519PrivateKey.generate()
         self._traces: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._indexes: dict[str, int] = {}
+        self._log = MerkleLog(Ed25519PrivateKey.generate())
         self._lock = threading.Lock()
+
+    @property
+    def log_key(self) -> bytes:
+        return self._log.public_key
+
+    def proof(self, task_id: str) -> dict[str, Any]:
+        """Inclusion proof for a held trace against the current signed tree head."""
+
+        self.get(task_id)
+        with self._lock:
+            index = self._indexes[task_id]
+            head = self._log.signed_tree_head()
+            path = self._log.inclusion_proof(index, head["tree_size"])
+        return {
+            "leaf_index": index,
+            "path": [node.hex() for node in path],
+            "tree_head": head,
+        }
 
     @property
     def public_key(self) -> bytes:
@@ -162,11 +217,14 @@ class TraceStore:
 
     def record(self, document: Mapping[str, Any]) -> dict[str, Any]:
         signed = sign_trace(document, self._key)
+        task_id = str(signed["task_id"])
         with self._lock:
-            self._traces[str(signed["task_id"])] = signed
-            self._traces.move_to_end(str(signed["task_id"]))
+            self._indexes[task_id] = self._log.append(trace_digest(signed))
+            self._traces[task_id] = signed
+            self._traces.move_to_end(task_id)
             while len(self._traces) > self._limit:
-                self._traces.popitem(last=False)
+                dropped, _ = self._traces.popitem(last=False)
+                self._indexes.pop(dropped, None)
         return signed
 
     def get(self, task_id: str) -> dict[str, Any]:

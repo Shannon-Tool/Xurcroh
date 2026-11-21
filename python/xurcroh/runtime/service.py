@@ -314,9 +314,16 @@ class RuntimeService:
     def trace(self, task_id: str) -> dict[str, Any]:
         return self._traces.get(task_id)
 
+    def trace_proof(self, task_id: str) -> dict[str, Any]:
+        return self._traces.proof(task_id)
+
     @property
     def trace_public_key(self) -> bytes:
         return self._traces.public_key
+
+    @property
+    def trace_log_key(self) -> bytes:
+        return self._traces.log_key
 
     def _facts(self, name: str, engine: Any) -> dict[str, Any]:
         with self._lock:
