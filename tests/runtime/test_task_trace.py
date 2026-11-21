@@ -162,3 +162,31 @@ def test_verify_command_accepts_a_trace_and_rejects_a_changed_one(
     assert "temperature" in accepted.stdout
     assert rejected.returncode == 1
     assert "signature" in rejected.stderr
+
+
+def test_trace_hash_is_anchored_in_an_append_only_log(tiny_model_path: Path) -> None:
+    from xurcroh.receipts import verify_trace_proof
+
+    with client_for(tiny_model_path) as client:
+        ids = []
+        for _ in range(3):
+            response = client.chat.completions.create(
+                model="tiny", messages=MESSAGES, temperature=0, max_tokens=1
+            )
+            ids.append(response.execution.request_id)
+        traces = [client.tasks.trace(task_id) for task_id in ids]
+        proofs = [client.tasks.proof(task_id) for task_id in ids]
+        log_key = client.tasks.log_key
+
+    assert [proof["leaf_index"] for proof in proofs] == [0, 1, 2]
+    assert "hello world" not in json.dumps(proofs)
+    for trace, proof in zip(traces, proofs, strict=True):
+        assert verify_trace_proof(trace, proof, log_key=log_key) == proof["tree_head"]["tree_size"]
+    rewritten = copy.deepcopy(traces[0])
+    rewritten["result"]["completion_tokens"] = 7
+    with pytest.raises(TraceError, match="log"):
+        verify_trace_proof(rewritten, proofs[0], log_key=log_key)
+    with pytest.raises(TraceError, match="log"):
+        verify_trace_proof(traces[0], proofs[1], log_key=log_key)
+    with pytest.raises(TraceError, match="log"):
+        verify_trace_proof(traces[0], proofs[0], log_key=bytes(32))

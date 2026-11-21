@@ -16,7 +16,7 @@ def _verify(args: argparse.Namespace) -> int:
     import json
     import sys
 
-    from xurcroh.receipts import TraceError, describe_trace, verify_trace
+    from xurcroh.receipts import TraceError, describe_trace, verify_trace, verify_trace_proof
 
     try:
         document = json.loads(args.trace.read_text())
@@ -29,6 +29,13 @@ def _verify(args: argparse.Namespace) -> int:
             else json.loads(args.media_input.read_text()),
             output=None if args.output is None else args.output.read_text(),
         )
+        logged = None
+        if args.proof is not None:
+            if args.log_key is None:
+                raise TraceError("checking a log proof requires --log-key")
+            logged = verify_trace_proof(
+                document, json.loads(args.proof.read_text()), log_key=bytes.fromhex(args.log_key)
+            )
     except (TraceError, OSError, ValueError) as error:
         print(f"trace rejected: {error}", file=sys.stderr)
         return 1
@@ -36,6 +43,7 @@ def _verify(args: argparse.Namespace) -> int:
     print(f"signature: {pinned}")
     for name in ("prompt", "output"):
         print(f"{name}: {'matches' if report[name] else 'not checked'}")
+    print(f"log: {'not checked' if logged is None else f'included at tree size {logged}'}")
     print("\n".join(describe_trace(document)))
     return 0
 
@@ -66,6 +74,8 @@ def main() -> None:
         "--media-input", type=Path, help="JSON file with an image or video prompt, image and mask"
     )
     verify.add_argument("--output", type=Path, help="text file with the generated output")
+    verify.add_argument("--proof", type=Path, help="JSON inclusion proof from tasks.proof")
+    verify.add_argument("--log-key", help="hex key of the log expected to hold the trace")
     args = parser.parse_args()
     if args.command == "verify":
         raise SystemExit(_verify(args))
