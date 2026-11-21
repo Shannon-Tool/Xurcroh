@@ -330,18 +330,35 @@ class RuntimeService:
             facts = self._model_facts.get(name)
         if facts is None:
             definition = self.models.get(name)
-            report = preflight_checkpoint(name, definition, self._workers_for_model(name))
             facts = {
                 "name": name,
                 "revision": definition.revision,
-                "revision_pinned": report.revision_pinned,
-                "source_format": report.source_format,
-                "source_digest": report.source_digest,
-                "layout_digest": report.checkpoint_layout_digest,
-                "architecture": report.architecture,
-                "encodings": list(report.encodings),
                 "engine": engine.engine_name,
+                "identity": "checked by this client against the source checkpoint",
             }
+            try:
+                report = preflight_checkpoint(name, definition, self._workers_for_model(name))
+            except ConfigurationError:
+                # A remote engine serves a model this client holds no copy of, so the
+                # client cannot fingerprint it. The trace must say so, not guess.
+                facts.update(
+                    revision_pinned=None,
+                    source_format=None,
+                    source_digest=None,
+                    layout_digest=None,
+                    architecture=None,
+                    encodings=None,
+                    identity="unverified: the checkpoint is not held by this client",
+                )
+            else:
+                facts.update(
+                    revision_pinned=report.revision_pinned,
+                    source_format=report.source_format,
+                    source_digest=report.source_digest,
+                    layout_digest=report.checkpoint_layout_digest,
+                    architecture=report.architecture,
+                    encodings=list(report.encodings),
+                )
             with self._lock:
                 self._model_facts[name] = facts
         return facts

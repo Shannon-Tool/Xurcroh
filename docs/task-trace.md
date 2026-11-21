@@ -47,6 +47,9 @@ because a failed check aborts the request and quarantines the role.
 
 ## Limits of the current implementation
 
+- When the client only forwards to a remote worker and holds no copy of the checkpoint (the
+  non-Fortress remote engines), it cannot fingerprint the model. The trace then carries
+  `model.identity: "unverified: the checkpoint is not held by this client"` and null digests.
 - Only the local mode exists. There is no hosted gateway, so no trace is "operator-asserted" yet.
 - The signing key is generated per client process. The signature shows a trace was not changed after
   that client produced it.

@@ -20,6 +20,10 @@ def test_remote_worker_performs_actual_sync_and_streaming_inference(running_work
         assert response.choices[0].message.content is not None
         assert response.usage.completion_tokens > 0
         assert response.execution.engine == "remote-openai"
+        trace = client.tasks.trace(response.execution.request_id)
+        assert trace["model"]["engine"] == "remote-openai"
+        assert trace["model"]["source_digest"] is None
+        assert "not held by this client" in trace["model"]["identity"]
         stream = client.chat.completions.create(
             model="tiny",
             messages=[{"role": "user", "content": "hello"}],
