@@ -2,7 +2,7 @@
 
 Status: designed for defence in depth; claims under evaluation.
 
-Every completed chat request produces a signed trace on the trusted client. The trace is addressed
+Every completed chat, image, and video request produces a signed trace on the trusted client. The trace is addressed
 by the task's request ID (`response.execution.request_id`) and states what was asked for, what ran,
 and how it was protected. It contains no prompt or output text, only salted commitments to them.
 
@@ -22,7 +22,7 @@ was signed by a different key, or if the supplied prompt or output is not the on
 
 | Section | Fields |
 |---|---|
-| `request.settings` | Every setting as submitted: model, temperature, top_p, top_k, max_tokens, stop, seed, stream, timeout |
+| `request.settings` | Every setting as submitted. Chat: model, temperature, top_p, top_k, max_tokens, stop, seed, stream, timeout. Image and video: model, size, steps, strength, frames, fps, seed, timeout |
 | `request.effective` | The seed that actually drove sampling (drawn if none was given), the sampler version, the number of prompt-armour substitutions |
 | `request.prompt`, `result.output` | Salted SHA-256 commitments to the canonical messages and to the output text |
 | `result` | Finish reason, token counts, duration |
@@ -55,8 +55,10 @@ because a failed check aborts the request and quarantines the role.
   group is not yet read from the live handshake.
 - Workers do not yet sign anything; worker labels such as country and CPU vendor are operator
   declarations and are recorded under `declared`.
-- Image and video requests do not produce a trace yet; their effective seed is returned in
-  `execution.seed`.
+- Image and video traces record size, steps, strength, frames, frame rate, and the effective seed,
+  and commit to the prompt, input image, mask, and encoded output. They carry no per-request
+  transport counters or sharing facts yet, and the source digest of a diffusion pipeline covers its
+  `model_index.json` only, not the weight files.
 - Traces are held in memory for the most recent `security.trace_history` tasks (default 256) and are
   lost when the client closes. Save a trace if it must outlive the process.
 - The signature is Ed25519, which is not post-quantum.

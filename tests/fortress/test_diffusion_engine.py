@@ -89,6 +89,30 @@ def test_public_sdk_generates_image_with_fortress_diffusion(tmp_path: Path, shar
             steps=1,
             seed=unseeded.execution.seed,
         )
+        from xurcroh.receipts import TraceError, verify_trace
+
+        trace = client.tasks.trace(unseeded.execution.request_id)
+        public_key = client.tasks.public_key
+    assert trace["request"]["kind"] == "image"
+    assert trace["request"]["settings"] == {
+        "model": "tiny-ddpm",
+        "seed": None,
+        "size": "64x64",
+        "steps": 1,
+        "strength": 0.75,
+        "timeout": None,
+    }
+    assert trace["request"]["effective"] == {"seed": unseeded.execution.seed}
+    assert trace["model"]["engine"] == "fortress-diffusion-local"
+    assert "red square" not in str(trace)
+    inputs = {"prompt": "a small red square", "image": None, "mask": None}
+    assert verify_trace(
+        trace, public_key=public_key, media_input=inputs, output=unseeded.data[0].b64_json
+    ) == {"signature": True, "prompt": True, "output": True}
+    with pytest.raises(TraceError, match="prompt"):
+        verify_trace(trace, public_key=public_key, media_input={**inputs, "prompt": "other"})
+    with pytest.raises(TraceError, match="output"):
+        verify_trace(trace, public_key=public_key, output=response.data[0].b64_json + "A")
     assert response.data[0].b64_json
     assert response.execution.engine == "fortress-diffusion-local"
     assert response.execution.seed == 11
