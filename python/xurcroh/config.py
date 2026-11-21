@@ -45,6 +45,8 @@ class SecurityConfig(StrictModel):
     allow_unauthenticated_transport: bool = False
     memory_scrubbing: bool = True
     process_hardening: bool = True
+    prompt_armour: bool = False
+    prompt_armour_model: Path | None = None
 
     @model_validator(mode="after")
     def validate_security_downgrades(self) -> Self:

@@ -20,6 +20,7 @@ from xurcroh.errors import (
 )
 from xurcroh.fortress.diffusion_engine import FortressDiffusionEngine
 from xurcroh.fortress.engine import FortressEngine
+from xurcroh.fortress.prompt_armour import ArmouredMessages, MessageArmour, PromptArmour
 from xurcroh.memory_host import protect_process
 from xurcroh.preflight import CheckpointPreflight, preflight_checkpoint
 from xurcroh.provisioning import provision_cluster_sync
@@ -66,6 +67,11 @@ class RuntimeService:
         self.models = models
         if cluster.security.process_hardening and sys.platform == "linux":
             protect_process()
+        self._message_armour: MessageArmour | None = None
+        if cluster.security.prompt_armour:
+            self._message_armour = MessageArmour(
+                PromptArmour(model_path=cluster.security.prompt_armour_model)
+            )
         self._engines: dict[
             str,
             LocalTransformersEngine
@@ -288,15 +294,25 @@ class RuntimeService:
         worker_ids: list[str],
         *,
         seed: int | None = None,
+        armoured: ArmouredMessages | None = None,
     ) -> ExecutionMetadata:
         return ExecutionMetadata(
             seed=seed,
+            armoured_entities=None if armoured is None else armoured.entities,
             request_id=request_id,
             engine=engine_name,
             worker_ids=worker_ids,
             duration_ms=max(duration_ms, 0.001),
             security_mode=self.cluster.security.mode,
         )
+
+    def _armour(
+        self, request: CompletionRequest
+    ) -> tuple[CompletionRequest, ArmouredMessages | None]:
+        if self._message_armour is None:
+            return request, None
+        armoured = self._message_armour.protect(request.messages)
+        return request.model_copy(update={"messages": armoured.messages}), armoured
 
     def complete(self, request: CompletionRequest) -> ChatCompletion:
         self._ensure_open()
@@ -314,7 +330,9 @@ class RuntimeService:
         created = int(time.time())
         timeout = request.timeout or self.cluster.request_timeout_seconds
         admitted = False
+        armoured: ArmouredMessages | None = None
         try:
+            request, armoured = self._armour(request)
             self._admit(request.model, timeout)
             admitted = True
             handle.executing.set()
@@ -332,7 +350,12 @@ class RuntimeService:
                 choices=[
                     ChatChoice(
                         index=0,
-                        message=ChatMessage(role="assistant", content=summary.text),
+                        message=ChatMessage(
+                            role="assistant",
+                            content=summary.text
+                            if armoured is None
+                            else armoured.restore(summary.text),
+                        ),
                         finish_reason=summary.finish_reason,
                     )
                 ],
@@ -347,12 +370,15 @@ class RuntimeService:
                     engine.engine_name,
                     getattr(engine, "worker_ids", [engine.worker_id]),
                     seed=summary.seed,
+                    armoured=armoured,
                 ),
             )
         except Exception as error:
             self._record_error(error)
             raise
         finally:
+            if armoured is not None:
+                armoured.close()
             handle.executing.clear()
             if admitted:
                 self._release(request.model)
@@ -376,15 +402,32 @@ class RuntimeService:
         created = int(time.time())
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
         timeout = request.timeout or self.cluster.request_timeout_seconds
+        armoured: ArmouredMessages | None = None
         try:
+            request, armoured = self._armour(request)
             self._admit(request.model, timeout)
         except Exception as error:
             self._record_error(error)
+            if armoured is not None:
+                armoured.close()
             with self._lock:
                 self._requests.pop(handle.request_id, None)
             raise
+        restorer = None if armoured is None else armoured.stream()
+
+        def chunk(content: str) -> ChatCompletionChunk:
+            return ChatCompletionChunk(
+                id=completion_id,
+                created=created,
+                model=request.model,
+                choices=[
+                    ChatChunkChoice(index=0, delta=ChatDelta(role="assistant", content=content))
+                ],
+            )
 
         def cleanup() -> None:
+            if armoured is not None:
+                armoured.close()
             handle.executing.clear()
             self._release(request.model)
             with self._lock:
@@ -405,17 +448,10 @@ class RuntimeService:
                     finally:
                         handle.executing.clear()
                     if event.summary is None:
-                        yield ChatCompletionChunk(
-                            id=completion_id,
-                            created=created,
-                            model=request.model,
-                            choices=[
-                                ChatChunkChoice(
-                                    index=0, delta=ChatDelta(role="assistant", content=event.delta)
-                                )
-                            ],
-                        )
+                        yield chunk(event.delta if restorer is None else restorer.feed(event.delta))
                     else:
+                        if restorer is not None and (remaining := restorer.finish()):
+                            yield chunk(remaining)
                         self._metrics.completed(event.summary.duration_ms)
                         yield ChatCompletionChunk(
                             id=completion_id,
@@ -440,6 +476,7 @@ class RuntimeService:
                                 engine.engine_name,
                                 getattr(engine, "worker_ids", [engine.worker_id]),
                                 seed=event.summary.seed,
+                                armoured=armoured,
                             ),
                         )
             except Exception as error:
@@ -569,5 +606,7 @@ class RuntimeService:
             for engine in engines:
                 engine.close()
         finally:
+            if self._message_armour is not None:
+                self._message_armour.close()
             if self._deployment is not None:
                 self._deployment.close()
