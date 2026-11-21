@@ -34,6 +34,8 @@ CPU tests cover cache/request cleanup, sealed memfds, nonce/binding failures, fi
 
 `xurcroh.fortress.prompt_armour` detects explicit credentials and email addresses locally and can run a token-classification model strictly from a local checkpoint with network loading disabled. Recognized spans are replaced with random-session placeholders and restored in generated text. Recognition coverage is model-dependent and is not a guarantee that every name or secret is found. Placeholder originals are held in wipeable bytearrays, but Python strings, caller-owned inputs, generated strings, and framework copies cannot be comprehensively zeroized by this API.
 
+Prompt armour is opt-in (`security.prompt_armour`, default off) because it changes the text the model reads and can therefore change the answer. When enabled, every text part of a chat request is armoured before tokenisation on the trusted client, streamed and non-streamed output is restored, and `execution.armoured_entities` reports how many spans were replaced so the substitution is never silent. `security.prompt_armour_model` selects the optional local recognition checkpoint.
+
 `xurcroh.fortress.canary` mixes real and decoy call schedules and associates unique share canaries with their observer set. A trip means that a registered secret was observed by the trusted monitoring integration; it attributes the observer set and triggers revocation, but does not prove which observer disclosed it. The F0/M0 reports use a simulated external observation of an actually transmitted share, not an independent monitoring service or a public red-team result.
 
 

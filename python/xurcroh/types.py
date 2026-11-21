@@ -27,6 +27,7 @@ class ExecutionMetadata(ResponseModel):
     duration_ms: float = Field(ge=0)
     security_mode: str
     seed: int | None = Field(default=None, ge=0)
+    armoured_entities: int | None = Field(default=None, ge=0)
 
 
 class ChatChoice(ResponseModel):

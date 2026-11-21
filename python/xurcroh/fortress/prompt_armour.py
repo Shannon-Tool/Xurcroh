@@ -7,7 +7,10 @@ import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from xurcroh.requests import InputMessage
 
 
 @dataclass(frozen=True)
@@ -128,3 +131,97 @@ class PromptArmour:
         for protected in list(self._protected):
             protected.close()
         self._pipeline = None
+
+
+class StreamRestorer:
+    """Restore placeholders in streamed text, holding back only a possible partial one."""
+
+    def __init__(self, session: ArmouredMessages) -> None:
+        self._session = session
+        self._pending = ""
+
+    def feed(self, delta: str) -> str:
+        text = self._session.restore(self._pending + delta)
+        held = 0
+        longest = max((len(item) for item in self._session.placeholders), default=0)
+        for size in range(min(len(text), longest - 1), 0, -1):
+            tail = text[-size:]
+            if any(item.startswith(tail) for item in self._session.placeholders):
+                held = size
+                break
+        self._pending = text[len(text) - held :]
+        return text[: len(text) - held]
+
+    def finish(self) -> str:
+        remaining, self._pending = self._pending, ""
+        return remaining
+
+
+class ArmouredMessages:
+    """Request messages with sensitive spans replaced, and the means to restore output."""
+
+    def __init__(self, messages: list[InputMessage], texts: list[ArmouredText]) -> None:
+        self.messages = messages
+        self._texts = texts
+
+    @property
+    def placeholders(self) -> tuple[str, ...]:
+        return tuple(item for text in self._texts for item in sorted(text.placeholders))
+
+    @property
+    def entities(self) -> int:
+        return len(self.placeholders)
+
+    def restore(self, generated: str) -> str:
+        if not self._texts:
+            return generated
+        for text in self._texts:
+            generated = text.restore(generated)
+        return generated
+
+    def stream(self) -> StreamRestorer:
+        return StreamRestorer(self)
+
+    def close(self) -> None:
+        for text in self._texts:
+            text.close()
+
+
+class MessageArmour:
+    """Apply prompt armour to every text part of a chat request."""
+
+    def __init__(self, armour: PromptArmour) -> None:
+        self._armour = armour
+
+    def protect(self, messages: list[InputMessage]) -> ArmouredMessages:
+        from xurcroh.requests import TextContentPart
+
+        texts: list[ArmouredText] = []
+
+        def protect_text(value: str) -> str:
+            protected = self._armour.armour(value)
+            texts.append(protected)
+            return protected.text
+
+        result: list[InputMessage] = []
+        try:
+            for message in messages:
+                content: Any
+                if isinstance(message.content, str):
+                    content = protect_text(message.content)
+                else:
+                    content = [
+                        part.model_copy(update={"text": protect_text(part.text)})
+                        if isinstance(part, TextContentPart)
+                        else part
+                        for part in message.content
+                    ]
+                result.append(message.model_copy(update={"content": content}))
+        except Exception:
+            for text in texts:
+                text.close()
+            raise
+        return ArmouredMessages(result, texts)
+
+    def close(self) -> None:
+        self._armour.close()
