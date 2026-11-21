@@ -97,6 +97,12 @@ def _config_differences(derived: dict[str, Any], source: Path) -> list[str]:
         if key in _IGNORED_CONFIG:
             continue
         left, right = expected.get(key), actual.get(key)
+        if key == "head_dim" and None in (left, right):
+            # GGUF always records the head width; sources omit it when it is the
+            # default hidden_size / heads.
+            default = expected["hidden_size"] // expected["num_attention_heads"]
+            if (left or right) == default:
+                continue
         if isinstance(left, float) and isinstance(right, float):
             if abs(left - right) <= 1e-6 * max(1.0, abs(left)):
                 continue
