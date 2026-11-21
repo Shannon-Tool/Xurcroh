@@ -24,6 +24,9 @@ def _verify(args: argparse.Namespace) -> int:
             document,
             public_key=None if args.public_key is None else bytes.fromhex(args.public_key),
             messages=None if args.messages is None else json.loads(args.messages.read_text()),
+            media_input=None
+            if args.media_input is None
+            else json.loads(args.media_input.read_text()),
             output=None if args.output is None else args.output.read_text(),
         )
     except (TraceError, OSError, ValueError) as error:
@@ -59,6 +62,9 @@ def main() -> None:
     verify.add_argument("trace", type=Path)
     verify.add_argument("--public-key", help="hex key of the client expected to have signed it")
     verify.add_argument("--messages", type=Path, help="JSON file with the request messages")
+    verify.add_argument(
+        "--media-input", type=Path, help="JSON file with an image or video prompt, image and mask"
+    )
     verify.add_argument("--output", type=Path, help="text file with the generated output")
     args = parser.parse_args()
     if args.command == "verify":

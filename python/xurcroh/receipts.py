@@ -50,6 +50,13 @@ def canonical_messages(messages: Sequence[Any]) -> bytes:
     return canonical(normalized)
 
 
+def canonical_media(media_input: Mapping[str, Any] | None) -> bytes:
+    """Canonical form of an image or video request's prompt, input image and mask."""
+
+    values = dict(media_input or {})
+    return canonical({name: values.get(name) for name in ("prompt", "image", "mask")})
+
+
 def commit(payload: bytes, salt: bytes | None = None) -> dict[str, str]:
     """Return a salted SHA-256 commitment that hides ``payload`` without the salt."""
 
@@ -82,6 +89,7 @@ def verify_trace(
     *,
     public_key: bytes | None = None,
     messages: Sequence[Any] | None = None,
+    media_input: Mapping[str, Any] | None = None,
     output: str | None = None,
 ) -> dict[str, bool | None]:
     """Check a trace's signature and, when given, that it refers to this prompt and output.
@@ -106,8 +114,13 @@ def verify_trace(
     except (KeyError, TypeError, ValueError, InvalidSignature) as error:
         raise TraceError("trace signature is missing or does not verify") from error
     report: dict[str, bool | None] = {"signature": True, "prompt": None, "output": None}
-    if messages is not None:
-        if not _opens(document.get("request", {}).get("prompt"), canonical_messages(messages)):
+    if messages is not None and media_input is not None:
+        raise TraceError("give chat messages or a media input to check the prompt, not both")
+    if messages is not None or media_input is not None:
+        payload = (
+            canonical_messages(messages) if messages is not None else canonical_media(media_input)
+        )
+        if not _opens(document.get("request", {}).get("prompt"), payload):
             raise TraceError("trace does not refer to this prompt")
         report["prompt"] = True
     if output is not None:

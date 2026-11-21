@@ -25,7 +25,7 @@ from xurcroh.fortress.prompt_armour import ArmouredMessages, MessageArmour, Prom
 from xurcroh.memory_host import protect_process
 from xurcroh.preflight import CheckpointPreflight, preflight_checkpoint
 from xurcroh.provisioning import provision_cluster_sync
-from xurcroh.receipts import SAMPLER, TraceStore, canonical_messages, commit
+from xurcroh.receipts import SAMPLER, TraceStore, canonical_media, canonical_messages, commit
 from xurcroh.requests import CompletionRequest, ImageGenerationRequest, VideoGenerationRequest
 from xurcroh.runtime.diffusion import LocalDiffusionEngine
 from xurcroh.runtime.dit_stage import CompiledDiTStageEngine
@@ -339,6 +339,59 @@ class RuntimeService:
                 self._model_facts[name] = facts
         return facts
 
+    def _security_facts(self) -> dict[str, Any]:
+        security = self.cluster.security
+        return {
+            "mode": security.mode,
+            "attestation": "required" if security.require_attestation else "unattested",
+            "process_hardening": security.process_hardening,
+            "prompt_armour": security.prompt_armour,
+            "memory_scrubbing": security.memory_scrubbing,
+        }
+
+    def _record_media_trace(
+        self,
+        kind: str,
+        request: ImageGenerationRequest | VideoGenerationRequest,
+        response: ImageGenerationResponse | VideoGenerationResponse,
+        started_at: float,
+    ) -> None:
+        engine = self._engine(request.model)
+        execution = response.execution
+        self._traces.record(
+            {
+                "task_id": execution.request_id,
+                "mode": "local",
+                "created_at": started_at,
+                "completed_at": time.time(),
+                "client": {"version": __version__},
+                "request": {
+                    "kind": kind,
+                    "settings": request.model_dump(
+                        mode="json", exclude={"prompt", "image", "mask", "request_id"}
+                    ),
+                    "effective": {"seed": execution.seed},
+                    "prompt": commit(
+                        canonical_media(
+                            {
+                                "prompt": request.prompt,
+                                "image": request.image,
+                                "mask": getattr(request, "mask", None),
+                            }
+                        )
+                    ),
+                },
+                "result": {
+                    "output": commit("\n".join(item.b64_json for item in response.data).encode()),
+                    "items": len(response.data),
+                    "duration_ms": execution.duration_ms,
+                },
+                "model": self._facts(request.model, engine),
+                "security": self._security_facts(),
+                "transport": {"workers": execution.worker_ids, "counters": None},
+            }
+        )
+
     def _record_trace(
         self,
         task_id: str,
@@ -350,7 +403,6 @@ class RuntimeService:
     ) -> None:
         engine = self._engine(request.model)
         split = engine.trace_facts() if isinstance(engine, FortressEngine) else {}
-        security = self.cluster.security
         self._traces.record(
             {
                 "task_id": task_id,
@@ -376,13 +428,7 @@ class RuntimeService:
                     "duration_ms": summary.duration_ms,
                 },
                 "model": {**self._facts(request.model, engine), **split.get("sharing", {})},
-                "security": {
-                    "mode": security.mode,
-                    "attestation": "required" if security.require_attestation else "unattested",
-                    "process_hardening": security.process_hardening,
-                    "prompt_armour": security.prompt_armour,
-                    "memory_scrubbing": security.memory_scrubbing,
-                },
+                "security": self._security_facts(),
                 "transport": {
                     "workers": getattr(engine, "worker_ids", [engine.worker_id]),
                     **split.get("transport", {}),
@@ -605,6 +651,7 @@ class RuntimeService:
             self._admit(request.model, timeout)
             admitted = True
             handle.executing.set()
+            started_at = time.time()
             response = engine.generate_image(
                 request,
                 request_id=handle.request_id,
@@ -613,6 +660,7 @@ class RuntimeService:
                 timeout=timeout,
             )
             self._metrics.completed(response.execution.duration_ms)
+            self._record_media_trace("image", request, response, started_at)
             return response
         except Exception as error:
             self._record_error(error)
@@ -647,6 +695,7 @@ class RuntimeService:
             self._admit(request.model, timeout)
             admitted = True
             handle.executing.set()
+            started_at = time.time()
             response = engine.generate_video(
                 request,
                 request_id=handle.request_id,
@@ -655,6 +704,7 @@ class RuntimeService:
                 timeout=timeout,
             )
             self._metrics.completed(response.execution.duration_ms)
+            self._record_media_trace("video", request, response, started_at)
             return response
         except Exception as error:
             self._record_error(error)
