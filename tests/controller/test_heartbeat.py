@@ -20,9 +20,7 @@ def build_registry(private: Ed25519PrivateKey) -> WorkerRegistry:
         engine="dense-stage",
     )
     registry = WorkerRegistry()
-    registry.register(
-        registration, sign_registration(private, registration), private.public_key()
-    )
+    registry.register(registration, sign_registration(private, registration), private.public_key())
     return registry
 
 
