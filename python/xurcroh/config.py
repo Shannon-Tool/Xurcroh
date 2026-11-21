@@ -44,6 +44,7 @@ class SecurityConfig(StrictModel):
     allow_plaintext_worker_weights: bool = False
     allow_unauthenticated_transport: bool = False
     memory_scrubbing: bool = True
+    process_hardening: bool = True
 
     @model_validator(mode="after")
     def validate_security_downgrades(self) -> Self:

@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 
 from xurcroh.fortress.worker import FortressRoleWorker
+from xurcroh.memory_host import protect_process
 
 
 def artifact_file_name(operation: str) -> str:
@@ -49,12 +50,18 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="explicit opt-in for non-TEE execution without hardware attestation",
     )
+    parser.add_argument(
+        "--lock-memory",
+        action="store_true",
+        help="lock all process memory so secrets cannot be swapped to disk",
+    )
     parser.add_argument("--exit-status-file", type=Path)
     parser.add_argument("--ready-file", type=Path)
     parser.add_argument("--pid-file", type=Path)
     args = parser.parse_args(argv)
     exit_code = 0
     try:
+        protect_process(lock_memory=args.lock_memory)
         worker = FortressRoleWorker(
             load_role_artifacts(args.artifact_dir),
             args.recipient_key.read_bytes(),
