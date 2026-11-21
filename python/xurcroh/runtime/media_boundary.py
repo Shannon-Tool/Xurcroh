@@ -14,6 +14,49 @@ from xurcroh.runtime.protected_diffusion import ProtectedDiffusionPipeline
 from xurcroh.runtime.vlm import _decode_image
 
 
+def needs_pipeline_decoder(pipeline: Any) -> bool:
+    """Whether latents must be decoded by the pipeline's own post-processing.
+
+    Transformer pipelines pack latents into token sequences or normalise them
+    with per-channel statistics before the VAE; only the pipeline knows how to
+    undo that. The pipeline object lives on the trusted client either way.
+    """
+    if hasattr(pipeline, "decode_latents"):
+        return False
+    vae = getattr(pipeline, "vae", None)
+    if vae is None:
+        return False
+    return (
+        hasattr(pipeline, "_unpack_latents")
+        or getattr(vae.config, "shift_factor", None) is not None
+        or getattr(vae.config, "latents_mean", None) is not None
+    )
+
+
+def encode_video_frames(pixels: Any, fps: int) -> bytes:
+    import imageio.v2 as imageio
+    import numpy as np
+
+    frames = np.asarray(pixels)
+    if frames.ndim == 5:
+        if frames.shape[0] != 1:
+            raise CapabilityError("client video decoder returned an unexpected batch size")
+        frames = frames[0]
+    if frames.ndim == 4 and frames.shape[-1] != 3 and frames.shape[0] == 3:
+        frames = frames.transpose(1, 2, 3, 0)
+    if frames.ndim == 3:
+        frames = frames[None, ...]
+    if frames.ndim != 4 or frames.shape[-1] != 3:
+        raise CapabilityError("client video decoder did not return RGB frames")
+    if frames.dtype != np.uint8:
+        frames = (frames.clip(0, 1) * 255).astype(np.uint8)
+    buffer = io.BytesIO()
+    with imageio.get_writer(buffer, format="mp4", fps=fps, codec="libx264") as writer:
+        for frame in frames:
+            writer.append_data(frame)  # type: ignore[attr-defined]
+    return buffer.getvalue()
+
+
 class DiffusionMediaBoundary:
     def __init__(self, pipeline: Any) -> None:
         self.pipeline = pipeline
@@ -205,24 +248,4 @@ class DiffusionMediaBoundary:
             processor = getattr(self.pipeline, "image_processor", None)
             if processor is not None:
                 pixels = processor.postprocess(pixels, output_type="np")
-        import imageio.v2 as imageio
-        import numpy as np
-
-        frames = np.asarray(pixels)
-        if frames.ndim == 5:
-            if frames.shape[0] != 1:
-                raise CapabilityError("client video decoder returned an unexpected batch size")
-            frames = frames[0]
-        if frames.ndim == 4 and frames.shape[-1] != 3 and frames.shape[0] == 3:
-            frames = frames.transpose(1, 2, 3, 0)
-        if frames.ndim == 3:
-            frames = frames[None, ...]
-        if frames.ndim != 4 or frames.shape[-1] != 3:
-            raise CapabilityError("client video decoder did not return RGB frames")
-        if frames.dtype != np.uint8:
-            frames = (frames.clip(0, 1) * 255).astype(np.uint8)
-        buffer = io.BytesIO()
-        with imageio.get_writer(buffer, format="mp4", fps=request.fps, codec="libx264") as writer:
-            for frame in frames:
-                writer.append_data(frame)  # type: ignore[attr-defined]
-        return buffer.getvalue()
+        return encode_video_frames(pixels, request.fps)
