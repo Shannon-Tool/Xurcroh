@@ -105,7 +105,7 @@ class FortressEngine:
         )
 
     def _roles(self, operation_name: str | None = None) -> list[RoleEndpoint]:
-        from xurcroh.fortress.transport import RoleEndpoint
+        from xurcroh.fortress.transport import RoleEndpoint, relay_route_from_labels
 
         roles = []
         for worker in self.workers:
@@ -146,6 +146,7 @@ class FortressEngine:
                     address=address,
                     recipient_public=recipient_public,
                     provider_id=worker.name,
+                    relay=relay_route_from_labels(worker.labels, address, worker=worker.name),
                     server_name=worker.labels.get("server_name"),
                     generation=int(worker.labels.get("restart_generation", "0")),
                 )
