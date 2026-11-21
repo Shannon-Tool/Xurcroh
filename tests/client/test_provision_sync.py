@@ -30,9 +30,7 @@ def test_provision_cluster_sync_spawns_no_thread(
             return self
 
     monkeypatch.setattr(threading, "Thread", forbidden_thread)
-    monkeypatch.setattr(
-        "xurcroh.fortress.deployment.FortressDeployment", FakeDeployment
-    )
+    monkeypatch.setattr("xurcroh.fortress.deployment.FortressDeployment", FakeDeployment)
     provision_cluster_sync(cluster, models, controller="quic://127.0.0.1:0")
 
 
@@ -46,9 +44,7 @@ def test_provision_cluster_sync_returns_deployment(monkeypatch: pytest.MonkeyPat
         def start(self) -> FakeDeployment:
             return self
 
-    monkeypatch.setattr(
-        "xurcroh.fortress.deployment.FortressDeployment", FakeDeployment
-    )
+    monkeypatch.setattr("xurcroh.fortress.deployment.FortressDeployment", FakeDeployment)
     deployment = provision_cluster_sync(cluster, models, controller="quic://127.0.0.1:0")
     assert isinstance(deployment, FakeDeployment)
 
@@ -66,9 +62,7 @@ def test_provision_cluster_sync_propagates_first_failure(
         def start(self) -> object:
             raise failure
 
-    monkeypatch.setattr(
-        "xurcroh.fortress.deployment.FortressDeployment", FailingDeployment
-    )
+    monkeypatch.setattr("xurcroh.fortress.deployment.FortressDeployment", FailingDeployment)
     with pytest.raises(RuntimeError) as excinfo:
         provision_cluster_sync(cluster, models, controller="quic://127.0.0.1:0")
     assert excinfo.value is failure
