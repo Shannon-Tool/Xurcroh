@@ -46,7 +46,7 @@ The two-model managed test has not completed on this host. At `90a99a6`, its 24 
 | Frontend typecheck, lint, production build, content validation | Passed at `9043219`; 22 sections, equations, links, and Mermaid syntax validated |
 | Offline ladder/handoff validation | All 22 command forms validated without provider contact at `9043219`, including signed predecessor arguments and real multi-model smoke |
 | ProVerif model and protocol fuzzing | ProVerif confirms activation secrecy, response secrecy, and client/server establishment correspondence at `9043219`; strict result checking is enforced. All three ASan fuzz targets completed without crashes: 2,277,310 frame, 379,534 AEAD, and 30,634 HPKE executions; newer hosted runs are blocked before startup |
-| Clean reproducible wheel builds | Matched at `9043219ea1e199db08f8e8583a1bcab7bbf8f1ca`: Python `76b45d038ccdde714bd555932663ac3b7c072b4f114ae44c36b4c76be776f2c1`, native `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2`; current hosted rebuild remains billing-blocked |
+| Clean reproducible wheel builds | Matched at `6fed862436625d7871c839db13ce3671d7f270cb` (post-audit delivered SHA; double build, hash-identical): Python `7df71f7eb6104cb4d0b9084f020233a47bf2d6afeca951bceb9f632cee89351f`, native `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2`; the earlier `9043219` evidence is superseded; current hosted rebuild remains billing-blocked |
 | `pip-audit` | No known vulnerabilities in audited dependencies at `9043219`; local CPU torch/torchvision and Xurcroh packages remain skipped as detailed below |
 | `npm audit` | 0 vulnerabilities at `9043219` |
 | Quantized checkpoint reader fuzzing | 100 mutations at `9043219`: 51 accepted, 49 rejected, no unexpected failure |
