@@ -37,7 +37,8 @@ class MediaArchitectureAdapter:
 
     @classmethod
     def from_pipeline(cls, pipeline: object, modality: str) -> MediaArchitectureAdapter:
-        components = tuple(name for name in _DENOISERS if hasattr(pipeline, name))
+        # Pipelines register optional denoisers they do not have as ``None``.
+        components = tuple(name for name in _DENOISERS if getattr(pipeline, name, None) is not None)
         if not components:
             raise ModelLoadError("pipeline contains no supported denoiser component")
         workflows = {"text_to_image"} if modality == "image" else {"text_to_video"}
