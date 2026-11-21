@@ -26,10 +26,11 @@ def needs_pipeline_decoder(pipeline: Any) -> bool:
     vae = getattr(pipeline, "vae", None)
     if vae is None:
         return False
+    config = getattr(vae, "config", None)
     return (
         hasattr(pipeline, "_unpack_latents")
-        or getattr(vae.config, "shift_factor", None) is not None
-        or getattr(vae.config, "latents_mean", None) is not None
+        or getattr(config, "shift_factor", None) is not None
+        or getattr(config, "latents_mean", None) is not None
     )
 
 
