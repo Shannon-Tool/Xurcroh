@@ -47,6 +47,7 @@ class SecurityConfig(StrictModel):
     process_hardening: bool = True
     prompt_armour: bool = False
     prompt_armour_model: Path | None = None
+    trace_history: int = Field(default=256, ge=1, le=100_000)
 
     @model_validator(mode="after")
     def validate_security_downgrades(self) -> Self:

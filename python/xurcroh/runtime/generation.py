@@ -21,6 +21,7 @@ class GenerationSummary:
     finish_reason: Literal["stop", "length"]
     duration_ms: float
     seed: int | None = None
+    transport: dict[str, int] | None = None
 
 
 @dataclass(frozen=True)

@@ -12,6 +12,31 @@ from xurcroh.shards.compiler import CompilationConfig, XurcrohWeightCompiler
 from xurcroh.shards.recipients import StageRecipient
 
 
+def _verify(args: argparse.Namespace) -> int:
+    import json
+    import sys
+
+    from xurcroh.receipts import TraceError, describe_trace, verify_trace
+
+    try:
+        document = json.loads(args.trace.read_text())
+        report = verify_trace(
+            document,
+            public_key=None if args.public_key is None else bytes.fromhex(args.public_key),
+            messages=None if args.messages is None else json.loads(args.messages.read_text()),
+            output=None if args.output is None else args.output.read_text(),
+        )
+    except (TraceError, OSError, ValueError) as error:
+        print(f"trace rejected: {error}", file=sys.stderr)
+        return 1
+    pinned = "verified" if args.public_key is not None else "verified against the embedded key"
+    print(f"signature: {pinned}")
+    for name in ("prompt", "output"):
+        print(f"{name}: {'matches' if report[name] else 'not checked'}")
+    print("\n".join(describe_trace(document)))
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="xurcroh")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -30,7 +55,14 @@ def main() -> None:
     compile_parser.add_argument("--seed", type=int)
     compile_parser.add_argument("--compute-dtype", choices=["f64", "f32"], default="f64")
     compile_parser.add_argument("--shard-dtype", choices=["f64", "f32", "f16", "bf16"])
+    verify = subparsers.add_parser("verify", help="check a signed task trace")
+    verify.add_argument("trace", type=Path)
+    verify.add_argument("--public-key", help="hex key of the client expected to have signed it")
+    verify.add_argument("--messages", type=Path, help="JSON file with the request messages")
+    verify.add_argument("--output", type=Path, help="text file with the generated output")
     args = parser.parse_args()
+    if args.command == "verify":
+        raise SystemExit(_verify(args))
     dtypes = {
         "f64": torch.float64,
         "f32": torch.float32,
