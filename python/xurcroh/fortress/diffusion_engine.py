@@ -114,15 +114,17 @@ class FortressDiffusionEngine(FortressEngine):
     ) -> ImageGenerationResponse:
         from xurcroh.fortress.transport import execution_health
         from xurcroh.runtime.generation import check_request_health
+        from xurcroh.runtime.media_boundary import needs_pipeline_decoder
         from xurcroh.runtime.vlm import _decode_image
 
         self._load()
         assert self._boundary is not None
         started = time.monotonic()
         seed = self._seed(request)
-        supports_latent_decode = hasattr(self._boundary.pipeline, "decode_latents") or hasattr(
-            self._boundary.pipeline, "vae"
-        )
+        supports_latent_decode = (
+            hasattr(self._boundary.pipeline, "decode_latents")
+            or hasattr(self._boundary.pipeline, "vae")
+        ) and not needs_pipeline_decoder(self._boundary.pipeline)
         parameters: dict[str, Any] = {
             "prompt": request.prompt,
             "width": request.dimensions[0],
@@ -179,6 +181,7 @@ class FortressDiffusionEngine(FortressEngine):
     ) -> VideoGenerationResponse:
         from xurcroh.fortress.transport import execution_health
         from xurcroh.runtime.generation import check_request_health
+        from xurcroh.runtime.media_boundary import encode_video_frames, needs_pipeline_decoder
         from xurcroh.runtime.vlm import _decode_image
 
         self._load()
@@ -191,6 +194,7 @@ class FortressDiffusionEngine(FortressEngine):
             return kwargs
 
         width, height = (int(value) for value in request.size.split("x"))
+        native_decode = needs_pipeline_decoder(self._boundary.pipeline)
         parameters = {
             "prompt": request.prompt,
             "width": width,
@@ -199,7 +203,7 @@ class FortressDiffusionEngine(FortressEngine):
             "fps": request.fps,
             "num_inference_steps": request.steps,
             "generator": torch.Generator().manual_seed(seed),
-            "output_type": "latent",
+            "output_type": "np" if native_decode else "latent",
             "callback_on_step_end": health,
         }
         if request.image is not None:
@@ -214,8 +218,12 @@ class FortressDiffusionEngine(FortressEngine):
             result = self._boundary.pipeline(**parameters)
         frames = getattr(result, "frames", None)
         if frames is None:
-            raise CapabilityError("video pipeline did not return latent frames")
-        encoded = self._boundary.decode_video(frames, request)
+            raise CapabilityError("video pipeline did not return frames")
+        encoded = (
+            encode_video_frames(frames, request.fps)
+            if native_decode
+            else self._boundary.decode_video(frames, request)
+        )
         check_request_health(cancelled, started, timeout)
         return VideoGenerationResponse(
             created=int(time.time()),
