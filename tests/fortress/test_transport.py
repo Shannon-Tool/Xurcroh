@@ -599,3 +599,36 @@ def test_role_client_checks_execution_health_between_rows() -> None:
             client.execute(shares, request_id="row-timeout")
     finally:
         client._executor.shutdown(wait=True)
+
+
+def test_role_session_capacity_scales_with_assigned_operations(
+    mtls_identities: MutualTLSIdentities,
+) -> None:
+    # Each operation keeps its own session with a role. A fixed 64-session
+    # bound rejected every model with more than 64 operations on one worker.
+    operation = compile_operation(
+        torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
+    )
+    private = X25519PrivateKey.generate()
+    public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    artifact = encode_role_artifact(operation, 0, public)
+    arguments = {
+        "certificates": (mtls_identities["server_certificate"], mtls_identities["ca"]),
+        "private_key": mtls_identities["server_key"],
+        "client_ca": mtls_identities["ca"],
+        "allow_unattested": True,
+    }
+    key = private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+    artifacts = {f"operation-{index}": artifact for index in range(70)}
+    worker = FortressRoleWorker(artifacts, key, **arguments)
+    try:
+        assert worker.sessions.capacity >= 4 * len(artifacts)
+    finally:
+        worker.close()
+    small = FortressRoleWorker({"only": artifact}, key, **arguments)
+    try:
+        assert small.sessions.capacity == 64
+    finally:
+        small.close()
+    with pytest.raises(ValueError, match="session capacity"):
+        FortressRoleWorker(artifacts, key, session_capacity=64, **arguments)
