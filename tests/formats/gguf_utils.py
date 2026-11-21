@@ -34,6 +34,8 @@ def _value(value: Any, endian: str) -> bytes:
             return struct.pack(f"{endian}IIQ", 9, 8, len(value)) + b"".join(
                 _string(item, endian) for item in value
             )
+        if all(isinstance(item, bool) for item in value):
+            return struct.pack(f"{endian}IIQ", 9, 7, len(value)) + bytes(value)
         if all(isinstance(item, int) and not isinstance(item, bool) for item in value):
             return struct.pack(f"{endian}IIQ", 9, 10, len(value)) + b"".join(
                 struct.pack(f"{endian}Q", item) for item in value

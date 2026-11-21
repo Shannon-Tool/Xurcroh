@@ -124,9 +124,15 @@ def detect_modality(definition: ModelDefinition) -> str:
     return definition.modality
 
 
-def _adapter_available(architecture: str) -> bool:
+def _adapter_available(architecture: str, source_format: str = "safetensors") -> bool:
     if not architecture or architecture == "unknown":
         return False
+    if source_format == "gguf":
+        # GGUF semantics come from the verified family registry, not from a
+        # coincidental match between a llama.cpp name and a Transformers type.
+        from xurcroh.architectures.gguf_families import gguf_model_type
+
+        return gguf_model_type(architecture) is not None
     from transformers.models.auto.configuration_auto import CONFIG_MAPPING
 
     return architecture in CONFIG_MAPPING
@@ -180,7 +186,7 @@ def preflight_checkpoint(
                     issues.append(f"checkpoint is missing a valid {field}")
             if not reader.tensor_names():
                 issues.append("checkpoint contains no tensor metadata")
-        if definition.engine == "fortress" and not _adapter_available(architecture):
+        if definition.engine == "fortress" and not _adapter_available(architecture, source_format):
             issues.append(
                 f"architecture {architecture!r} has no Fortress semantic adapter; "
                 "unknown model graphs are rejected rather than guessed"

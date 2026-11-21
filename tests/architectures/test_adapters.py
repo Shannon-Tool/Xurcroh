@@ -45,9 +45,11 @@ def test_gguf_fused_qkv_and_stacked_experts(tmp_path: Path) -> None:
 
     fused = np.arange(32, dtype=np.float32).reshape(8, 4)
     experts = np.arange(48, dtype=np.float32).reshape(2, 6, 4)
+    embedding = np.zeros((4, 4), dtype=np.float32)
     checkpoint = write_gguf(
         tmp_path / "fused.gguf",
         [
+            ("token_embd.weight", (4, 4), 0, embedding.tobytes()),
             ("blk.0.attn_qkv.weight", (8, 4), 0, fused.tobytes()),
             ("blk.0.ffn_gate_exps.weight", (2, 6, 4), 0, experts.tobytes()),
         ],
