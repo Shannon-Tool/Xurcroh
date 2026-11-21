@@ -349,6 +349,10 @@ def test_public_sdk_generates_through_a_two_relay_onion_path(
         assert trace["transport"]["frame_bytes"] == 16_384
         assert [route["relay_hops"] for route in trace["transport"]["routes"]] == [2, 2, 2, 2]
         assert {route["route"] for route in trace["transport"]["routes"]} == {"onion"}
+        for route in trace["transport"]["routes"]:
+            assert route["link_peer"] == "entry relay"
+            assert route["negotiated"]["key_exchange_group"] == "X25519MLKEM768"
+            assert len(route["negotiated"]["peer_certificate_sha256"]) == 64
         assert trace["model"]["share_count"] == 2
         assert trace["model"]["weight_bits"] == 4
         assert trace["model"]["weight_shares"].startswith("seed-expanded")

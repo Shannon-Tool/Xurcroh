@@ -536,6 +536,27 @@ impl TensorClient {
         })
     }
 
+    /// Key-exchange group negotiated by this connection's TLS handshake.
+    fn key_exchange_group(&self) -> PyResult<Option<String>> {
+        let guard = self.inner.lock().map_err(value_error)?;
+        Ok(guard
+            .as_ref()
+            .ok_or_else(|| value_error("client is closed"))?
+            .key_exchange_group())
+    }
+
+    /// SHA-256 of the leaf certificate the peer presented in this handshake.
+    fn peer_certificate_sha256(&self) -> PyResult<Option<Py<PyBytes>>> {
+        let digest = {
+            let guard = self.inner.lock().map_err(value_error)?;
+            guard
+                .as_ref()
+                .ok_or_else(|| value_error("client is closed"))?
+                .peer_certificate_sha256()
+        };
+        Python::attach(|py| Ok(digest.map(|value| PyBytes::new(py, &value).into())))
+    }
+
     fn send(
         &self,
         request_id: [u8; 16],
