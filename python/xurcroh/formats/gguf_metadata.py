@@ -11,6 +11,15 @@ def _required(metadata: dict[str, Any], key: str) -> Any:
     return metadata[key]
 
 
+def _first_int(value: Any) -> int:
+    # Some families record one feed-forward width per layer.
+    if isinstance(value, list):
+        if not value:
+            raise ModelLoadError("GGUF feed-forward length list is empty")
+        value = value[0]
+    return int(value)
+
+
 def gguf_to_transformers_config(metadata: dict[str, Any]) -> dict[str, Any]:
     architecture = str(_required(metadata, "general.architecture"))
     prefix = f"{architecture}."
@@ -20,7 +29,7 @@ def gguf_to_transformers_config(metadata: dict[str, Any]) -> dict[str, Any]:
         "model_type": architecture,
         "hidden_size": hidden,
         "num_hidden_layers": int(_required(metadata, prefix + "block_count")),
-        "intermediate_size": int(_required(metadata, prefix + "feed_forward_length")),
+        "intermediate_size": _first_int(_required(metadata, prefix + "feed_forward_length")),
         "max_position_embeddings": int(_required(metadata, prefix + "context_length")),
         "num_attention_heads": heads,
         "num_key_value_heads": int(metadata.get(prefix + "attention.head_count_kv", heads)),
