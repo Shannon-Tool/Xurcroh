@@ -44,7 +44,7 @@ cargo test --workspace
 .venv/bin/python scripts/fortress/validate_handoff.py
 ```
 
-The final command validates 22 offline commands: 21 YAML ladder forms plus the real multi-model smoke command. It does not contact a provider or resolve unresolved artifacts.
+The final command validates 24 offline commands: 23 YAML ladder forms plus the real multi-model smoke command. It does not contact a provider or resolve unresolved artifacts.
 
 On resource-constrained hosts, run tests sequentially with an explicit process memory cap (for example `ulimit -v 5000000`) and persistent logs. Do not run managed video, multi-model, full-relay, or full-suite workloads concurrently. Do not retry the same expensive test blindly: preserve the log, identify the failing phase, and reduce the fixture or move to a larger host. Terminate only test-owned processes and confirm that no workers or relay forwards remain. Optimized official EXL reconstruction is selected automatically on CUDA hosts; exact CPU reference decoders remain available for local verification.
 
@@ -64,6 +64,15 @@ PYTHONPATH=.:python .venv/bin/python scripts/formats/generate_exl_fixtures.py /s
 
 Decode each generated fixture through `xurcroh.formats.open_checkpoint` before compiling. Physical EXL2/EXL3 runs must compare reconstructed matrices against the official pinned ExLlama extension. The local trellis fixtures are not a substitute for that differential check.
 
+GGUF graph semantics are accepted per `general.architecture` only (`llama`, `qwen2`, `qwen3`, `qwen3moe`, `gemma3`, `gemma4`; see `docs/models.md`). Before any GGUF rung, run the export differential on the exact files being deployed and keep its JSON with the rung evidence:
+
+```bash
+.venv/bin/python scripts/formats/gguf_export_differential.py /secure/models/model.gguf /secure/models/source-checkpoint \
+  --tolerance 1e-6 --logits --output /secure/evidence/gguf-differential.json
+```
+
+Use `--tolerance` appropriate to the encoding (zero or 1e-6 for F32/F16/BF16; quantized encodings need the measured quantization error and are a quality measurement, not an equality check). A nonzero exit, a configuration difference, or a missing tensor blocks the rung. An architecture outside the list fails closed at `open_architecture`; adding one requires a new family entry justified by a passing differential, not a name-table edit. DeepSeek GGUF exports are not accepted; use the Safetensors checkpoint for L6.
+
 The L4 dense selection is `Qwen/Qwen1.5-110B-Chat` under the Tongyi Qianwen license. L6 uses `deepseek-ai/DeepSeek-V3` under the DeepSeek model license and requires an operator-measured `verification.reap_saliency_path`. Its JSON maps each layer index to every original expert index and finite nonnegative saliency score (`configs/ladders/reap-saliency.example.json` shows only the schema, not production scores). Complete per-layer scores are mandatory. Pruning reads only retained experts, remaps them contiguously, restricts official/client routers consistently, and measures quality against the original unpruned model. Do not provision L6 with example or incomplete scores.
 
 ## 4. Required topology and resource preflight
@@ -79,6 +88,8 @@ Run `client.preflight()` before starting roles. Record:
 - expected activation/result bandwidth and relay mode;
 - provider, country, CPU vendor, GPU model, VRAM, and independent machine IDs.
 
+Connection count is a resource too. The trusted client opens one authenticated session, one QUIC connection, and one cover-traffic loop per operation per role, and a role worker's session limit scales with its assigned operations (four per operation, minimum 64). A dense 35-layer model has a few hundred operations; a 128-expert MoE has tens of thousands. Before L2, L5, and L6, record the operation count from `discover_fortress_operations`, the client's open-file limit (`ulimit -n`), thread count, and steady-state cover-traffic bandwidth, and raise the limits or reduce the operation set deliberately. This scaling has only been exercised up to roughly one hundred operations per worker on loopback.
+
 Reject overcommit before role launch. Do not treat four roles on one machine as independent-host evidence. A relay forwards opaque datagrams; it is not an additional confidentiality layer.
 
 Vast workers use the tracked provider state. Azure, Google, Alibaba, OCI, AWS, and IBM adapters are built into `ProviderRegistry.with_defaults()`; additional providers register a `ProviderAdapter` through the `xurcroh.providers` Python entry-point group. Teardown always requires `destroy`, `charges`, and `remaining` so cost and remaining-instance evidence cannot be skipped. A fully described external worker can omit a Vast state record but must supply `provider_instance_id`, `machine_id`, `provider_id`, `geolocation`, `cpu_vendor`, SSH connection fields, `public_host`, and `tls_port`. Unknown providers or incomplete verification fail closed. `startup_concurrency` defaults to 2 across uploads, discovery, role startup, and relay setup. V2 reports include live per-role CPU, RSS, and process-attributed GPU memory collected before shutdown.
@@ -91,6 +102,14 @@ Run `scripts/fortress/tee_provider_smoke.py` once per selected provider before d
 
 Complete each gate before spending on the next. Preserve signed evidence, raw JSON, actual worker exit codes, bandwidth, latency, attack results, cost ledger, and teardown proof.
 
+0. **Theory gate (no provider):** every text and media manifest entry with a miniature checkpoint of its own model family through four loopback role workers and the real verifier. This is local evidence only and must be green on the delivered SHA before any spend:
+
+   ```bash
+   .venv/bin/python -m pytest -m slow tests/fortress/test_ladder_theory.py
+   .venv/bin/python scripts/fortress/fetch_tiny_pipelines.py /secure/tiny-pipelines
+   XURCROH_TINY_PIPELINES=/secure/tiny-pipelines .venv/bin/python -m pytest -m slow tests/fortress/test_media_ladder_theory.py
+   ```
+
 1. **F0/M0:** miniature text and DiT, four local processes, exact Fortress-reference outputs and measured traffic (`configs/ladders/f0-m0.yaml`).
 2. **Format smoke:** Qwen3-0.6B GGUF, then EXL2 and EXL3 (`formats-smoke.yaml`, `exl2-l0.yaml`, `exl3-l0.yaml`).
 3. **L0:** Gemma 4 E2B on four independent hosts (`gguf-l0.yaml` for the GGUF path).
@@ -99,8 +118,8 @@ Complete each gate before spending on the next. Preserve signed evidence, raw JS
 6. **L3:** Gemma 4 31B and Qwen 3.8 27B, including VLM image/audio substeps where supported.
 7. **M1:** small real image DiT, few steps.
 8. **M2:** Flux and Qwen-Image, text-to-image, image-to-image, and masked editing.
-9. **M3:** Wan small text-to-video and image-to-video.
-10. **M4:** Wan large multi-denoiser execution and MiniMax/Video DeltaNet recurrent state and supported audio/video paths.
+9. **M3:** Wan 2.1 text-to-video (1.3B) and image-to-video (14B 480P). These are different checkpoints: a text-to-video denoiser takes 16 input channels and cannot run the image-to-video pipeline, which needs 36.
+10. **M4:** Wan 2.2 two-denoiser text-to-video (T2V-A14B) and image-to-video (I2V-A14B), then MiniMax/Video DeltaNet recurrent state and supported audio/video paths. MiniMax H3 has no public miniature pipeline and has never executed locally; treat its first run as discovery.
 11. **L4–L6:** only after resource and network measurement supports the selected 100–300B dense, large MoE, and approximately 1T REAP-pruned models.
 
 For a single-rung manifest, the command shape is:
@@ -127,7 +146,7 @@ Each rung requires:
 - VLM text/image/audio conditioning where implemented;
 - exact local-versus-grid latent equality for image/video, plus deterministic PNG/MP4 and supported audio checks;
 - non-square, odd-sized, and chunked temporal shapes for media;
-- image-to-image, masked editing, and image-to-video workflow checks where the pinned pipeline exposes them. `verification.workflows` selects the required gates and `verification.workflow_pipelines` maps each to an installed Diffusers class; current manifests include Flux/Qwen inpainting and Wan image-to-video. The verifier executes every selected workflow through local, remote, original, and public-SDK paths and rejects unsupported parameters rather than skipping them.
+- image-to-image, masked editing, and image-to-video workflow checks where the pinned pipeline exposes them. `verification.workflows` selects the required gates and `verification.workflow_pipelines` maps each to an installed Diffusers class; current manifests include Flux/Qwen image-to-image and inpainting and Wan image-to-video. Qwen-Image image-to-image uses `QwenImageImg2ImgPipeline`; `QwenImageEditPipeline` belongs to the separate Qwen-Image-Edit checkpoint and cannot load from `Qwen/Qwen-Image`. The verifier executes every selected workflow through local, remote, original, and public-SDK paths and rejects unsupported parameters rather than skipping them.
 
 Retain model/output quality metrics and actual failures. Performance is measured, never a pass criterion. Text verification releases the compiled reference before loading the original model; media releases local/remote pipelines before original-model evaluation. V2 evidence includes per-phase timing and client RSS so large-model memory can be reviewed instead of assumed. If the original model does not fit alongside the trusted verifier after those releases, run the same pinned original-model quality comparison on a separate trusted reference host and join its signed result to the rung evidence; never skip or weaken that comparison.
 

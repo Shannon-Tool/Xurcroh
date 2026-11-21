@@ -18,7 +18,28 @@ All adapters are checkpoint-driven. A strict deployment must pin an immutable ch
 
 ## Quantized container support
 
-The Fortress compiler accepts Safetensors, GGUF v1–v3, EXL2/GPTQ, and EXL3 on the trusted client. GGUF covers all 37 current type codes, shards, metadata arrays, embedded tokenizers, and both endian modes. EXL2 covers mixed-width groups and activation ordering; EXL3 covers integer/fractional trellis rates, all three codebooks, and sign/Hadamard restoration. Public SDK registration selects Fortress automatically and supports synchronous, streaming, and asynchronous chat. Unknown future graph semantics require an explicit architecture adapter and fail closed. Exact Fortress-reference equality and source-model quality are separate evidence; official full-checkpoint and official CUDA decoder validation remain pending.
+The Fortress compiler accepts Safetensors, GGUF v1–v3, EXL2/GPTQ, and EXL3 on the trusted client. Container decoding and graph semantics are separate questions, and only combinations with direct evidence are accepted; everything else fails closed with the reason.
+
+**Containers.** GGUF covers all 37 current type codes, shards, metadata arrays, embedded tokenizers, and both endian modes. EXL2 covers mixed-width groups and activation ordering; EXL3 covers integer/fractional trellis rates, all three codebooks, and sign/Hadamard restoration. Official ExLlama CUDA decoder comparison remains hardware-pending.
+
+**GGUF graph semantics.** A GGUF tensor name does not say which graph consumes it, so each `general.architecture` needs an explicit entry in `python/xurcroh/architectures/gguf_families.py` recording its tensor names, stored-value conventions, and Transformers configuration. An entry exists only after `scripts/formats/gguf_export_differential.py` compared an official export against its source checkpoint:
+
+| `general.architecture` | Executed as | Official export compared | Result |
+|---|---|---|---|
+| `llama` (Llama, Mistral, SmolLM, and other models llama.cpp exports under this name) | `llama` | SmolLM2-135M-Instruct F16 | Config equal; 272 tensors within 3e-8; logits within 5e-5 |
+| `qwen2` | `qwen2` | Qwen2.5-0.5B-Instruct F16 (community conversion) | Config equal; 290 tensors within 3e-8; logits within 4e-5 |
+| `qwen3` | `qwen3` | Qwen3-0.6B BF16 | Config equal; 310 tensors exact; logits exact |
+| `qwen3moe` | `qwen3_moe` | Qwen3-30B-A3B Q2_K against the first source shard | Config equal; names and shapes of 1,063 tensors match; values are 2-bit so not compared exactly |
+| `gemma3` | `gemma3_text` | Gemma 3 270M F16 | Config equal; 236 tensors within 3e-8; logits within 4e-4 on a ±132 scale |
+| `gemma4` | `gemma4_text` | Gemma 4 E2B BF16 | Config equal; 600 tensors exact; logits exact |
+
+Conventions these comparisons established and the reader now applies: Llama-family query/key rows are stored in llama.cpp's interleaved rotary order; Gemma 3 norm weights are stored plus one; Gemma uses sandwich norms with their own names; Qwen2 carries query/key/value biases; tied output heads are omitted from the file. The official Qwen2.5-0.5B FP16 GGUF differs from the current source repository in its weight values (embeddings and biases match), so a community conversion of the current weights was used for that family.
+
+Not accepted as GGUF: `deepseek2` (MLA and shared-expert tensors are not mapped; use the Safetensors checkpoint), learned-position, token-type, parallel-residual, and bias layouts outside the table, and every architecture without an entry. Vision and audio tower tensors are left on the client and are not part of the GGUF text graph.
+
+**EXL2/EXL3 graph semantics.** These containers keep the source `config.json`, so the graph is the checkpoint's own Transformers model type. Miniature Llama, Mistral, Qwen2, Qwen3, and Gemma 3 checkpoints execute exactly like their decoded weights through a same-seed Safetensors control. Projection biases stay on the client and are required when the graph defines them; parameters the graph does not define are rejected. A model type Transformers cannot build has no decoder and is rejected.
+
+Public SDK registration selects Fortress automatically and supports synchronous, streaming, and asynchronous chat. Exact Fortress-reference equality and source-model quality are separate evidence. Full-size quantized execution through a physical grid remains pending.
 
 ## Checkpoint corrections
 
