@@ -29,6 +29,7 @@ from xurcroh.runtime.stage_sessions import SESSION_ENVELOPE_BYTES, StageSessionS
 MAX_ROLE_PACKET_BYTES = 16 * 1024 * 1024
 MAX_ACTIVATION_ELEMENTS = 1_048_576
 MAX_OPERATION_NAME_BYTES = 1024
+SESSIONS_PER_OPERATION = 4
 
 
 class FortressRoleWorker:
@@ -41,7 +42,7 @@ class FortressRoleWorker:
         private_key: bytes,
         client_ca: bytes,
         address: str = "127.0.0.1:0",
-        session_capacity: int = 64,
+        session_capacity: int | None = None,
         rotation_interval: int = 64,
         frame_bytes: int = DEFAULT_FRAME_BYTES,
         onion_private_key: bytes | None = None,
@@ -84,6 +85,14 @@ class FortressRoleWorker:
             raise ValueError("all operations in one role must use the same weight-share index")
         self.weight_index = weight_indices.pop()
         private = X25519PrivateKey.from_private_bytes(recipient_private_key)
+        # Every operation holds its own session with a role, so a fixed bound
+        # rejects any model with more operations than the bound. The default
+        # scales with the assigned operations and leaves headroom for
+        # concurrent clients; it stays an explicit, finite limit.
+        if session_capacity is None:
+            session_capacity = max(64, SESSIONS_PER_OPERATION * len(self.artifacts))
+        if session_capacity < len(self.artifacts):
+            raise ValueError("session capacity is below the number of assigned operations")
         self.sessions = StageSessionStore(private, self.weight_index, capacity=session_capacity)
         self._session_completed: dict[str, int] = {}
         self._active_sessions: set[str] = set()
