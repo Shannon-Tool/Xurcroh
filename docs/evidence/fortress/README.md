@@ -18,3 +18,7 @@ The byte counts include encoded tensor-frame and encrypted session-envelope byte
 The reports include mixed real/decoy calls, a simulated external observation of an actually transmitted canary share, observer-set revocation, and algebraic collusion/reconstruction results. The canary observation is a local security test, not an independent detection service; attribution names the observer set and does not prove which participant leaked. The attack results do not establish information-theoretic secrecy beyond the stated independent-uniform-share assumptions.
 
 A dirty-tree report is development evidence, not a clean-reproducibility attestation. No physical GPU, independent-host, production-security, or external-audit claim is attached to these files.
+
+## GGUF export differential
+
+`gguf-export-differential.json` aggregates the reports of `scripts/formats/gguf_export_differential.py` for one public export of each accepted GGUF family against its source Transformers checkpoint, with the exact repositories and revisions compared. Each report checks the derived configuration, every text tensor, and (where the encoding is lossless) logits on random token inputs. It runs entirely on the trusted client; no worker, share grid, or GPU is involved, so it is evidence about format decoding and graph mapping only. The Qwen3 MoE entry uses a 2-bit export against a single source shard and establishes configuration, names, and shapes rather than value equality.

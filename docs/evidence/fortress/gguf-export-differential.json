@@ -1,0 +1,151 @@
+{
+  "schema": "xurcroh-gguf-export-differential-v1",
+  "tool": "scripts/formats/gguf_export_differential.py",
+  "source_revision": "22dcac625b17ba700a7822f9c43cad81b7629928",
+  "host": "rented single CPU host, trusted-client tooling only; no worker or GPU involved",
+  "hardware_validated": false,
+  "reports": {
+    "llama-smollm2-135m": {
+      "gguf": "bartowski/SmolLM2-135M-Instruct-GGUF@09816acd5d99df7be770d85ea30822623dab342c:SmolLM2-135M-Instruct-f16.gguf",
+      "source": "HuggingFaceTB/SmolLM2-135M-Instruct@12fd25f77366fa6b3b4b768ec3050bf629380bac",
+      "architecture": "llama",
+      "model_type": "llama",
+      "encodings": [
+        "F16",
+        "F32"
+      ],
+      "passed": true,
+      "config_differences": [],
+      "tensors_compared": 272,
+      "missing_in_gguf": 0,
+      "tensors_absent_from_source_subset": 0,
+      "max_abs_error": 2.9802322387695312e-08,
+      "max_abs_error_tensor": "model.embed_tokens.weight",
+      "logits": {
+        "max_abs_error": 4.57763671875e-05,
+        "argmax_agreement": 1.0,
+        "reference_logit_scale": 33.33546829223633,
+        "unexpected_keys": 0,
+        "missing_keys": 0
+      }
+    },
+    "qwen2-qwen2.5-0.5b": {
+      "gguf": "bartowski/Qwen2.5-0.5B-Instruct-GGUF@41ba88dbac95fed2528c92514c131d73eb5a174b:Qwen2.5-0.5B-Instruct-f16.gguf",
+      "source": "Qwen/Qwen2.5-0.5B-Instruct@7ae557604adf67be50417f59c2c2f167def9a775",
+      "architecture": "qwen2",
+      "model_type": "qwen2",
+      "encodings": [
+        "F16",
+        "F32"
+      ],
+      "passed": true,
+      "config_differences": [],
+      "tensors_compared": 290,
+      "missing_in_gguf": 0,
+      "tensors_absent_from_source_subset": 0,
+      "max_abs_error": 2.9802322387695312e-08,
+      "max_abs_error_tensor": "model.embed_tokens.weight",
+      "logits": {
+        "max_abs_error": 3.62396240234375e-05,
+        "argmax_agreement": 1.0,
+        "reference_logit_scale": 22.39237403869629,
+        "unexpected_keys": 0,
+        "missing_keys": 0
+      }
+    },
+    "qwen3-0.6b": {
+      "gguf": "unsloth/Qwen3-0.6B-GGUF@50968a4468ef4233ed78cd7c3de230dd1d61a56b:Qwen3-0.6B-BF16.gguf",
+      "source": "Qwen/Qwen3-0.6B@c1899de289a04d12100db370d81485cdf75e47ca",
+      "architecture": "qwen3",
+      "model_type": "qwen3",
+      "encodings": [
+        "BF16",
+        "F32"
+      ],
+      "passed": true,
+      "config_differences": [],
+      "tensors_compared": 310,
+      "missing_in_gguf": 0,
+      "tensors_absent_from_source_subset": 0,
+      "max_abs_error": 0.0,
+      "max_abs_error_tensor": "",
+      "logits": {
+        "max_abs_error": 0.0,
+        "argmax_agreement": 1.0,
+        "reference_logit_scale": 20.710655212402344,
+        "unexpected_keys": 0,
+        "missing_keys": 0
+      }
+    },
+    "gemma3-270m": {
+      "gguf": "unsloth/gemma-3-270m-it-GGUF@c90975dbd40c0c7b275fefaae758c3415c906238:gemma-3-270m-it-F16.gguf",
+      "source": "unsloth/gemma-3-270m-it@23cf460f6bb16954176b3ddcc8d4f250501458a9",
+      "architecture": "gemma3",
+      "model_type": "gemma3_text",
+      "encodings": [
+        "F16",
+        "F32"
+      ],
+      "passed": true,
+      "config_differences": [],
+      "tensors_compared": 236,
+      "missing_in_gguf": 0,
+      "tensors_absent_from_source_subset": 0,
+      "max_abs_error": 2.9802322387695312e-08,
+      "max_abs_error_tensor": "model.embed_tokens.weight",
+      "logits": {
+        "max_abs_error": 0.0003509521484375,
+        "argmax_agreement": 1.0,
+        "reference_logit_scale": 131.78343200683594,
+        "unexpected_keys": 0,
+        "missing_keys": 0
+      }
+    },
+    "gemma4-e2b": {
+      "gguf": "unsloth/gemma-4-E2B-it-GGUF@0314792d7f1f7e229411f620751375812bb9faf2:gemma-4-E2B-it-BF16.gguf",
+      "source": "google/gemma-4-E2B-it@4adf15748de9e1a0097b6274cee9c15836c41c37",
+      "architecture": "gemma4",
+      "model_type": "gemma4_text",
+      "encodings": [
+        "BF16",
+        "F32"
+      ],
+      "passed": true,
+      "config_differences": [],
+      "tensors_compared": 600,
+      "missing_in_gguf": 0,
+      "tensors_absent_from_source_subset": 0,
+      "max_abs_error": 0.0,
+      "max_abs_error_tensor": "",
+      "logits": {
+        "max_abs_error": 0.0,
+        "argmax_agreement": 1.0,
+        "reference_logit_scale": 29.614431381225586,
+        "unexpected_keys": 20,
+        "missing_keys": 0
+      },
+      "note": "logit unexpected_keys are key/value tensors of shared-KV layers that the text graph does not instantiate"
+    },
+    "qwen3moe-30b-a3b-q2k": {
+      "gguf": "unsloth/Qwen3-30B-A3B-GGUF@d5b1d57bd0b504ac62ae6c725904e96ef228dc74:Qwen3-30B-A3B-Q2_K.gguf",
+      "source": "Qwen/Qwen3-30B-A3B@ad44e777bcd18fa416d9da3bd8f70d33ebb85d39 (config.json and model-00001-of-00016.safetensors only)",
+      "architecture": "qwen3moe",
+      "model_type": "qwen3_moe",
+      "encodings": [
+        "F32",
+        "Q2_K",
+        "Q3_K",
+        "Q4_K",
+        "Q6_K"
+      ],
+      "passed": true,
+      "config_differences": [],
+      "tensors_compared": 1063,
+      "missing_in_gguf": 0,
+      "tensors_absent_from_source_subset": 17804,
+      "max_abs_error": 0.1806640625,
+      "max_abs_error_tensor": "model.layers.1.mlp.experts.68.down_proj.weight",
+      "note": "2-bit encoding compared against one source shard with a 1.0 tolerance: establishes configuration, names and shapes, not value equality"
+    }
+  }
+}
