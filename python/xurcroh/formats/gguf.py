@@ -16,7 +16,7 @@ from xurcroh.formats.base import TensorDescriptor, TensorReader, fingerprint_sou
 from xurcroh.formats.gguf_metadata import gguf_to_transformers_config
 
 MAX_RECORDS = 100_000
-MAX_ARRAY_VALUES = 1_000_000
+MAX_ARRAY_VALUES = 8_000_000
 MAX_METADATA_DEPTH = 8
 ByteOrder = Literal["<", ">"]
 
