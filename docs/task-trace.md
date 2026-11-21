@@ -61,8 +61,10 @@ because a failed check aborts the request and quarantines the role.
   changed after logging, but it is not public and has no independent witness, so the last row of
   the table above is not yet delivered. A hosted log service and consistency checking between tree
   heads are still to be built on the same proofs.
-- Link and session suites in `transport` are the configured ones. The negotiated TLS key-exchange
-  group is not yet read from the live handshake.
+- Each remote Fortress route reports under `negotiated` the TLS key-exchange group and the SHA-256
+  of the peer's leaf certificate, read from the live connection. With onion routing the peer is the
+  entry relay (`link_peer`), so the trace does not show what the later hops negotiated. The session
+  suite string is the configured one.
 - Workers do not yet sign anything; worker labels such as country and CPU vendor are operator
   declarations and are recorded under `declared`.
 - Image and video traces record size, steps, strength, frames, frame rate, and the effective seed,
