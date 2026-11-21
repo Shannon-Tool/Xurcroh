@@ -14,7 +14,7 @@ def test_all_public_ladder_templates_validate_offline() -> None:
         for path in sorted((root / "configs/ladders").glob("*.yaml"))
         for command in validate(path)
     ]
-    assert len(commands) == 21
+    assert len(commands) == 23
     assert all("run_ladder.py" in command for command in commands)
     assert all("--model" in command for command in commands if "text-ladder" in command)
     roots = [
@@ -23,7 +23,7 @@ def test_all_public_ladder_templates_validate_offline() -> None:
         if "--output /secure/evidence/f0-" in command or "--output /secure/evidence/m0-" in command
     ]
     non_roots = [command for command in commands if command not in roots]
-    assert len(non_roots) == 19
+    assert len(non_roots) == 21
     assert all("--previous-evidence" in command for command in non_roots)
     assert all("--evidence-public-key" in command for command in non_roots)
     assert all("--previous-evidence" not in command for command in roots)
