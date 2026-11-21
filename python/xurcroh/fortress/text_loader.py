@@ -120,7 +120,7 @@ def load_text_decoder(
         name
         for name, module in model.named_modules()
         if isinstance(module, FortressLinear)
-        for name in (f"{name}.weight", f"{name}.bias")
+        for name in (f"{name}.weight", f"{name}.bias", f"{name}.dtype_anchor")
     )
     allowed_missing.update(("model.embed_tokens.weight", "lm_head.weight"))
     missing = set(result.missing_keys) - allowed_missing

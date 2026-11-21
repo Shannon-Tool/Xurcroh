@@ -33,8 +33,14 @@ class FortressLinear(torch.nn.Module):
         bias: torch.Tensor | None = None,
         activation_bits: int = 12,
         reference_mode: bool = False,
+        dtype: torch.dtype = torch.float32,
     ) -> None:
         super().__init__()
+        # The weight lives in the grid, so this module would otherwise have no
+        # parameters. Host graphs read a submodule's dtype from its first
+        # parameter (the Wan time embedder does); an empty parameter keeps
+        # that query, and ``.to(dtype)``, working without holding any weight.
+        self.dtype_anchor = torch.nn.Parameter(torch.empty(0, dtype=dtype), requires_grad=False)
         if not 8 <= activation_bits <= 12:
             raise ValueError("Fortress activations must use 8-12 bits")
         self.name = name
@@ -212,6 +218,7 @@ def replace_linear_layers(
                 operation,
                 grid_client=None if grid_clients is None else grid_clients[operation_name],
                 bias=bias,
+                dtype=child.weight.dtype,
             )
             setattr(module, name, replacement)
         else:
