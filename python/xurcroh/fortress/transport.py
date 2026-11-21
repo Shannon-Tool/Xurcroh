@@ -8,7 +8,7 @@ import secrets
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -69,11 +69,77 @@ class MutualTLSIdentity:
 
 
 @dataclass(frozen=True)
+class RelayHop:
+    address: str
+    public_key: bytes
+
+
+@dataclass(frozen=True)
 class RelayRoute:
+    """An onion path: entry relay, any further relays, then the role worker.
+
+    Each relay can decrypt only its own layer, which names the next hop. The entry
+    relay sees the client address and the exit relay sees the worker address.
+    """
+
     relay_address: str
     worker_address: str
     relay_public_key: bytes
     worker_public_key: bytes
+    extra_hops: tuple[RelayHop, ...] = ()
+
+    @property
+    def hop_count(self) -> int:
+        return 1 + len(self.extra_hops)
+
+    def onion_hops(self) -> list[tuple[bytes, str]]:
+        relays = [RelayHop(self.relay_address, self.relay_public_key), *self.extra_hops]
+        targets = [*(hop.address for hop in relays[1:]), self.worker_address]
+        hops = [
+            (relay.public_key, f"quic://{target}")
+            for relay, target in zip(relays, targets, strict=True)
+        ]
+        return [*hops, (self.worker_public_key, "")]
+
+
+def relay_route_from_labels(
+    labels: Mapping[str, str], worker_address: str, *, worker: str
+) -> RelayRoute | None:
+    """Build the onion path for a role from its worker labels.
+
+    ``onion_public`` is the worker's onion key and ``relay_path`` is a JSON list of
+    ``{"address", "public_key"}`` hops, entry relay first. Both or neither must be set.
+    """
+
+    from xurcroh.errors import ConfigurationError
+
+    onion_public = labels.get("onion_public")
+    relay_path = labels.get("relay_path")
+    if onion_public is None and relay_path is None:
+        return None
+    try:
+        if onion_public is None or relay_path is None:
+            raise ValueError("onion_public and relay_path must be set together")
+        worker_key = bytes.fromhex(onion_public)
+        document = json.loads(relay_path)
+        if not isinstance(document, list) or not document:
+            raise ValueError("relay_path must list at least one hop")
+        hops = [RelayHop(str(hop["address"]), bytes.fromhex(hop["public_key"])) for hop in document]
+        if len(worker_key) != 32 or any(
+            len(hop.public_key) != 32 or not hop.address for hop in hops
+        ):
+            raise ValueError("onion keys must be 32 bytes and hop addresses non-empty")
+    except (KeyError, TypeError, ValueError) as error:
+        raise ConfigurationError(
+            f"worker {worker} has an invalid onion relay route: {error}"
+        ) from error
+    return RelayRoute(
+        relay_address=hops[0].address,
+        worker_address=worker_address,
+        relay_public_key=hops[0].public_key,
+        worker_public_key=worker_key,
+        extra_hops=tuple(hops[1:]),
+    )
 
 
 @dataclass(frozen=True)
@@ -477,13 +543,7 @@ class _RoleTransport:
         packet = pad_packet(self.session.wire_packet(sealed), self._frame_bytes)
         if self.role.relay is not None:
             packet = self._quic.seal_onion(
-                [
-                    (
-                        self.role.relay.relay_public_key,
-                        f"quic://{self.role.relay.worker_address}",
-                    ),
-                    (self.role.relay.worker_public_key, ""),
-                ],
+                self.role.relay.onion_hops(),
                 secrets.token_bytes(32),
                 0,
                 packet,

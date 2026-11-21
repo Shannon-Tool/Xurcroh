@@ -6,9 +6,9 @@ import threading
 from typing import Any
 
 from xurcroh.errors import ProtocolError
-from xurcroh.fortress.transport import MutualTLSIdentity, RelayRoute
+from xurcroh.fortress.transport import MutualTLSIdentity, RelayHop, RelayRoute
 
-__all__ = ["ObliviousRelay", "RelayRoute"]
+__all__ = ["ObliviousRelay", "RelayHop", "RelayRoute"]
 
 
 class ObliviousRelay:
