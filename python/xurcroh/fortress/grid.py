@@ -20,6 +20,13 @@ class WeightShare:
     provider_id: str
     replica_provider_id: str | None = None
     seed: bytes | None = field(default=None, repr=False)
+    extra_challenges: tuple[ExactFreivaldsChallenge, ...] = ()
+
+    @property
+    def challenges(self) -> tuple[ExactFreivaldsChallenge, ...]:
+        """Every independent challenge a worker result must satisfy."""
+
+        return (self.challenge, *self.extra_challenges)
 
 
 class RoleExecutionError(ValueError):

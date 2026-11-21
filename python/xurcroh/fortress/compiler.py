@@ -19,6 +19,10 @@ from xurcroh.fortress.arithmetic import (
 from xurcroh.fortress.grid import WeightShare
 from xurcroh.fortress.storage import DispersedShard, disperse_shard
 
+# Each challenge bounds the chance of accepting a wrong worker result by 1/p (about 2^-32);
+# independent challenges multiply, so two give about 2^-64.
+FREIVALDS_ROUNDS = 2
+
 
 @dataclass(frozen=True)
 class StoredWeightShare:
@@ -90,21 +94,29 @@ def compile_operation(
     shares: dict[int, WeightShare] = {}
     storage: dict[int, StoredWeightShare] = {}
     for index, matrix in enumerate(grid.shares):
-        if challenge_seed is None:
-            challenge_values = [secrets.randbelow(PRIME_MODULUS) for _ in range(matrix.shape[0])]
-            challenge_vector = torch.tensor(challenge_values, dtype=torch.int64)
-        else:
-            generator = torch.Generator().manual_seed(challenge_seed + index)
-            challenge_vector = torch.randint(
-                0, PRIME_MODULUS, (matrix.shape[0],), generator=generator, dtype=torch.int64
-            )
-        challenge = freivalds_challenge(matrix, r=challenge_vector)
+        challenges = []
+        for round_index in range(FREIVALDS_ROUNDS):
+            if challenge_seed is None:
+                challenge_values = [
+                    secrets.randbelow(PRIME_MODULUS) for _ in range(matrix.shape[0])
+                ]
+                challenge_vector = torch.tensor(challenge_values, dtype=torch.int64)
+            else:
+                generator = torch.Generator().manual_seed(
+                    challenge_seed + index + round_index * 2**31
+                )
+                challenge_vector = torch.randint(
+                    0, PRIME_MODULUS, (matrix.shape[0],), generator=generator, dtype=torch.int64
+                )
+            challenges.append(freivalds_challenge(matrix, r=challenge_vector))
+        challenge = challenges[0]
         from xurcroh.fortress.arithmetic import seeded_share_seed
 
         shares[index] = WeightShare(
             weight_index=index,
             matrix=matrix if materialize_shares else None,
             challenge=challenge,
+            extra_challenges=tuple(challenges[1:]),
             provider_id=f"weight-share-{index}",
             seed=(
                 seeded_share_seed(seed, index)
