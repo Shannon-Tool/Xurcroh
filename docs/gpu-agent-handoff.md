@@ -168,6 +168,8 @@ EXL2/EXL3 validation must include an official-extension differential run. GGUF v
 
 Exercise direct QUIC and the datagram fallback independently. Measure bytes and time for compile, connection, each operation, queueing, kernel execution, and public SDK completion.
 
+Known open defect: `tests/integration/test_managed_ssh.py::test_managed_role_crash_restarts_and_resumes_inference` is host-dependent. It passed on the development host and failed on a rented container CPU host with a QUIC handshake timeout after the role was killed, at both the delivered revision and an earlier one. Reproduce and resolve it on a CPU host before relying on SIGKILL recovery on rented GPUs; do not record recovery as validated until it passes there.
+
 Test multiple independent models, multi-user isolation, cancellation, timeouts, backpressure, worker SIGKILL/restart, connection interruption, packet delay/loss, stale sessions, and clean shutdown. Test aggregate-memory rejection before role launch. Preserve proof that all role processes and relay forwards terminate. The text ladder verifier exercises streaming, acknowledged cancellation, post-cancellation recovery, and concurrent public-SDK requests. Run the separate real multi-model gate with `python scripts/fortress/multi_model_smoke.py --config /secure/multi-model.json --output /secure/evidence/multi-model-smoke.json`; its configuration registers at least two real models and can use the managed SSH lifecycle.
 
 Run on physical GPUs:
