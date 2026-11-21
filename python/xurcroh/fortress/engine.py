@@ -641,6 +641,28 @@ class FortressEngine:
         current = self.transport_metrics()
         return {name: value - baseline.get(name, 0) for name, value in current.items()}
 
+    def _handshakes(self, workers: int) -> dict[str, dict[str, str | None]]:
+        """What each worker link negotiated, read from the live TLS connections."""
+
+        facts: dict[str, dict[str, str | None]] = {}
+        for client in self._clients.values():
+            for transport in client._transports.values():
+                name = transport.role.provider_id
+                link = getattr(transport, "client", None)
+                if name in facts or link is None:
+                    continue
+                try:
+                    digest = link.peer_certificate_sha256()
+                    facts[name] = {
+                        "key_exchange_group": link.key_exchange_group(),
+                        "peer_certificate_sha256": None if digest is None else bytes(digest).hex(),
+                    }
+                except ValueError:
+                    continue
+            if len(facts) >= workers:
+                break
+        return facts
+
     def trace_facts(self) -> dict[str, Any]:
         """Facts about how this model is split and reached, for a task trace."""
 
@@ -650,6 +672,7 @@ class FortressEngine:
         remote = [worker for worker in self.workers if worker.endpoint != "local://cpu"]
         labels = self.workers[0].labels if self.workers else {}
         routes = []
+        handshakes = self._handshakes(len(remote))
         for worker in remote:
             address = (worker.endpoint or "").removeprefix("quic://")
             route = relay_route_from_labels(worker.labels, address, worker=worker.name)
@@ -658,6 +681,8 @@ class FortressEngine:
                     "worker": worker.name,
                     "route": "direct" if route is None else "onion",
                     "relay_hops": 0 if route is None else route.hop_count,
+                    "link_peer": "worker" if route is None else "entry relay",
+                    "negotiated": handshakes.get(worker.name),
                     "declared": {key: worker.provider[key] for key in sorted(worker.provider)},
                 }
             )

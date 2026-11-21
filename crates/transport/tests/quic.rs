@@ -134,6 +134,7 @@ async fn wrong_pinned_certificate_is_rejected() {
 #[tokio::test]
 async fn mutual_tls_negotiates_hybrid_post_quantum_key_exchange() {
     let (ca_certificate, certificate, key) = ca_signed_identity();
+    let server_leaf = certificate.clone();
     let client_key = rustls::pki_types::PrivatePkcs8KeyDer::from(key.secret_pkcs8_der().to_vec());
     let server = TensorServer::bind_mutual(
         "127.0.0.1:0",
@@ -169,6 +170,16 @@ async fn mutual_tls_negotiates_hybrid_post_quantum_key_exchange() {
     )
     .await
     .unwrap();
+    assert_eq!(
+        client.key_exchange_group().as_deref(),
+        Some("X25519MLKEM768")
+    );
+    let presented = {
+        use sha2::{Digest, Sha256};
+        let digest: [u8; 32] = Sha256::digest(server_leaf.as_ref()).into();
+        digest
+    };
+    assert_eq!(client.peer_certificate_sha256(), Some(presented));
     client.send_frame(&frame(10)).await.unwrap();
     let response = client.receive_frame().await.unwrap();
     assert_eq!(response.sequence, 10);

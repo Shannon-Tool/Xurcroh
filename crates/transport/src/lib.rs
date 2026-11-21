@@ -386,6 +386,29 @@ impl TensorClient {
         })
     }
 
+    /// Key-exchange group negotiated by this connection's TLS handshake.
+    pub fn key_exchange_group(&self) -> Option<String> {
+        let handshake = self
+            .connection
+            .handshake_data()?
+            .downcast::<quinn::crypto::rustls::HandshakeData>()
+            .ok()?;
+        Some(format!("{:?}", handshake.negotiated_key_exchange_group))
+    }
+
+    /// SHA-256 of the leaf certificate the peer presented in this handshake.
+    pub fn peer_certificate_sha256(&self) -> Option<[u8; 32]> {
+        use sha2::{Digest, Sha256};
+        let certificates = self
+            .connection
+            .peer_identity()?
+            .downcast::<Vec<CertificateDer<'static>>>()
+            .ok()?;
+        certificates
+            .first()
+            .map(|leaf| Sha256::digest(leaf.as_ref()).into())
+    }
+
     pub async fn send_frame(&self, frame: &TensorFrame) -> Result<(), TransportError> {
         let encoded = frame
             .encode()
