@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Current verification revision: `544f03b`
+- Current verification revision: `9c18a4d` (rented single CPU host; see “Format, ladder-theory, and rented-CPU evidence”)
 - Local implementation: **standard suite and current static checks passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -244,6 +244,80 @@ Direct provider UDP mappings were created successfully, but both local and gatew
 
 All tracked instances from these attempts were destroyed; a direct provider query returned no remaining instances. Subsequent allocation attempts failed with HTTP 400 while the provider account reported a balance of approximately **-0.08145 USD**. No billing action was attempted. Further physical grid, Qwen, and Gemma validation requires available provider capacity and credit.
 
+
+## Format, ladder-theory, and rented-CPU evidence
+
+This section records work at `9c18a4d24d3f14791a76bff979eeea705877bf78`. All of it ran on one rented CPU host (16 vCPU, 64 GiB, no GPU) with loopback workers. It is local evidence: it does not establish independent-host, GPU, official-checkpoint-quality, or production results, and no ladder rung is claimed as hardware validated.
+
+### What the previous delivered revision got wrong
+
+New regression tests were run against the previously delivered revision `9169e62`: **46 failed, 9 passed**. They pass at `9c18a4d`. The defects they expose had not been observed because quantized formats had only been exercised with a tiny Llama fixture, and ladder verification only with the default L0 manifest and generic UNet pipelines.
+
+| Area | Defect at `9169e62` | Status |
+|---|---|---|
+| GGUF semantics | One shared tensor-name table for every architecture: Qwen3 query/key norms dropped, Gemma sandwich norms mis-mapped, Gemma 3 norm offset ignored, Llama query/key rows left in llama.cpp order, Qwen2 biases and tied heads unsupported | Replaced by per-architecture family entries; unknown architectures and tensors fail closed |
+| GGUF container | Official Gemma 4 E2B export rejected (more than one million tokenizer array entries; per-layer feed-forward list) | Fixed |
+| Quantized loading | Projection biases never installed (uninitialised memory); undefined parameters ignored; a model type without a decoder compiled to a checkpoint with no model | Fixed; all fail closed |
+| Role worker | Fixed 64-session limit with one session per operation: any model with more than 64 operations on a worker failed during execution | Capacity scales with assigned operations |
+| Text ladder verifier | Gemma 4 rungs (L0–L3) crashed on shared-KV state; the Qwen 3.8 rung could not find its grid clients | Fixed |
+| Gemma 4 MoE (L2) | Parallel routed experts with a layer-level router were not compiled | Implemented |
+| DeepSeek REAP (L6) | Router per-expert correction bias not pruned with the experts | Fixed |
+| Media SDK | Public generation failed for every transformer pipeline: packed (Flux, Qwen-Image) and normalised (Wan) latents were decoded as plain VAE latents | Fixed |
+| Wan | Missing `accelerate` and `ftfy`; time embedder failed on parameter-less protected layers; absent optional second denoiser treated as a component | Fixed |
+| Media manifest | Qwen-Image image-to-image mapped to the edit pipeline of another checkpoint; Wan image-to-video requested from text-to-video checkpoints | Corrected; separate pinned Wan I2V entries added |
+
+### GGUF export differential
+
+`scripts/formats/gguf_export_differential.py` compared one public export per accepted family with its source checkpoint. Aggregated output with exact repositories and revisions is in `docs/evidence/fortress/gguf-export-differential.json`.
+
+| Family | Export | Config | Tensors | Max tensor error | Logit error (scale) |
+|---|---|---|---|---|---|
+| `llama` | SmolLM2-135M-Instruct F16 | equal | 272 | 3.0e-8 | 4.6e-5 (33.3) |
+| `qwen2` | Qwen2.5-0.5B-Instruct F16 | equal | 290 | 3.0e-8 | 3.6e-5 (22.4) |
+| `qwen3` | Qwen3-0.6B BF16 | equal | 310 | 0 | 0 (20.7) |
+| `gemma3` | Gemma 3 270M F16 | equal | 236 | 3.0e-8 | 3.5e-4 (131.8) |
+| `gemma4` | Gemma 4 E2B BF16 | equal | 600 | 0 | 0 (29.6) |
+| `qwen3moe` | Qwen3-30B-A3B Q2_K, first source shard | equal | 1,063 names and shapes | not an equality check (2-bit) | not run |
+
+Top-token agreement was 1.0 in every logit comparison. The official Qwen2.5-0.5B FP16 GGUF has weight values that differ from the current source repository, so a community F16 conversion was used for that family. The `qwen3moe` entry does not establish value equality.
+
+### Ladder theory runs
+
+Every manifest entry ran with a miniature checkpoint of its own model family through four loopback role workers and the real `verify_ladder`, including the grid comparison, adversarial checks, original-model comparison, and the public SDK. Text miniatures are constructed in the test; media miniatures are pinned public test pipelines fetched by `scripts/fortress/fetch_tiny_pipelines.py`, with derived two-denoiser and image-to-video compositions.
+
+| Entries | Result at `22dcac6` (clean clone) |
+|---|---|
+| Text L0–L6, ten entries (Gemma 4 dense and MoE, Qwen 3.8, Qwen dense, Qwen3 MoE, DeepSeek V3 with REAP) | 10 passed, `quantized_reference_max_abs_error == 0` |
+| Media M1–M4, seven entries (PixArt-Sigma; Flux and Qwen-Image text-to-image, image-to-image, masked edit; Wan 2.1 and 2.2 text-to-video and image-to-video) | 7 passed, `quantized_reference_max_abs_error == 0` |
+| Media M4 MiniMax H3 | Skipped: no public miniature pipeline; never executed |
+
+Miniature weights are random. These runs show that each rung's graph, placement, verification, and SDK path execute; they say nothing about official-checkpoint quality, memory, bandwidth at scale, or timing. Media miniatures use the smallest sizes their pipelines accept rather than the manifest sizes.
+
+### Suite, slow tests, and builds
+
+| Check | Actual result |
+|---|---|
+| Standard Python suite, clean clone of `9c18a4d` | **726 passed, 0 skipped, 55 deselected, 81.43% coverage** in 515 seconds. At `22dcac6` the same suite reported 723 passed and 3 failed: two from a decoder check that read a missing VAE config (fixed in `4b67680`) and one because the clone had no `.venv` for a helper script |
+| Slow tests, clean clone of `22dcac6` | **28 passed, 1 failed, 1 skipped** in 3,404 seconds. Passing for the first time on a host with enough memory: two-model managed inference, complete 12-role managed datagram-tunnel inference, and managed video generation success. The failure is `test_managed_role_crash_restarts_and_resumes_inference`: after the role was killed, reconnection ended in `QUIC connection failed: handshake timed out` and forced termination. It failed the same way on this host at the previous delivered revision `9169e62`, so it is not introduced by this work, but it passed on the development host at `87f457d`; SIGKILL recovery is therefore host-dependent and is not claimed. The skip is MiniMax H3 |
+| Ruff lint and format, strict mypy (166 source files) | Passed at `9c18a4d` |
+| Offline ladder/handoff validation | All 24 command forms (23 YAML forms plus multi-model smoke) validated at `9c18a4d` |
+| Rust formatting, Clippy, tests | Passed at `9c18a4d`; **31 tests** |
+| Reproducible wheel build | Double build hash-identical at `9c18a4d`: Python `62fd682a2409e92c77f71ad2eeb4fba457da15de1c0650a59d2be61badb41ac9`, native `c9aa759f0153582e11140528ec1d214e8addef8f0a2c4d086987f0f9b82435a2` (native unchanged from `6fed862`) |
+
+An earlier slow-test attempt reported seven failures; six were `commit all source changes before Fortress provisioning`, caused by copying uncommitted edits into the tree while the tests ran. Those results were discarded and the run was repeated from a clean clone.
+
+Not rerun at `9c18a4d`: frontend tests (no manual content changed), ProVerif, fuzz targets, `pip-audit`, gitleaks, and the container smoke; their last recorded results above apply to earlier revisions. `accelerate` and `ftfy` were added to the models extra and have not been through `pip-audit`. GitHub Actions remains blocked by the account billing state.
+
+### Open findings for hardware validation
+
+- The trusted client holds one session, one QUIC connection, and one cover-traffic loop per operation per role. This has run with roughly one hundred operations per worker on loopback. Large MoE rungs have tens of thousands of operations; file-descriptor, thread, and cover-bandwidth limits at that scale are unmeasured.
+- REAP on DeepSeek V3 prunes by global saliency and so changes router group membership; fidelity against the unpruned model is unmeasured.
+- MiniMax H3 has not executed in any form.
+- Official ExLlama CUDA decoder comparison and full-size quantized execution remain hardware-pending.
+
+### Rented CPU host ledger
+
+RunPod CPU pod `cxcqov99gwm7wk` (cpu3g, 16 vCPU, 64 GiB, US-CA-2) at 0.64 USD/hour, created 2026-11-21T04:11:43Z. Terminated 2026-11-21T07:51:52Z (3 h 40 min, about 2.35 USD of compute at the listed rate; the provider billing query immediately after termination reported 1.73 USD and may lag). An independent query after termination returned HTTP 404 for the pod and listed no network volumes; the only pod remaining on the account predates this work and was not touched. No GPU was rented. The raw test logs on the pod were lost when it was terminated before they were copied; the figures in this section were read from those logs while it was running, and the GGUF differential JSON was copied beforehand.
 
 ## TEE cloud-provider implementation evidence
 
