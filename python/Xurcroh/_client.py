@@ -67,6 +67,20 @@ class Videos:
         )
 
 
+class Tasks:
+    """Signed traces of completed tasks, addressed by the task's request ID."""
+
+    def __init__(self, client: Xurcroh) -> None:
+        self._client = client
+
+    def trace(self, task_id: str) -> dict[str, Any]:
+        return self._client._runtime.trace(task_id)
+
+    @property
+    def public_key(self) -> bytes:
+        return self._client._runtime.trace_public_key
+
+
 class Xurcroh:
     def __init__(
         self,
@@ -110,6 +124,7 @@ class Xurcroh:
         self.chat = Chat(self)
         self.images = Images(self)
         self.videos = Videos(self)
+        self.tasks = Tasks(self)
 
     def cancel(self, request_id: str) -> bool:
         return self._runtime.cancel(request_id)

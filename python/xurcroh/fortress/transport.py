@@ -839,6 +839,7 @@ class FortressRoleClient:
         self._lock = threading.Lock()
         self._closed = False
         self.request_count = 0
+        self.verified_result_count = 0
         self.bytes_sent = 0
         self.bytes_received = 0
         self.cover_request_count = 0
@@ -908,13 +909,17 @@ class FortressRoleClient:
                     self.bytes_sent += sent
                     self.bytes_received += received
         try:
-            return combine_role_results(
+            combined = combine_role_results(
                 activation_shares, self.operation.shares, results, self._providers
             )
         except RoleExecutionError as error:
             with self._lock:
                 self._quarantined = self._quarantined or error
             raise
+        if not cover:
+            with self._lock:
+                self.verified_result_count += len(results)
+        return combined
 
     def _cover_loop(self) -> None:
         features = self.operation.quantized.dimensions[1]

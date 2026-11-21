@@ -7,8 +7,9 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from xurcroh import __version__
 from xurcroh.config import ClusterConfig, ModelRegistry, WorkerConfig
 from xurcroh.errors import (
     CapabilityError,
@@ -24,6 +25,7 @@ from xurcroh.fortress.prompt_armour import ArmouredMessages, MessageArmour, Prom
 from xurcroh.memory_host import protect_process
 from xurcroh.preflight import CheckpointPreflight, preflight_checkpoint
 from xurcroh.provisioning import provision_cluster_sync
+from xurcroh.receipts import SAMPLER, TraceStore, canonical_messages, commit
 from xurcroh.requests import CompletionRequest, ImageGenerationRequest, VideoGenerationRequest
 from xurcroh.runtime.diffusion import LocalDiffusionEngine
 from xurcroh.runtime.dit_stage import CompiledDiTStageEngine
@@ -50,6 +52,7 @@ from xurcroh.types import (
 
 if TYPE_CHECKING:
     from xurcroh.fortress.deployment import FortressDeployment
+    from xurcroh.runtime.generation import GenerationSummary
 
 
 @dataclass
@@ -67,6 +70,8 @@ class RuntimeService:
         self.models = models
         if cluster.security.process_hardening and sys.platform == "linux":
             protect_process()
+        self._traces = TraceStore(cluster.security.trace_history)
+        self._model_facts: dict[str, dict[str, Any]] = {}
         self._message_armour: MessageArmour | None = None
         if cluster.security.prompt_armour:
             self._message_armour = MessageArmour(
@@ -306,6 +311,86 @@ class RuntimeService:
             security_mode=self.cluster.security.mode,
         )
 
+    def trace(self, task_id: str) -> dict[str, Any]:
+        return self._traces.get(task_id)
+
+    @property
+    def trace_public_key(self) -> bytes:
+        return self._traces.public_key
+
+    def _facts(self, name: str, engine: Any) -> dict[str, Any]:
+        with self._lock:
+            facts = self._model_facts.get(name)
+        if facts is None:
+            definition = self.models.get(name)
+            report = preflight_checkpoint(name, definition, self._workers_for_model(name))
+            facts = {
+                "name": name,
+                "revision": definition.revision,
+                "revision_pinned": report.revision_pinned,
+                "source_format": report.source_format,
+                "source_digest": report.source_digest,
+                "layout_digest": report.checkpoint_layout_digest,
+                "architecture": report.architecture,
+                "encodings": list(report.encodings),
+                "engine": engine.engine_name,
+            }
+            with self._lock:
+                self._model_facts[name] = facts
+        return facts
+
+    def _record_trace(
+        self,
+        task_id: str,
+        request: CompletionRequest,
+        summary: GenerationSummary,
+        output: str,
+        started_at: float,
+        armoured: ArmouredMessages | None,
+    ) -> None:
+        engine = self._engine(request.model)
+        split = engine.trace_facts() if isinstance(engine, FortressEngine) else {}
+        security = self.cluster.security
+        self._traces.record(
+            {
+                "task_id": task_id,
+                "mode": "local",
+                "created_at": started_at,
+                "completed_at": time.time(),
+                "client": {"version": __version__},
+                "request": {
+                    "kind": "chat",
+                    "settings": request.model_dump(mode="json", exclude={"messages", "request_id"}),
+                    "effective": {
+                        "seed": summary.seed,
+                        "sampler": SAMPLER,
+                        "armoured_entities": None if armoured is None else armoured.entities,
+                    },
+                    "prompt": commit(canonical_messages(request.messages)),
+                },
+                "result": {
+                    "output": commit(output.encode()),
+                    "finish_reason": summary.finish_reason,
+                    "prompt_tokens": summary.prompt_tokens,
+                    "completion_tokens": summary.completion_tokens,
+                    "duration_ms": summary.duration_ms,
+                },
+                "model": {**self._facts(request.model, engine), **split.get("sharing", {})},
+                "security": {
+                    "mode": security.mode,
+                    "attestation": "required" if security.require_attestation else "unattested",
+                    "process_hardening": security.process_hardening,
+                    "prompt_armour": security.prompt_armour,
+                    "memory_scrubbing": security.memory_scrubbing,
+                },
+                "transport": {
+                    "workers": getattr(engine, "worker_ids", [engine.worker_id]),
+                    **split.get("transport", {}),
+                    "counters": summary.transport,
+                },
+            }
+        )
+
     def _armour(
         self, request: CompletionRequest
     ) -> tuple[CompletionRequest, ArmouredMessages | None]:
@@ -331,6 +416,8 @@ class RuntimeService:
         timeout = request.timeout or self.cluster.request_timeout_seconds
         admitted = False
         armoured: ArmouredMessages | None = None
+        submitted = request
+        started_at = time.time()
         try:
             request, armoured = self._armour(request)
             self._admit(request.model, timeout)
@@ -343,6 +430,8 @@ class RuntimeService:
             if summary is None:
                 raise RuntimeError("generation ended without a summary")
             self._metrics.completed(summary.duration_ms)
+            text = summary.text if armoured is None else armoured.restore(summary.text)
+            self._record_trace(handle.request_id, submitted, summary, text, started_at, armoured)
             return ChatCompletion(
                 id=f"chatcmpl-{uuid.uuid4().hex}",
                 created=created,
@@ -350,12 +439,7 @@ class RuntimeService:
                 choices=[
                     ChatChoice(
                         index=0,
-                        message=ChatMessage(
-                            role="assistant",
-                            content=summary.text
-                            if armoured is None
-                            else armoured.restore(summary.text),
-                        ),
+                        message=ChatMessage(role="assistant", content=text),
                         finish_reason=summary.finish_reason,
                     )
                 ],
@@ -403,6 +487,8 @@ class RuntimeService:
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
         timeout = request.timeout or self.cluster.request_timeout_seconds
         armoured: ArmouredMessages | None = None
+        submitted = request
+        started_at = time.time()
         try:
             request, armoured = self._armour(request)
             self._admit(request.model, timeout)
@@ -414,8 +500,10 @@ class RuntimeService:
                 self._requests.pop(handle.request_id, None)
             raise
         restorer = None if armoured is None else armoured.stream()
+        emitted: list[str] = []
 
         def chunk(content: str) -> ChatCompletionChunk:
+            emitted.append(content)
             return ChatCompletionChunk(
                 id=completion_id,
                 created=created,
@@ -453,6 +541,14 @@ class RuntimeService:
                         if restorer is not None and (remaining := restorer.finish()):
                             yield chunk(remaining)
                         self._metrics.completed(event.summary.duration_ms)
+                        self._record_trace(
+                            handle.request_id,
+                            submitted,
+                            event.summary,
+                            "".join(emitted),
+                            started_at,
+                            armoured,
+                        )
                         yield ChatCompletionChunk(
                             id=completion_id,
                             created=created,

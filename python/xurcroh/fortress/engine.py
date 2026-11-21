@@ -378,6 +378,7 @@ class FortressEngine:
         assert compiled is not None and compiled.model is not None
         started = time.monotonic()
         with self._inference_scope(started, timeout, cancelled):
+            baseline = self.transport_metrics()
             prompt = render_chat_prompt(self._tokenizer, request.messages)
             input_ids = self._tokenizer(prompt, return_tensors="pt", add_special_tokens=False)[
                 "input_ids"
@@ -432,6 +433,7 @@ class FortressEngine:
                     finish_reason=finish_reason,
                     duration_ms=(time.monotonic() - started) * 1000,
                     seed=sampler.seed,
+                    transport=self._transport_delta(baseline),
                 ),
             )
 
@@ -455,6 +457,7 @@ class FortressEngine:
         assert compiled is not None and compiled.model is not None and self._processor is not None
         started = time.monotonic()
         with self._inference_scope(started, timeout, cancelled):
+            baseline = self.transport_metrics()
             images = []
             audio = []
             sample_rates = []
@@ -559,6 +562,7 @@ class FortressEngine:
                     finish_reason=finish_reason,
                     duration_ms=(time.monotonic() - started) * 1000,
                     seed=seed,
+                    transport=self._transport_delta(baseline),
                 ),
             )
 
@@ -591,6 +595,7 @@ class FortressEngine:
             return
         started = time.monotonic()
         with self._inference_scope(started, timeout, cancelled):
+            baseline = self.transport_metrics()
             hidden, prompt_tokens = self._prepare_hidden(request)
             state_key = f"{self.name}:{uuid.uuid4().hex}"
             completion_ids: list[int] = []
@@ -626,15 +631,66 @@ class FortressEngine:
                         finish_reason=finish_reason,
                         duration_ms=duration_ms,
                         seed=sampler.seed,
+                        transport=self._transport_delta(baseline),
                     ),
                 )
             finally:
                 self._combiner.drop_request(state_key)
 
+    def _transport_delta(self, baseline: dict[str, int]) -> dict[str, int]:
+        current = self.transport_metrics()
+        return {name: value - baseline.get(name, 0) for name, value in current.items()}
+
+    def trace_facts(self) -> dict[str, Any]:
+        """Facts about how this model is split and reached, for a task trace."""
+
+        from xurcroh.fortress.transport import relay_route_from_labels
+
+        compiled = self._compiled
+        remote = [worker for worker in self.workers if worker.endpoint != "local://cpu"]
+        labels = self.workers[0].labels if self.workers else {}
+        routes = []
+        for worker in remote:
+            address = (worker.endpoint or "").removeprefix("quic://")
+            route = relay_route_from_labels(worker.labels, address, worker=worker.name)
+            routes.append(
+                {
+                    "worker": worker.name,
+                    "route": "direct" if route is None else "onion",
+                    "relay_hops": 0 if route is None else route.hop_count,
+                    "declared": {key: worker.provider[key] for key in sorted(worker.provider)},
+                }
+            )
+        return {
+            "sharing": {
+                "share_count": self.definition.fortress_shares,
+                "weight_shares": "seed-expanded (computational)"
+                if self.definition.fortress_seed is not None
+                else "uniform random (information-theoretic under non-collusion)",
+                "activation_shares": "seed-expanded (computational)"
+                if labels.get("seeded_activations", "true").lower() not in {"0", "false", "no"}
+                else "uniform random (information-theoretic under non-collusion)",
+                "weight_bits": 4,
+                "activation_bits": None if compiled is None else compiled.activation_bits,
+                "operations": 0 if compiled is None else len(compiled.operations),
+                "reap_keep_fraction": self.definition.reap_keep_fraction,
+            },
+            "transport": {
+                "link": "QUIC, TLS 1.3, mutual certificates" if remote else "in-process",
+                "session": "HPKE X25519-HKDF-SHA256, ChaCha20-Poly1305" if remote else None,
+                "frame_bytes": int(labels.get("frame_bytes", 16_384)) if remote else None,
+                "cover_interval_seconds": float(labels.get("cover_interval", 1.0))
+                if remote
+                else None,
+                "routes": routes,
+            },
+        }
+
     def transport_metrics(self) -> dict[str, int]:
         clients = list(self._clients.values())
         return {
             "fortress_role_requests": sum(client.request_count for client in clients),
+            "fortress_verified_results": sum(client.verified_result_count for client in clients),
             "fortress_bytes_sent": sum(client.bytes_sent for client in clients),
             "fortress_bytes_received": sum(client.bytes_received for client in clients),
             "fortress_cover_requests": sum(client.cover_request_count for client in clients),

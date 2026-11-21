@@ -340,8 +340,19 @@ def test_public_sdk_generates_through_a_two_relay_onion_path(
                 temperature=0,
                 max_tokens=1,
             )
+            trace = client.tasks.trace(response.execution.request_id)
         assert response.usage.completion_tokens == 1
         assert response.execution.engine == "fortress-grid"
+        counters = trace["transport"]["counters"]
+        assert counters["fortress_role_requests"] > 0
+        assert counters["fortress_verified_results"] == counters["fortress_role_requests"]
+        assert trace["transport"]["frame_bytes"] == 16_384
+        assert [route["relay_hops"] for route in trace["transport"]["routes"]] == [2, 2, 2, 2]
+        assert {route["route"] for route in trace["transport"]["routes"]} == {"onion"}
+        assert trace["model"]["share_count"] == 2
+        assert trace["model"]["weight_bits"] == 4
+        assert trace["model"]["weight_shares"].startswith("seed-expanded")
+        assert trace["model"]["operations"] == len(compiled.operations)
         assert entry_relay.forward_count > 0
         assert entry_relay.forward_count == exit_relay.forward_count
     finally:
