@@ -323,13 +323,26 @@ def verify_ladder(deployment: dict[str, Any]) -> dict[str, Any]:
         if compiled.model is not None:
             from xurcroh.fortress.module import connect_grid_clients, set_reference_mode
 
+            # Same call shape and client naming as the SDK engine: shared-KV
+            # decoders need their state returned, and multimodal checkpoints
+            # name operations under ``model.language_model``.
+            forward = {"input_ids": input_ids, "return_shared_kv_states": True, "use_cache": True}
             set_reference_mode(compiled.model)
             with torch.inference_mode():
-                expected_output = compiled.model(input_ids=input_ids)
+                expected_output = compiled.model(**forward)
             set_reference_mode(compiled.model, False)
-            connect_grid_clients(compiled.model, clients)
+            connect_grid_clients(
+                compiled.model,
+                {
+                    **clients,
+                    **{
+                        name.replace("model.language_model.", "model.", 1): client
+                        for name, client in clients.items()
+                    },
+                },
+            )
             with torch.inference_mode():
-                actual_output = compiled.model(input_ids=input_ids)
+                actual_output = compiled.model(**forward)
             quantized_error = float((actual_output.logits - expected_output.logits).abs().max())
             quantized_logits = expected_output.logits[0, -1].to(torch.float64)
         else:
