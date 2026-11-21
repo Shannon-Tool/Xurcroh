@@ -98,17 +98,25 @@ def _media_workflows(rung: LadderRung, pipeline: Any) -> list[MediaWorkflow]:
     pipeline_classes = verification.get("workflow_pipelines", {})
     if not isinstance(pipeline_classes, dict):
         raise CapabilityError("workflow_pipelines must be an object")
+    import diffusers
+
     workflows = []
     for name in sorted(selected):
-        if name in {"image_to_image", "image_to_video"} and "image" not in parameters:
-            raise CapabilityError(f"pipeline does not expose the required {name} workflow")
-        if name == "masked_edit" and not {"image", "mask_image"} <= set(parameters):
-            raise CapabilityError("masked editing requires image and mask_image parameters")
         pipeline_class = pipeline_classes.get(name)
         if pipeline_class is not None and (
             not isinstance(pipeline_class, str) or not pipeline_class.isidentifier()
         ):
             raise CapabilityError("workflow pipeline class names must be valid identifiers")
+        # A workflow mapped to its own pipeline class is executed by that class,
+        # so its call signature is the one that must accept the conditioning.
+        mapped = getattr(diffusers, pipeline_class, None) if pipeline_class else None
+        accepted = set(
+            parameters if mapped is None else inspect.signature(mapped.__call__).parameters
+        )
+        if name in {"image_to_image", "image_to_video"} and "image" not in accepted:
+            raise CapabilityError(f"pipeline does not expose the required {name} workflow")
+        if name == "masked_edit" and not {"image", "mask_image"} <= accepted:
+            raise CapabilityError("masked editing requires image and mask_image parameters")
         workflows.append(MediaWorkflow(name, pipeline_class, name == "masked_edit"))
     return workflows
 
