@@ -22,6 +22,7 @@ CLIENT_ONLY = (
     "model.audio_projection",
     "model.embed_audio",
     "mlp.gate",
+    "router.proj",
 )
 
 
@@ -68,12 +69,12 @@ def load_text_decoder(
                 else {"config": config}
             )
             setattr(parent, child_name, type(module)(**arguments))
-    if reader.config.get("model_type") == "gemma4":
-        model.model.embed_tokens.embed_scale = torch.tensor(config.hidden_size**0.5)
-        if config.hidden_size_per_layer_input:
-            model.model.embed_tokens_per_layer.embed_scale = torch.tensor(
-                config.hidden_size_per_layer_input**0.5
-            )
+    # ``to_empty`` leaves derived buffers uninitialised; scaled embeddings
+    # (Gemma families) restore theirs from the recorded scale.
+    for module in model.modules():
+        scale = getattr(module, "scalar_embed_scale", None)
+        if isinstance(module, torch.nn.Embedding) and scale is not None:
+            module.embed_scale = torch.tensor(float(scale))
 
     excluded = {
         "model.embed_tokens.weight",
@@ -96,7 +97,24 @@ def load_text_decoder(
             names.append(name)
     for name, tensor in reader.read_tensors(names).items():
         state[_model_name(name)] = tensor.to(dtype)
+    # A protected projection keeps its bias on the trusted client. The bias is
+    # not a registered parameter, so it is installed explicitly and a
+    # checkpoint that omits it is rejected instead of running with garbage.
+    for module_name, module in model.named_modules():
+        if not isinstance(module, FortressLinear) or module.bias is None:
+            continue
+        bias = state.pop(f"{module_name}.bias", None)
+        if bias is None:
+            raise ModelLoadError(f"text checkpoint is missing required bias: {module_name}.bias")
+        if tuple(bias.shape) != tuple(module.bias.shape):
+            raise ModelLoadError(f"text checkpoint bias has the wrong shape: {module_name}.bias")
+        module.bias = bias
     result = model.load_state_dict(state, strict=False, assign=True)
+    if result.unexpected_keys:
+        raise ModelLoadError(
+            "text checkpoint has parameters the model graph does not define: "
+            + ", ".join(sorted(result.unexpected_keys)[:8])
+        )
     allowed_missing = set(shared_weights)
     allowed_missing.update(
         name
