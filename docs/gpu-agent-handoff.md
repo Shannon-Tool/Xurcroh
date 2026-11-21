@@ -164,6 +164,16 @@ Run the complete worker-compromise and transport suites for every format and med
 
 EXL2/EXL3 validation must include an official-extension differential run. GGUF validation must include all used type codes, shards, metadata arrays, and the applicable endian mode.
 
+### Verifiability features to exercise on every rung
+
+These exist in the trusted client and must appear in rung evidence, not only in local tests.
+
+- **Task traces.** After each accepted request, save `client.tasks.trace(request_id)` and `client.tasks.proof(request_id)` beside the rung report and run `xurcroh verify TRACE --public-key KEY --proof PROOF --log-key LOGKEY --messages MESSAGES --output OUTPUT`. A rung is not accepted if a trace fails to verify, if `transport.counters.fortress_verified_results` differs from `fortress_role_requests`, or if the model revision, source digest, format, or share settings in the trace differ from the rung manifest. See `docs/task-trace.md` for what a trace does not establish.
+- **Result checking.** Remote role results are checked against two independent challenges per weight share. Record the added client compile time and per-token verification time; do not reduce `FREIVALDS_ROUNDS` to save time.
+- **Onion relays.** Relays are optional and operator-started (`python -m xurcroh.fortress.relay_cli`); a worker started with `--onion-key` rejects direct traffic. If a rung uses relays, run at least two on hosts separate from the workers, record each relay's allowlist, and report latency with and without them. The managed SSH deployment does not provision relays.
+- **Process hardening and prompt armour.** `security.process_hardening` is on by default and must stay on. `security.prompt_armour` is off by default because it changes the text the model reads; do not enable it for numerical-acceptance runs.
+- **Pending protocol changes.** Post-quantum session and onion layers, a forward-secret session bound to TLS, worker-signed transcripts, and reading the negotiated TLS group into the trace are not implemented yet and will change the worker protocol and artifacts. Hardware evidence gathered before they land covers the current protocol only and must be labelled with the delivered commit.
+
 ## 8. Reliability, recovery, and memory
 
 Exercise direct QUIC and the datagram fallback independently. Measure bytes and time for compile, connection, each operation, queueing, kernel execution, and public SDK completion.
