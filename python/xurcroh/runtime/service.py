@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import threading
 import time
 import uuid
@@ -19,6 +20,7 @@ from xurcroh.errors import (
 )
 from xurcroh.fortress.diffusion_engine import FortressDiffusionEngine
 from xurcroh.fortress.engine import FortressEngine
+from xurcroh.memory_host import protect_process
 from xurcroh.preflight import CheckpointPreflight, preflight_checkpoint
 from xurcroh.provisioning import provision_cluster_sync
 from xurcroh.requests import CompletionRequest, ImageGenerationRequest, VideoGenerationRequest
@@ -62,6 +64,8 @@ class RuntimeService:
     def __init__(self, cluster: ClusterConfig, models: ModelRegistry) -> None:
         self.cluster = cluster
         self.models = models
+        if cluster.security.process_hardening and sys.platform == "linux":
+            protect_process()
         self._engines: dict[
             str,
             LocalTransformersEngine

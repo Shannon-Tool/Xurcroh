@@ -16,6 +16,14 @@ PR_SET_PTRACER = 17
 
 
 def protect_process(*, lock_memory: bool = False) -> None:
+    """Stop core dumps and debugger attachment for a process that holds secrets."""
+
+    import resource
+
+    try:
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    except (OSError, ValueError) as error:
+        raise CompatibilityError("failed to disable core files") from error
     libc = ctypes.CDLL(None, use_errno=True)
     libc.prctl.argtypes = [
         ctypes.c_int,
