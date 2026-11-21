@@ -640,12 +640,15 @@ def combine_role_results(
                     "worker returned a non-canonical field result",
                 )
             product = torch.tensor(exact_product, dtype=torch.int64)
-            if not xurcroh_quic.verify_fortress_product(
-                canonical.tolist(),
-                product.tolist(),
-                share.challenge.r.tolist(),
-                share.challenge.v.tolist(),
-                prime,
+            if not all(
+                xurcroh_quic.verify_fortress_product(
+                    canonical.tolist(),
+                    product.tolist(),
+                    challenge.r.tolist(),
+                    challenge.v.tolist(),
+                    prime,
+                )
+                for challenge in share.challenges
             ):
                 raise RoleExecutionError(
                     activation_index,
