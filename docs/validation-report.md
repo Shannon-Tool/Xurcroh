@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Current verification revision: `9c18a4d` (rented single CPU host; see “Format, ladder-theory, and rented-CPU evidence”)
+- Current verification revision: `94f69a5` (rented single CPU host; see “Verifiability features and rented-CPU evidence”)
 - Local implementation: **standard suite and current static checks passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -318,6 +318,45 @@ Not rerun at `9c18a4d`: frontend tests (no manual content changed), ProVerif, fu
 ### Rented CPU host ledger
 
 RunPod CPU pod `cxcqov99gwm7wk` (cpu3g, 16 vCPU, 64 GiB, US-CA-2) at 0.64 USD/hour, created 2026-11-21T04:11:43Z. Terminated 2026-11-21T07:51:52Z (3 h 40 min, about 2.35 USD of compute at the listed rate; the provider billing query immediately after termination reported 1.73 USD and may lag). An independent query after termination returned HTTP 404 for the pod and listed no network volumes; the only pod remaining on the account predates this work and was not touched. No GPU was rented. The raw test logs on the pod were lost when it was terminated before they were copied; the figures in this section were read from those logs while it was running, and the GGUF differential JSON was copied beforehand.
+
+## Verifiability features and rented-CPU evidence
+
+This section records work at `94f69a51` on one rented CPU host (16 vCPU, 64 GiB, no GPU) with loopback workers, from a clean clone. It is local evidence only; nothing here is hardware, independent-host, or external validation.
+
+### What was added
+
+- Seeded sampling fix: the text sampler rebuilt its generator from the seed for every token. One generator per request now; the effective seed is reported.
+- Process hardening in the trusted client and role workers; opt-in prompt armour in the request path.
+- Onion relays with any number of hops, configured from worker labels, with a relay command and a worker onion-key option.
+- Signed task traces for chat, image, and video with an offline verifier; trace hashes anchored in a Merkle log with inclusion proofs. The Merkle implementation reproduces the RFC 6962 reference root for the standard eight-leaf vector.
+- Two independent Freivalds challenges per weight share for remote role results. A regression test forges a result orthogonal to one challenge; it was accepted before the change and is rejected after.
+- The negotiated TLS key-exchange group and peer certificate digest are read from the live connection and recorded per route; the relayed SDK test observes `X25519MLKEM768`.
+
+### Results
+
+| Check | Result |
+|---|---|
+| Standard suite, `-m 'not hardware and not slow'` | 755 passed, 0 failed, 55 deselected, 81.76% coverage |
+| Slow tests, `-m 'slow and not hardware'` | 20 passed, 1 failed, 9 skipped, 2,471.80 s |
+| Rust workspace tests | 31 passed, 0 failed |
+| `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` | Pass |
+| Ruff, format check, strict mypy (169 files) | Pass (development host) |
+
+The first full run at `99dfbbb` had **9 failures**: building a trace fingerprinted the checkpoint, which failed for remote engines whose model exists only on the worker. This was a regression introduced by the trace work, found by this run, fixed at `9a1e281` with a regression assertion, and absent from the run above.
+
+The slow failure is `test_managed_role_crash_restarts_and_resumes_inference` (QUIC handshake timed out after the role was killed). It failed the same way on this class of host at `9169e62` and `22dcac6`, before this work. SIGKILL recovery remains host-dependent and is not fixed.
+
+The nine skips are the media-ladder theory tests, which need miniature pipelines that were not fetched onto this host. They last ran at `22dcac6` (7 passed, MiniMax H3 skipped) and were not rerun at this revision.
+
+### Not rerun or not covered at this revision
+
+- Media-ladder theory tests, frontend tests, ProVerif, fuzz targets, `pip-audit`, gitleaks, container smoke, and the reproducible wheel build.
+- Clippy with the Python-binding feature enabled reports nine `type_complexity` and argument-count findings in `crates/transport/src/python.rs`. None is in code added here, and the standard lint gate does not enable that feature.
+- An earlier focused local run showed one unexplained failure of `test_generation_config_eos_list_stops_real_local_generation` that did not reproduce in three later runs or in the full suite. It mutates a session-scoped fixture and may be order-sensitive.
+
+### Rented CPU host ledger
+
+One CPU pod, created 2026-11-21T17:28:43Z and terminated 18:56:48Z, at 0.64 USD per hour: about 0.94 USD. Termination was confirmed by a 404 on the pod and an empty volume list. Logs were copied off the host before termination. Cumulative spend against the 10 USD test allowance is about 3.29 USD.
 
 ## TEE cloud-provider implementation evidence
 
