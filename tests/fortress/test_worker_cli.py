@@ -85,3 +85,38 @@ def test_worker_exit_status_is_recorded_atomically(tmp_path: Path) -> None:
     path = tmp_path / "role.exit"
     record_exit_status(path, 0)
     assert path.read_text() == "0\n"
+
+
+def test_worker_cli_requires_onion_wrapped_traffic_when_given_an_onion_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xurcroh.fortress import worker_cli
+
+    captured: dict[str, object] = {}
+
+    def fake_worker(*_arguments: object, **options: object) -> None:
+        captured.update(options)
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(worker_cli, "FortressRoleWorker", fake_worker)
+    monkeypatch.setattr(worker_cli, "protect_process", lambda *, lock_memory=False: None)
+    monkeypatch.setattr(worker_cli, "load_role_artifacts", lambda _directory: {"op": b"x"})
+    for name in ("recipient", "certificate", "key", "ca"):
+        (tmp_path / name).write_bytes(name.encode())
+    (tmp_path / "onion").write_bytes(b"\x07" * 32)
+    arguments = ["--artifact-dir", str(tmp_path), "--recipient-key", str(tmp_path / "recipient")]
+    arguments += ["--certificate", str(tmp_path / "certificate"), "--ca", str(tmp_path / "ca")]
+    arguments += ["--private-key", str(tmp_path / "key")]
+
+    with pytest.raises(RuntimeError, match="stop"):
+        worker_cli.main([*arguments, "--onion-key", str(tmp_path / "onion")])
+    assert captured["onion_private_key"] == b"\x07" * 32
+
+    captured.clear()
+    with pytest.raises(RuntimeError, match="stop"):
+        worker_cli.main(arguments)
+    assert captured["onion_private_key"] is None
+
+    (tmp_path / "onion").write_bytes(b"short")
+    with pytest.raises(ValueError, match="32 bytes"):
+        worker_cli.main([*arguments, "--onion-key", str(tmp_path / "onion")])

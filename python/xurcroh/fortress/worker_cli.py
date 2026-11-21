@@ -55,6 +55,11 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="lock all process memory so secrets cannot be swapped to disk",
     )
+    parser.add_argument(
+        "--onion-key",
+        type=Path,
+        help="raw 32-byte X25519 key; when set, only onion-wrapped relay traffic is accepted",
+    )
     parser.add_argument("--exit-status-file", type=Path)
     parser.add_argument("--ready-file", type=Path)
     parser.add_argument("--pid-file", type=Path)
@@ -62,6 +67,9 @@ def main(argv: list[str] | None = None) -> None:
     exit_code = 0
     try:
         protect_process(lock_memory=args.lock_memory)
+        onion_key = None if args.onion_key is None else args.onion_key.read_bytes()
+        if onion_key is not None and len(onion_key) != 32:
+            raise ValueError("worker onion key must be exactly 32 bytes")
         worker = FortressRoleWorker(
             load_role_artifacts(args.artifact_dir),
             args.recipient_key.read_bytes(),
@@ -71,6 +79,7 @@ def main(argv: list[str] | None = None) -> None:
             address=f"{args.host}:{args.port}",
             device=args.device,
             allow_unattested=args.allow_unattested,
+            onion_private_key=onion_key,
         )
         stopped = threading.Event()
 
