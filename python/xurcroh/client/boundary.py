@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 
 from xurcroh.algebra.rmsnorm import unit_rms_norm
-from xurcroh.requests import CompletionRequest
+from xurcroh.runtime.generation import TokenSampler
 from xurcroh.shards.format import read_shard
 
 
@@ -47,10 +47,8 @@ class ClientBoundary:
         lm_head = self._tensors["lm_head.weight"]
         return normalized.to(lm_head.dtype) @ lm_head.T
 
-    def sample(self, hidden: torch.Tensor, request: CompletionRequest) -> torch.Tensor:
-        from xurcroh.runtime.generation import sample_next_token
-
-        return sample_next_token(self.logits(hidden), request)
+    def sample(self, hidden: torch.Tensor, sampler: TokenSampler) -> torch.Tensor:
+        return sampler(self.logits(hidden))
 
     def close(self) -> None:
         if not self.closed:

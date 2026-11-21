@@ -368,8 +368,8 @@ class FortressEngine:
         from xurcroh.runtime.generation import (
             GenerationEvent,
             GenerationSummary,
+            TokenSampler,
             check_request_health,
-            sample_next_token,
             stopping_strings,
         )
 
@@ -392,6 +392,7 @@ class FortressEngine:
             text = ""
             finish_reason: Literal["stop", "length"] = "length"
             stops = stopping_strings(request)
+            sampler = TokenSampler(request)
             for _ in range(request.max_tokens):
                 check_request_health(cancelled, started, timeout)
                 parameters = {
@@ -404,7 +405,7 @@ class FortressEngine:
                     parameters["shared_kv_states"] = shared
                 with torch.inference_mode():
                     outputs = compiled.model(**parameters)
-                next_token = sample_next_token(outputs.logits[:, -1, :], request)
+                next_token = sampler(outputs.logits[:, -1, :])
                 token_id = int(next_token.item())
                 completion_ids.append(token_id)
                 updated_text = self._tokenizer.decode(completion_ids, skip_special_tokens=True)
@@ -429,6 +430,7 @@ class FortressEngine:
                     completion_tokens=len(completion_ids),
                     finish_reason=finish_reason,
                     duration_ms=(time.monotonic() - started) * 1000,
+                    seed=sampler.seed,
                 ),
             )
 
@@ -443,6 +445,7 @@ class FortressEngine:
             GenerationEvent,
             GenerationSummary,
             check_request_health,
+            effective_seed,
             stopping_strings,
         )
         from xurcroh.runtime.vlm import _decode_audio, _decode_image
@@ -508,8 +511,9 @@ class FortressEngine:
                     top_p=request.top_p,
                     top_k=request.top_k,
                 )
-            if request.seed is not None:
-                torch.manual_seed(request.seed)
+            seed = effective_seed(request)
+            if seed is not None:
+                torch.manual_seed(seed)
             from transformers import StoppingCriteria, StoppingCriteriaList
 
             class RequestStop(StoppingCriteria):
@@ -553,6 +557,7 @@ class FortressEngine:
                     completion_tokens=len(completion_ids),
                     finish_reason=finish_reason,
                     duration_ms=(time.monotonic() - started) * 1000,
+                    seed=seed,
                 ),
             )
 
@@ -566,8 +571,8 @@ class FortressEngine:
         from xurcroh.runtime.generation import (
             GenerationEvent,
             GenerationSummary,
+            TokenSampler,
             check_request_health,
-            sample_next_token,
             stopping_strings,
         )
 
@@ -591,11 +596,12 @@ class FortressEngine:
             text = ""
             finish_reason: Literal["stop", "length"] = "length"
             stops = stopping_strings(request)
+            sampler = TokenSampler(request)
             try:
                 hidden = self._combiner.run_cached(state_key, hidden)
                 for _ in range(request.max_tokens):
                     check_request_health(cancelled, started, timeout)
-                    next_token = sample_next_token(self._combiner.logits(hidden[-1:]), request)
+                    next_token = sampler(self._combiner.logits(hidden[-1:]))
                     token_id = int(next_token.item())
                     completion_ids.append(token_id)
                     updated_text = self._tokenizer.decode(completion_ids, skip_special_tokens=True)
@@ -618,6 +624,7 @@ class FortressEngine:
                         completion_tokens=len(completion_ids),
                         finish_reason=finish_reason,
                         duration_ms=duration_ms,
+                        seed=sampler.seed,
                     ),
                 )
             finally:

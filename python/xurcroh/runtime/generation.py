@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ class GenerationSummary:
     completion_tokens: int
     finish_reason: Literal["stop", "length"]
     duration_ms: float
+    seed: int | None = None
 
 
 @dataclass(frozen=True)
@@ -27,7 +29,12 @@ class GenerationEvent:
     summary: GenerationSummary | None = None
 
 
-def sample_next_token(logits: torch.Tensor, request: CompletionRequest) -> torch.Tensor:
+def sample_next_token(
+    logits: torch.Tensor,
+    request: CompletionRequest,
+    *,
+    generator: torch.Generator | None = None,
+) -> torch.Tensor:
     if request.temperature == 0:
         return torch.argmax(logits, dim=-1, keepdim=True)
     scaled = logits / request.temperature
@@ -43,8 +50,27 @@ def sample_next_token(logits: torch.Tensor, request: CompletionRequest) -> torch
         sorted_logits = sorted_logits.masked_fill(remove, -torch.inf)
         scaled = torch.full_like(scaled, -torch.inf).scatter(-1, indices, sorted_logits)
     probabilities = torch.softmax(scaled, dim=-1)
-    generator = None if request.seed is None else torch.Generator().manual_seed(request.seed)
     return torch.multinomial(probabilities, num_samples=1, generator=generator)
+
+
+def effective_seed(request: CompletionRequest) -> int | None:
+    """Return the seed that drives sampling, or ``None`` for greedy decoding."""
+
+    if request.temperature == 0:
+        return None
+    return request.seed if request.seed is not None else secrets.randbits(63)
+
+
+class TokenSampler:
+    """One request's sampler: a single generator that advances across tokens."""
+
+    def __init__(self, request: CompletionRequest) -> None:
+        self._request = request
+        self.seed = effective_seed(request)
+        self._generator = None if self.seed is None else torch.Generator().manual_seed(self.seed)
+
+    def __call__(self, logits: torch.Tensor) -> torch.Tensor:
+        return sample_next_token(logits, self._request, generator=self._generator)
 
 
 def normalize_stop_token_ids(*values: object) -> set[int]:

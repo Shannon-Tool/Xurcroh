@@ -79,8 +79,21 @@ def test_public_sdk_generates_image_with_fortress_diffusion(tmp_path: Path, shar
         response = client.images.generate(
             model="tiny-ddpm", prompt="a small red square", size="64x64", steps=1, seed=11
         )
+        unseeded = client.images.generate(
+            model="tiny-ddpm", prompt="a small red square", size="64x64", steps=1
+        )
+        replay = client.images.generate(
+            model="tiny-ddpm",
+            prompt="a small red square",
+            size="64x64",
+            steps=1,
+            seed=unseeded.execution.seed,
+        )
     assert response.data[0].b64_json
     assert response.execution.engine == "fortress-diffusion-local"
+    assert response.execution.seed == 11
+    assert unseeded.execution.seed is not None
+    assert replay.data[0].b64_json == unseeded.data[0].b64_json
 
 
 def test_video_pipeline_runs_inside_request_execution_deadline() -> None:
