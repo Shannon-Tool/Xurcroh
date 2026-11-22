@@ -26,14 +26,44 @@ was signed by a different key, or if the supplied prompt or output is not the on
 | `request.effective` | The seed that actually drove sampling (drawn if none was given), the sampler version, the number of prompt-armour substitutions |
 | `request.prompt`, `result.output` | Salted SHA-256 commitments to the canonical messages and to the output text |
 | `result` | Finish reason, token counts, duration |
-| `model` | Name, revision and whether it is pinned, source format, digest of the source checkpoint files, layout digest, architecture, encodings; for Fortress models the share count, how weight and activation shares are generated, weight and activation bit widths, operation count, expert-pruning fraction |
+| `model` | Name, revision and whether it is pinned, source format, digest of the source checkpoint files, layout digest, architecture, encodings, the repository name when the checkpoint was downloaded, and `manifest_sha256`; for Fortress models the share count, each role's pinned artifact digest (`role_artifacts`), how weight and activation shares are generated, weight and activation bit widths, operation count, expert-pruning fraction |
 | `security` | Mode, whether attestation is required, process hardening, prompt armour, memory scrubbing |
-| `transport` | Worker names; for remote Fortress models the link and session suites, frame size, cover interval, each worker's route (direct or onion, with hop count) and operator-declared labels, and per-request counters |
+| `transport` | Worker names; for remote Fortress models the link and session suites, frame size, cover interval, each worker's route (direct or onion, with hop count) and operator-declared labels, per-request counters, and each worker's signed checkpoint (`worker_checkpoints`) |
 | `signer`, `signature` | Public key and signature over the canonical trace. The signature is Ed25519 and ML-DSA-65 together; both must verify |
 
 `transport.counters.fortress_verified_results` counts worker results that passed the client's
 Freivalds check during the request. It equals `fortress_role_requests` for a completed request,
 because a failed check aborts the request and quarantines the role.
+
+## Model manifest digest
+
+`model.manifest_sha256` is one hash over the repository, revision, source digest, format, layout
+digest, architecture, encodings, share count, share generation, weight and activation bit widths,
+expert-pruning fraction, and each role's artifact digest. Two traces with the same value ran the
+same model build, quantized and split the same way, onto the same role artifacts. `xurcroh verify`
+recomputes it and rejects a trace whose model facts do not match.
+
+## Worker checkpoints
+
+Each Fortress role worker started with `--identity-key` holds a long-lived signing key (Ed25519 and
+ML-DSA-65 together). The managed deployment creates one per role, keeps it on that role's host
+across restarts, and publishes the public key and the digest of the artifacts written for the role
+as the worker labels `identity_public` and `artifact_digest`.
+
+Client and worker each keep a running hash of every sealed request and response of their session,
+cover calls included. When a request completes, the client asks every role for a checkpoint: the
+session, the number of calls, the running hash, the digest of the artifacts the worker loaded, and a
+fresh nonce, signed with the worker's identity key. The client rejects the request unless the
+signature matches the pinned key, the nonce is its own, the count and hash equal its own, and the
+artifact digest equals the pinned one. The checkpoints are stored in the trace, and `xurcroh verify`
+checks each signature again and that each worker signed for the artifacts the manifest names.
+
+A verified checkpoint shows that the holder of that identity key answered exactly the calls the
+client sent in that session and states which artifacts it loaded. It does not show the worker
+computed correctly (the result check does that), where the worker runs, or that the key is held in
+protected hardware. No task ID is sent to a worker; the request is an ordinary fixed-size frame and
+crosses onion relays unchanged. If no role has a pinned identity, `worker_checkpoints` is `null`
+and `xurcroh verify` prints that workers signed nothing.
 
 ## What a trace can and cannot prove
 
@@ -65,11 +95,11 @@ because a failed check aborts the request and quarantines the role.
   of the peer's leaf certificate, read from the live connection. With onion routing the peer is the
   entry relay (`link_peer`), so the trace does not show what the later hops negotiated. The session
   suite string is the configured one.
-- Workers do not yet sign anything; worker labels such as country and CPU vendor are operator
-  declarations and are recorded under `declared`.
+- Worker labels such as country and CPU vendor are operator declarations and are recorded under
+  `declared`. A worker checkpoint (below) identifies a signing key, not a location.
 - Image and video traces record size, steps, strength, frames, frame rate, and the effective seed,
-  and commit to the prompt, input image, mask, and encoded output. They carry no per-request
-  transport counters or sharing facts yet, and the source digest of a diffusion pipeline covers its
+  and commit to the prompt, input image, mask, and encoded output. They carry the same sharing facts, routes
+  and worker checkpoints as chat traces, but no per-request transport counters, and the source digest of a diffusion pipeline covers its
   `model_index.json` only, not the weight files.
 - Traces are held in memory for the most recent `security.trace_history` tasks (default 256) and are
   lost when the client closes. Save a trace if it must outlive the process.

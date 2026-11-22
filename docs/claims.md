@@ -14,9 +14,10 @@ superlative such as "most secure" may be used.
 | Wording | What it rests on | Check it yourself | Condition that must be stated |
 |---|---|---|---|
 | "No single worker sees your prompt, the model weights, or the output." | Weights and activations are additively secret-shared over a prime field; each role worker holds one weight share and receives one activation share | `tests/fortress/test_f0.py`, `tests/security/test_worker_compromise.py` | Holds only if workers holding complementary shares do not collude |
-| "Post-quantum key exchange on worker links (hybrid X25519 + ML-KEM-768)." | rustls with `prefer-post-quantum` on mutual-TLS QUIC | `cargo test -p xurcroh-transport --test quic`; each task trace reports the group its worker links negotiated | Key exchange only. Session, onion, storage and signature layers are classical |
+| "Post-quantum key exchange on worker links (hybrid X25519 + ML-KEM-768)." | rustls with `prefer-post-quantum` on mutual-TLS QUIC | `cargo test -p xurcroh-transport --test quic`; each task trace reports the group its worker links negotiated | Key exchange only. Session, onion and storage layers are classical; signatures are hybrid (Ed25519 with ML-DSA-65) |
 | "Every worker result is mathematically checked before it is used." | Two independent Freivalds challenges per weight share, held only by the client | `tests/fortress/test_freivalds_rounds.py`, `tests/fortress/test_transport.py` | A wrong result is accepted with probability about 2^-64 per check; the bound is statistical |
 | "Every task has a signed trace you can verify." | Trace of submitted and effective settings, model revision and source digest, sharing and transport facts, with prompt and output commitments | `xurcroh verify trace.json --public-key KEY --messages M --output O` | Local client only today. See `docs/task-trace.md` for what a trace does not establish |
+| "Each worker signs for the model artifacts it loaded and the traffic it answered." | Worker identity key (Ed25519 with ML-DSA-65); signed session checkpoint checked by the client and stored in the trace | `xurcroh verify trace.json` prints the number of verified worker checkpoints; `tests/fortress/test_checkpoint.py` | Identifies a signing key, not a location or hardware. Not attestation |
 | "A trace cannot be quietly changed after it is issued." | Trace hash appended to a Merkle log; inclusion proof against a signed tree head | `xurcroh verify trace.json --proof proof.json --log-key KEY` | The log is inside the client process today, not public and not independently witnessed |
 | "Seeded generation is reproducible, and unseeded generation tells you the seed it used." | One generator per request; effective seed in `execution.seed` and in the trace | `tests/runtime/test_sampling.py` | Same model, settings, software version and hardware arithmetic |
 | "Traffic is sent in fixed-size frames with constant cover traffic." | 16 KiB frames; cover calls at a fixed interval | `docs/evidence/fortress/transport.json` | Reduces size and workload signals. Does not hide endpoints, global timing, or volume |
@@ -34,7 +35,7 @@ non-collusion. Seed-expanded shares, which are the default for activations, are 
 
 | Wording to avoid | Why | What would make it true |
 |---|---|---|
-| "Post-quantum secure" or "quantum-proof", unqualified | Only the TLS key exchange is post-quantum | Hybrid ML-KEM in the session, onion and storage layers; hybrid ML-DSA signatures |
+| "Post-quantum secure" or "quantum-proof", unqualified | Only the TLS key exchange is post-quantum | Hybrid ML-KEM in the session, onion and storage layers |
 | "Runs over Tor" or "I2P" | No Tor or I2P carrier exists | The planned carriers, with measured latency |
 | "Anonymous" | A global observer can correlate timing; one relay sees both ends | Multi-party relays or a real anonymity network, with published analysis |
 | "Verified on your hosted request" | No hosted gateway exists, and an unattested gateway could misreport | An attested gateway whose trace key is bound to its attestation |
