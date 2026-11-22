@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Current verification revision: `94ba0e9` (rented single CPU host; see “Worker signatures, post-quantum layers and forward-secret sessions”)
+- Current verification revision: `4c5753a` (rented single CPU host; see “Public log, hosted gateway and anonymity-network carriers”)
 - Local implementation: **standard suite and current static checks passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -402,3 +402,40 @@ The Rust test count fell from 31 to 27 because four tests of the removed onion c
 - Frontend tests and the manual content check, fuzzing, dependency audit, secret scan, container smoke test and the reproducible wheel build were not rerun. The fuzz targets do not cover the new handshake parser; a Python test feeds it malformed input instead.
 - Worker checkpoints, the new session and the hybrid onion layers have not run on GPU hardware or across independent hosts.
 - Hosted continuous integration is still blocked by account billing, so the ProVerif step added to the workflow has not run there.
+
+## Public log, hosted gateway and anonymity-network carriers
+
+This section records work at `4c5753a` on one rented CPU host (16 vCPU, no GPU) with loopback workers. It is local evidence only: no GPU, independent-host, deployed-service or production result is claimed, and none of it has been externally reviewed.
+
+### What was added
+
+- A public append-only log of digests with inclusion and consistency proofs, signed tree heads and witness countersignatures. The client can publish every trace hash to it and can refuse a model whose manifest digest is not in it. `xurcroh verify` can ask the live log whether it still holds a proof's history and can require named witnesses.
+- A hosted gateway that serves the client to API-key holders, assigns each request a task ID, restricts each trace and proof to the requester who made the task, and signs every trace as hosted and operator-asserted.
+- Tor (SOCKS5) and I2P (SAM v3) carriers for role-worker traffic, with QUIC mutual TLS and the role session kept end to end, one Tor circuit identity per worker, and the carrier recorded in the trace.
+- A fix to random share sampling. Out-of-range draws were rejected, but the remaining draws were converted to signed integers before reduction, so draws of 2^63 and above landed on the wrong residue. Shares described as uniformly random had a bias of about 2^-32. A deterministic regression test failed before the fix.
+
+### Results
+
+| Check | Result |
+|---|---|
+| Standard suite, `-m 'not hardware and not slow'` | 874 passed, 0 failed, 2 skipped, 55 deselected, 82.48% coverage, 583.93 s |
+| Slow tests, `-m 'slow and not hardware'` | 20 passed, 1 failed, 9 skipped, 2,567.59 s |
+| Carrier against the real Tor network | Passed |
+| Carrier against the real I2P network | Not run: the daemon crashed |
+| Ruff, format check, strict mypy (173 files) | Pass (development host) |
+
+The two standard-suite skips are the real-network carrier tests, which run only when Tor or I2P is named in the environment. The slow failure is again `test_managed_role_crash_restarts_and_resumes_inference`, the host-dependent crash-recovery test, still open; the nine skips are the media-ladder theory tests whose pipelines were not fetched. No Rust source changed in this work, so the Rust checks were not rerun.
+
+**Real Tor.** A Tor daemon on the test host published an onion service forwarding to the worker-side datagram relay, and the client reached it through Tor's SOCKS5 port using the test `tests/integration/test_real_anonymity_networks.py` (the copy later committed as `bd2b9e6`). One mutual-TLS QUIC connection negotiated `X25519MLKEM768`; connecting took 4.37 s, and eight 16 KiB echo round trips took between 1.39 s and 3.76 s each. Client and service were on the same host, so this shows the carrier works through real Tor circuits and gives a first idea of latency; it is not a measurement between separate sites, not a full model request, and not a traffic-analysis result. One model layer is one such round trip per token.
+
+**Real I2P.** The packaged `i2pd` 2.49.0 aborted on this host with `malloc(): invalid size`, including after a clean restart and before any client connected, so the SAM bridge never stayed up. All eight attempts failed for that reason. The I2P carrier has therefore run only against an in-process stand-in for the SAM bridge, and nothing is claimed about it on the real network.
+
+### Not done or not tested
+
+- The public log and the gateway were exercised through in-process HTTP test clients, not as deployed TLS services, and the gateway only in front of a local model. The release-script log options have no automated test.
+- The project operates no public log and no witness. Without a witness run by a party other than the log operator, the log is only as trustworthy as that operator.
+- The gateway is not attested, sees prompts and outputs, and keeps task ownership and traces in memory only.
+- A full Fortress request over real Tor was not run; the SDK-over-carrier test uses a stand-in proxy.
+- Still open from the plan: decoy calls, verified placement labels, an in-browser verification page, checking the client's own build against the log, and post-quantum conversion of the older stage-worker, protected-media and shard-sealing paths.
+- Frontend tests, fuzzing, dependency audit, secret scan, container smoke test and the reproducible wheel build were not rerun. Hosted continuous integration is still blocked by account billing.
+
