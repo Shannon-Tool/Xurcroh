@@ -48,9 +48,15 @@ class ClientConnection:
         self.task = asyncio.create_task(self.run())
 
     async def run(self) -> None:
-        reader, writer = await asyncio.open_connection(
-            self.relay.target_host, self.relay.target_port
-        )
+        try:
+            reader, writer = await self.relay.dial(self.relay.target_host, self.relay.target_port)
+        except Exception as error:
+            # The carrier could not reach the worker. Forget this client so its next
+            # datagram tries again, and keep the reason for diagnostics.
+            self.relay.failures.append(f"{type(error).__name__}: {error}")
+            del self.relay.failures[:-16]
+            self.relay.clients.pop(self.address, None)
+            return
         try:
             with contextlib.suppress(asyncio.IncompleteReadError, ConnectionError):
                 sender = asyncio.create_task(self.send(writer))
@@ -137,15 +143,20 @@ class UdpDatagramRelay:
         transport: asyncio.DatagramTransport,
         target_host: str,
         target_port: int,
+        dial: Any = None,
     ) -> None:
         self.transport = transport
         self.target_host = target_host
         self.target_port = target_port
+        # How the stream to the far relay is opened: plain TCP unless a carrier
+        # (see xurcroh.fortress.carriers) is given.
+        self.dial = dial or asyncio.open_connection
+        self.failures: list[str] = []
         self.clients: dict[tuple[str, int], ClientConnection] = {}
 
     @classmethod
     async def bind(
-        cls, host: str, port: int, target_host: str, target_port: int
+        cls, host: str, port: int, target_host: str, target_port: int, *, dial: Any = None
     ) -> UdpDatagramRelay:
         holder: UdpDatagramRelay | None = None
 
@@ -156,7 +167,7 @@ class UdpDatagramRelay:
 
         loop = asyncio.get_running_loop()
         transport, _ = await loop.create_datagram_endpoint(Protocol, local_addr=(host, port))
-        holder = cls(transport, target_host, target_port)
+        holder = cls(transport, target_host, target_port, dial)
         return holder
 
     @property
