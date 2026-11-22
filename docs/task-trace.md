@@ -128,7 +128,7 @@ limiting, quotas or billing.
 | Model, revision, format, quantization | Proven: the user's client compiled from a digest it checked | Attested gateway only; otherwise "operator-asserted" |
 | Settings and seed were applied | Proven: the user's own software sampled | Attested gateway only; otherwise "operator-asserted" |
 | Links were encrypted, with which algorithms | Proven: recorded from the live handshake | Same, signed by the gateway |
-| Trace was not rewritten later | Proven: hash in the public log | Proven: hash in the public log |
+| Trace was not rewritten later | Proven if its hash is in a public log that a party other than the log operator witnesses; otherwise only as trustworthy as the log operator | Same condition |
 
 ## Limits of the current implementation
 
