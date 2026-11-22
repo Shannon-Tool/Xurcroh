@@ -1,0 +1,120 @@
+(* Fortress role session on a relayed route, with the key ratchet.
+
+   Models python/xurcroh/fortress/session.py as used through onion relays or a
+   Tor/I2P carrier. It differs from fortress_role_session.pv in three ways.
+
+   1. No client authentication. On a relayed route the worker's TLS peer is the
+      exit relay, so nothing in the exchange tells the worker which client it is
+      talking to: the worker completes a handshake with anyone. The relays are
+      the attacker here, which controls the whole channel.
+
+   2. The worker's answer depends on the request. An attacker can open its own
+      session and obtain answers to its own requests; that is not a break. The
+      question is whether it can obtain the answer to the honest client's request.
+
+   3. The ratchet. After the first exchange both sides replace the session key
+      with a one-way function of it. In phase 1 the attacker is given the
+      worker's static key and the ratcheted key of every session.
+
+   Results expected: the first request and its answer stay secret in every
+   phase, and the client accepts keys only from the pinned worker. The second
+   request, sent under the ratcheted key that is later disclosed, is not secret
+   and is not queried.
+
+   Outside this symbolic model: the computational security of the hybrid
+   X25519/ML-KEM-768 KEM and of HPKE, TLS, the per-frame replay window and nonce
+   handling, compromise of the worker identity key or of an ephemeral key,
+   traffic analysis, and side channels. A worker cannot tell clients apart on
+   this route, so anything that depends on who is asking is outside it too. *)
+
+type secretkey.
+type publickey.
+type signingkey.
+type verifykey.
+type contribution.
+type key.
+
+fun pk(secretkey): publickey.
+fun seal(contribution, publickey, bitstring): bitstring.
+reduc forall s: contribution, sk: secretkey, info: bitstring;
+  unseal(seal(s, pk(sk), info), sk, info) = s.
+
+fun vk(signingkey): verifykey.
+fun sign(bitstring, signingkey): bitstring.
+reduc forall m: bitstring, sk: signingkey;
+  verify(sign(m, sk), m, vk(sk)) = true.
+
+fun h(bitstring): bitstring.
+fun kdf(contribution, contribution, bitstring): key.
+(* One-way: there is no rule that recovers a key from its successor. *)
+fun ratchet(key): key.
+fun aead_seal(bitstring, key): bitstring.
+reduc forall payload: bitstring, k: key;
+  aead_open(aead_seal(payload, k), k) = payload.
+
+(* What the worker computes from a request with the model share only it holds. *)
+fun answer(bitstring): bitstring [private].
+
+event ClientAccepted(bitstring, key).
+event WorkerEstablished(bitstring, key).
+
+free c: channel.
+free worker_static: secretkey [private].
+free worker_identity: signingkey [private].
+free artifacts: bitstring.
+free first_request, second_request: bitstring [private].
+
+query attacker(first_request).
+query attacker(answer(first_request)).
+query sid: bitstring, k: key;
+  inj-event(ClientAccepted(sid, k)) ==> inj-event(WorkerEstablished(sid, k)).
+
+let client(worker_public: publickey, worker_verify: verifykey) =
+  new sid: bitstring;
+  new ephemeral: secretkey;
+  new client_secret: contribution;
+  let opening = h((sid, worker_public, pk(ephemeral))) in
+  let sealed_client = seal(client_secret, worker_public, opening) in
+  out(c, (sid, pk(ephemeral), sealed_client));
+  in(c, (sealed_worker: bitstring, signature: bitstring));
+  let middle = h((opening, sealed_client)) in
+  let worker_secret = unseal(sealed_worker, ephemeral, middle) in
+  let transcript = h((middle, sealed_worker, artifacts)) in
+  if verify(signature, transcript, worker_verify) = true then
+  let session_key = kdf(client_secret, worker_secret, transcript) in
+  event ClientAccepted(sid, session_key);
+  out(c, aead_seal(first_request, session_key));
+  in(c, response: bitstring);
+  let received = aead_open(response, session_key) in
+  let next_key = ratchet(session_key) in
+  out(c, aead_seal(second_request, next_key));
+  (phase 1; out(c, next_key)).
+
+let worker(static: secretkey, identity: signingkey) =
+  in(c, (sid: bitstring, ephemeral_public: publickey, sealed_client: bitstring));
+  let opening = h((sid, pk(static), ephemeral_public)) in
+  let client_secret = unseal(sealed_client, static, opening) in
+  new worker_secret: contribution;
+  let middle = h((opening, sealed_client)) in
+  let sealed_worker = seal(worker_secret, ephemeral_public, middle) in
+  let transcript = h((middle, sealed_worker, artifacts)) in
+  let session_key = kdf(client_secret, worker_secret, transcript) in
+  event WorkerEstablished(sid, session_key);
+  out(c, (sealed_worker, sign(transcript, identity)));
+  in(c, request: bitstring);
+  let received = aead_open(request, session_key) in
+  out(c, aead_seal(answer(received), session_key));
+  let next_key = ratchet(session_key) in
+  in(c, later: bitstring);
+  let received_later = aead_open(later, next_key) in
+  out(c, aead_seal(answer(received_later), next_key));
+  (phase 1; out(c, next_key)).
+
+process
+  out(c, pk(worker_static));
+  out(c, vk(worker_identity));
+  (
+    (!client(pk(worker_static), vk(worker_identity)))
+    | (!worker(worker_static, worker_identity))
+    | (phase 1; out(c, worker_static))
+  )
