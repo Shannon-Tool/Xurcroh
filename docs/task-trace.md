@@ -93,6 +93,33 @@ or any witness. A deployment has to run them, and until an independent party run
 log is only as trustworthy as its operator. The client does not check that its own software build
 is in the log.
 
+## Hosted gateway
+
+`python -m xurcroh.gateway` serves the client over HTTPS to API-key holders (`xurcroh.gateway`).
+It takes a YAML file with `models`, and optionally `cluster` and `security`, a file of
+`owner:sha256-of-key` lines, and a trace signing key. Requests use the same routes as the SDK's
+HTTP form. Each response carries an `X-Xurcroh-Task-Id` header; the gateway assigns the ID and
+ignores one supplied by the requester.
+
+- `GET /v1/tasks/{id}/trace` and `/proof` answer only the API key that made the task. Another key
+  gets the same "not found" as for an ID that never existed.
+- `GET /v1/trace-key` returns the trace key and log key to pin.
+- Every trace is signed with `mode: hosted` and `assurance: operator-asserted`, and
+  `xurcroh verify` prints what that means. Removing either field breaks the signature.
+
+What this gives a requester: the trace was not changed after the gateway produced it, it refers to
+their prompt and output, and, with a public log, it was not replaced later. What it does not give:
+proof that the gateway used the stated model, quantization or settings. The gateway is the trusted
+client, so it sees every prompt and output in the clear, and its operator could report anything.
+The worker checkpoints in a hosted trace are still signed by the workers, but the requester relies
+on the gateway to have checked them against the right identities. Requests are not sealed to an
+attested key, because no attested gateway exists. Running the client yourself is the only mode in
+which you check the model and settings rather than being told them.
+
+The gateway keeps the API-key digests, the task-to-owner map and the traces in memory for the most
+recent `security.trace_history` tasks; a restart loses the map and the traces. It has no rate
+limiting, quotas or billing.
+
 ## What a trace can and cannot prove
 
 | Claim | Local client | Hosted API |
@@ -108,7 +135,9 @@ is in the log.
 - When the client only forwards to a remote worker and holds no copy of the checkpoint (the
   non-Fortress remote engines), it cannot fingerprint the model. The trace then carries
   `model.identity: "unverified: the checkpoint is not held by this client"` and null digests.
-- Only the local mode exists. There is no hosted gateway, so no trace is "operator-asserted" yet.
+- A hosted gateway exists (see "Hosted gateway"). Its traces are always "operator-asserted";
+  there is no attested gateway, so the "Attested gateway only" cells in the table above cannot be
+  met today.
 - The signing key is generated per client process. The signature shows a trace was not changed after
   that client produced it.
 - Each trace's hash is appended to a Merkle log (RFC 6962 hashing) and
