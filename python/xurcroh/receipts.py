@@ -124,6 +124,7 @@ def verify_trace(
         Ed25519PublicKey.from_public_bytes(key).verify(signature, canonical(body))
     except (KeyError, TypeError, ValueError, InvalidSignature) as error:
         raise TraceError("trace signature is missing or does not verify") from error
+    _verify_manifest(document)
     report: dict[str, bool | int | None] = {
         "signature": True,
         "prompt": None,
@@ -146,6 +147,46 @@ def verify_trace(
     return report
 
 
+_MANIFEST_DOMAIN = b"xurcroh-model-manifest-v1"
+_MANIFEST_FIELDS = (
+    "repository",
+    "revision",
+    "source_format",
+    "source_digest",
+    "layout_digest",
+    "architecture",
+    "encodings",
+    "share_count",
+    "weight_shares",
+    "weight_bits",
+    "activation_bits",
+    "reap_keep_fraction",
+    "role_artifacts",
+)
+
+
+def model_manifest_digest(model: Mapping[str, Any]) -> str:
+    """One digest naming the model as it ran: source, format, quantization, shares, artifacts.
+
+    Two traces with the same digest ran the same model build split the same way onto
+    the same role artifacts.
+    """
+
+    manifest = {name: model.get(name) for name in _MANIFEST_FIELDS}
+    return hashlib.sha256(_MANIFEST_DOMAIN + canonical(manifest)).hexdigest()
+
+
+def _verify_manifest(document: Mapping[str, Any]) -> None:
+    model = document.get("model")
+    if not isinstance(model, Mapping):
+        return
+    recorded = model.get("manifest_sha256")
+    if not isinstance(recorded, str) or not hmac.compare_digest(
+        recorded, model_manifest_digest(model)
+    ):
+        raise TraceError("trace model manifest digest does not match its model facts")
+
+
 def _verify_checkpoints(document: Mapping[str, Any]) -> int | None:
     transport = document.get("transport")
     checkpoints = transport.get("worker_checkpoints") if isinstance(transport, Mapping) else None
@@ -154,10 +195,18 @@ def _verify_checkpoints(document: Mapping[str, Any]) -> int | None:
     from xurcroh.errors import ProtocolError
     from xurcroh.fortress.checkpoint import verify_checkpoint_signature
 
+    model = document.get("model")
+    pinned = model.get("role_artifacts") if isinstance(model, Mapping) else None
     try:
         for checkpoint in checkpoints:
-            verify_checkpoint_signature(checkpoint)
-    except (ProtocolError, TypeError) as error:
+            body = verify_checkpoint_signature(checkpoint)
+            expected = (pinned or {}).get(checkpoint["worker"])
+            if expected is not None and body["artifacts"] != expected:
+                raise TraceError(
+                    f"worker {checkpoint['worker']} signed for artifacts other than "
+                    "the ones in the model manifest"
+                )
+    except (ProtocolError, TypeError, KeyError) as error:
         raise TraceError(str(error)) from error
     return len(checkpoints)
 

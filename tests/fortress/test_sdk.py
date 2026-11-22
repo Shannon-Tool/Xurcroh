@@ -170,6 +170,10 @@ def test_public_sdk_executes_remote_fortress_grid(
                 body = verify_checkpoint_signature(item)
                 assert body["calls"] > 0 and item["artifacts_pinned"] is True
             assert verify_trace(trace)["worker_checkpoints"] == shares**2
+            # The manifest names the artifacts each worker then signed for.
+            assert trace["model"]["role_artifacts"] == {
+                item["worker"]: item["body"]["artifacts"] for item in checkpoints
+            }
         assert response.usage.completion_tokens == 1
         assert response.execution.engine == "fortress-grid"
         assert len(response.execution.worker_ids) == shares**2

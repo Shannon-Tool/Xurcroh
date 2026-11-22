@@ -219,6 +219,9 @@ class ClusterConfig(StrictModel):
 
 class ModelDefinition(StrictModel):
     path: str
+    # Set when the checkpoint was downloaded: the repository ``path`` named before
+    # it was replaced by the local snapshot directory.
+    repository: str | None = None
     revision: str | None = None
     source_format: Literal["auto", "safetensors", "gguf", "exl2", "exl3"] = "auto"
     engine: Literal[
