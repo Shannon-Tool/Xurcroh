@@ -6,8 +6,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-
+from xurcroh.kem import HybridKemKey
 from xurcroh.runtime.stage_sessions import SESSION_ENVELOPE_BYTES
 from xurcroh.stage_worker import DenseStage, _decode_tensor, _encode_tensor
 
@@ -18,7 +17,7 @@ class NativeStageServer:
         manifest_path: str | Path,
         *,
         stage_index: int,
-        stage_private_key: X25519PrivateKey,
+        stage_private_key: HybridKemKey,
         certificate: bytes,
         private_key: bytes,
         address: str = "127.0.0.1:0",

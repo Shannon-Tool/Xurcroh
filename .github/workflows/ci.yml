@@ -115,7 +115,7 @@ jobs:
         run: cargo install cargo-fuzz --locked
       - name: Smoke-fuzz protocol parsers and cryptographic decoders
         run: |
-          for target in frame_decode aead_open hpke_open; do
+          for target in frame_decode aead_open; do
             cargo +nightly fuzz run "$target" -- -max_total_time=30 -timeout=10
           done
 

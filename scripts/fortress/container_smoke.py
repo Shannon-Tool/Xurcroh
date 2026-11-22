@@ -12,8 +12,6 @@ import uuid
 from pathlib import Path
 
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 if str(Path(__file__).resolve().parents[2]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -26,6 +24,7 @@ from xurcroh.fortress.transport import (
     encode_role_artifact,
     native_compiled_weight_share,
 )
+from xurcroh.kem import HybridKemKey
 
 
 def free_udp_port() -> int:
@@ -58,9 +57,9 @@ def smoke(root: Path, image: str, skip_build: bool) -> dict[str, object]:
         (artifacts / "tls").mkdir()
         scratch = artifacts / "scratch"
         scratch.mkdir()
-        private = X25519PrivateKey.generate()
-        public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
-        (artifacts / "recipient.key").write_bytes(private.private_bytes_raw())
+        private = HybridKemKey.generate()
+        public = private.public_key
+        (artifacts / "recipient.key").write_bytes(private.to_bytes())
         operation = compile_operation(
             torch.tensor([[1, 2], [3, 4]], dtype=torch.int64),
             threshold=1,

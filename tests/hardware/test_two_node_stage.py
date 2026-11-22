@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from xurcroh.config import ModelDefinition, SecurityConfig, WorkerConfig
+from xurcroh.kem import HybridKemKey
 from xurcroh.models.dense import execute_dense_layer_cached, layer_weights_from_dict
 from xurcroh.requests import CompletionRequest
 from xurcroh.runtime.stage import DenseStageEngine
@@ -65,7 +65,7 @@ def test_two_node_outputs_match_fp64_reference() -> None:
     try:
         for index in range(len(workers)):
             identity = manifest.parent / "identities" / f"stage-{index}.key"
-            private_key = X25519PrivateKey.from_private_bytes(identity.read_bytes())
+            private_key = HybridKemKey.from_bytes(identity.read_bytes())
             shard = DenseStage(manifest, index, private_key)
             stage = manifest_document["stages"][index]
             rope_theta = float(

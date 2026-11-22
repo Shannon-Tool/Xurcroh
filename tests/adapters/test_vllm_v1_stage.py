@@ -468,16 +468,15 @@ def test_vllm_request_drop_refreshes_persistent_batch_metadata() -> None:
 
 
 def test_stage_worker_scopes_state_and_authenticates_cancellation(tmp_path, monkeypatch) -> None:
-    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
     from fastapi.testclient import TestClient
 
+    from xurcroh.kem import HybridKemKey
     from xurcroh.runtime.stage_sessions import ClientStageSession, StageSessionStore
     from xurcroh.stage_worker import create_stage_app
 
     install_vllm_stubs(monkeypatch)
-    stage_private = X25519PrivateKey.generate()
-    recipient_public = stage_private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    stage_private = HybridKemKey.generate()
+    recipient_public = stage_private.public_key
     first_session = ClientStageSession(0, recipient_public)
     second_session = ClientStageSession(0, recipient_public)
     session_id = first_session.session_id

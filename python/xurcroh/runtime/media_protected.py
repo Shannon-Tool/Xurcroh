@@ -9,22 +9,27 @@ from typing import Any
 
 import httpx
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import (
-    Encoding,
-    NoEncryption,
-    PrivateFormat,
-)
 
 from xurcroh.adapters.pipeline import PipelineTensorInterceptor
 from xurcroh.config import ModelDefinition, SecurityConfig, WorkerConfig
-from xurcroh.errors import CapabilityError, ClusterUnavailableError, ConfigurationError
+from xurcroh.errors import (
+    CapabilityError,
+    ClusterUnavailableError,
+    ConfigurationError,
+    ProtocolError,
+)
+from xurcroh.kem import HybridKemKey, KemError, open_sealed
 from xurcroh.requests import ImageGenerationRequest, VideoGenerationRequest
 from xurcroh.runtime.attestation import RemoteAttestationClient
 from xurcroh.runtime.dit_stage import CompiledDiTClientBoundary
 from xurcroh.runtime.generation import check_request_health
 from xurcroh.runtime.media_boundary import DiffusionMediaBoundary
-from xurcroh.runtime.media_sessions import encode_public, open_tensors, seal_tensors
+from xurcroh.runtime.media_sessions import (
+    encode_public,
+    media_session_info,
+    open_tensors,
+    seal_tensors,
+)
 from xurcroh.runtime.remote import RemoteOpenAIEngine
 from xurcroh.types import (
     ExecutionMetadata,
@@ -113,27 +118,27 @@ class RemoteProtectedMediaEngine:
         started: float,
         timeout: float,
     ) -> torch.Tensor:
-        import xurcroh_quic
-
-        private = X25519PrivateKey.generate()
+        private = HybridKemKey.generate()
         worker = self.workers[0]
         session_id: str | None = None
         try:
             handshake = self._client.post(
                 f"{self._endpoint(worker)}/v1/protected/sessions",
-                json={"client_public": encode_public(private.public_key())},
+                json={"client_public": encode_public(private.public_key)},
                 timeout=timeout,
             )
             handshake.raise_for_status()
             session = handshake.json()
             session_id = session["session_id"]
-            master = xurcroh_quic.hpke_open_session_master(
-                private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
-                base64.b64decode(session["encapsulated_key"], validate=True),
-                base64.b64decode(session["handshake"], validate=True),
-                b"xurcroh-media-hpke-v1",
-                session_id.encode(),
-            )
+            try:
+                master = open_sealed(
+                    private,
+                    media_session_info(session_id),
+                    base64.b64decode(session["encapsulated_key"], validate=True)
+                    + base64.b64decode(session["handshake"], validate=True),
+                )
+            except KemError as error:
+                raise ProtocolError("protected-media session key does not open") from error
             context = session_id.encode()
             sender = PipelineTensorInterceptor(master, b"client", b"worker", context)
             receiver = PipelineTensorInterceptor(master, b"client", b"worker", context)

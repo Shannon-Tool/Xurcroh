@@ -4,8 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-
+from xurcroh.kem import HybridKemKey
 from xurcroh.shards.compiler import CompilationConfig, CompilationResult, XurcrohWeightCompiler
 from xurcroh.shards.recipients import StageRecipient
 
@@ -13,12 +12,12 @@ from xurcroh.shards.recipients import StageRecipient
 @dataclass(frozen=True)
 class StageIdentities:
     boundary_key: bytes
-    private_keys: tuple[X25519PrivateKey, ...]
+    private_keys: tuple[HybridKemKey, ...]
     recipients: tuple[StageRecipient, ...]
 
     @classmethod
     def create(cls, stage_count: int) -> StageIdentities:
-        private_keys = tuple(X25519PrivateKey.generate() for _ in range(stage_count))
+        private_keys = tuple(HybridKemKey.generate() for _ in range(stage_count))
         recipients = tuple(
             StageRecipient.from_private_key(index, private_key)
             for index, private_key in enumerate(private_keys)

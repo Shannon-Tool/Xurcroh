@@ -5,10 +5,9 @@ from pathlib import Path
 from typing import Any, cast
 
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from xurcroh.errors import CapabilityError, ShardIntegrityError
+from xurcroh.kem import HybridKemKey
 from xurcroh.models.dit import reference_dit_stage
 from xurcroh.shards.dit_compiler import weights_from_tensors
 from xurcroh.shards.format import read_shard
@@ -30,11 +29,11 @@ def _document(path: str | Path) -> dict[str, Any]:
 
 
 class CompiledDiTStage:
-    def __init__(self, manifest_path: str | Path, private_key: X25519PrivateKey) -> None:
+    def __init__(self, manifest_path: str | Path, private_key: HybridKemKey) -> None:
         path = Path(manifest_path)
         document = _document(path)
         stage = document["stages"][0]
-        public = private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        public = private_key.public_key
         if public.hex() != stage["recipient_public"]:
             raise ShardIntegrityError("DiT recipient identity mismatch")
         envelope = json.loads((path.parent / stage["key_envelope"]).read_text())

@@ -5,9 +5,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-
 from xurcroh.errors import ShardIntegrityError
+from xurcroh.kem import PUBLIC_KEY_BYTES, HybridKemKey
 from xurcroh.shards.format import read_shard
 from xurcroh.shards.recipients import open_stage_key, verify_manifest_digest
 
@@ -29,7 +28,7 @@ def verify_manifest(
     path: str | Path,
     boundary_key: bytes,
     *,
-    stage_private_keys: Mapping[int, X25519PrivateKey] | None = None,
+    stage_private_keys: Mapping[int, HybridKemKey] | None = None,
 ) -> ManifestVerification:
     manifest_path = Path(path)
     try:
@@ -46,7 +45,7 @@ def verify_manifest(
             envelope_path = _artifact_path(root, stage["key_envelope"])
             if not stage_path.is_file() or not envelope_path.is_file():
                 raise ShardIntegrityError("manifest references a missing stage artifact")
-            if len(bytes.fromhex(stage["recipient_public"])) != 32:
+            if len(bytes.fromhex(stage["recipient_public"])) != PUBLIC_KEY_BYTES:
                 raise ShardIntegrityError("invalid recipient public key")
             layer_indices.extend(stage["layer_indices"])
             fingerprints.add(stage["checkpoint_fingerprint"])

@@ -8,18 +8,18 @@ from pathlib import Path
 
 import pytest
 import uvicorn
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from shards.identities import StageIdentities
 from Xurcroh import Xurcroh
 from xurcroh.errors import RequestCancelledError
+from xurcroh.kem import HybridKemKey
 
 
 @contextmanager
 def running_stage(
     manifest: Path,
     stage_index: int,
-    private_key: X25519PrivateKey,
+    private_key: HybridKemKey,
     attestation_document=None,
 ) -> Iterator[str]:
     from xurcroh.stage_worker import create_stage_app
