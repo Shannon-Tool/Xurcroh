@@ -65,6 +65,11 @@ protected hardware. No task ID is sent to a worker; the request is an ordinary f
 crosses onion relays unchanged. If no role has a pinned identity, `worker_checkpoints` is `null`
 and `xurcroh verify` prints that workers signed nothing.
 
+If a link drops or a managed worker is restarted during a request, the client reconnects and opens
+a new session. The checkpoint then covers only the calls made in the new session; calls answered
+before the drop appear in no checkpoint, although each of their results was still checked. The
+`fortress_reconnections` counter in the trace says when this happened.
+
 ## Public log
 
 Set `security.trace_log_endpoint` and `security.trace_log_key` to publish each trace hash to a

@@ -717,34 +717,50 @@ class FortressDeployment:
                     error.add_note(f"Fortress cleanup also failed: {cleanup_error}")
                 raise
 
-    def _stop_role(self, role: RoleDeployment, timeout: float = 30) -> None:
+    def _stop_role(self, role: RoleDeployment, timeout: float = 30, *, force: bool = False) -> None:
+        """Stop a role process and wait until it is gone.
+
+        A role that does not exit on request is killed. Teardown reports that as an
+        error; a restart (``force``) only needs the old process gone and carries on.
+        """
+
         assert self._executor is not None
         role_root = Path(self._remote_root) / f"model-{role.model_index}" / role.worker.name
         pid = shlex.quote(str(role_root / "role.pid"))
         exit_file = shlex.quote(str(role_root / "role.exit"))
+        # A killed process that nothing has reaped is a zombie: it still answers
+        # ``kill -0`` although it holds no port and runs no code, so it counts as gone.
+        gone = (
+            f"if ! test -f {pid}; then echo exited; "
+            f"elif test -f {exit_file}; then echo exited; "
+            f"elif ! kill -0 $(cat {pid}) 2>/dev/null; then echo exited; "
+            f"elif grep -q '^State:[[:space:]]*Z' /proc/$(cat {pid})/status 2>/dev/null; "
+            "then echo exited; fi"
+        )
+
+        def wait_until_gone(deadline: float) -> bool:
+            while True:
+                if self._executor.run(role.worker, gone).strip() == "exited":  # type: ignore[union-attr]
+                    return True
+                if time.monotonic() >= deadline:
+                    return False
+                time.sleep(0.2)
+
         self._executor.run(
             role.worker,
             f"if test -f {pid}; then kill $(cat {pid}) 2>/dev/null || true; fi",
         )
-        deadline = time.monotonic() + timeout
-        while True:
-            status = self._executor.run(
-                role.worker,
-                f"if ! test -f {pid}; then echo exited; "
-                f"elif test -f {exit_file}; then echo exited; "
-                f"elif ! kill -0 $(cat {pid}) 2>/dev/null; then echo exited; fi",
-            ).strip()
-            if status == "exited":
-                return
-            if time.monotonic() >= deadline:
-                self._executor.run(
-                    role.worker,
-                    f"if test -f {pid}; then kill -KILL $(cat {pid}) 2>/dev/null || true; fi",
-                )
-                raise ClusterUnavailableError(
-                    f"Fortress role {role.service_name!r} required forced termination"
-                )
-            time.sleep(0.2)
+        if wait_until_gone(time.monotonic() + timeout):
+            return
+        self._executor.run(
+            role.worker,
+            f"if test -f {pid}; then kill -KILL $(cat {pid}) 2>/dev/null || true; fi",
+        )
+        if force and wait_until_gone(time.monotonic() + 10):
+            return
+        raise ClusterUnavailableError(
+            f"Fortress role {role.service_name!r} required forced termination"
+        )
 
     def diagnostics(self) -> dict[str, str]:
         if self._executor is None:
@@ -789,7 +805,7 @@ class FortressDeployment:
             role = matches[0]
             self._restarting.add(provider_id)
         try:
-            self._stop_role(role)
+            self._stop_role(role, force=True)
             self._start_role(role)
         except BaseException:
             with self._restart_condition:
