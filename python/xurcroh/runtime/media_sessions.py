@@ -9,12 +9,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from safetensors.torch import load, save
 
 from xurcroh.adapters.pipeline import PipelineTensorInterceptor
 from xurcroh.errors import ProtocolError
+from xurcroh.kem import PUBLIC_KEY_BYTES, SEAL_OVERHEAD_BYTES, KemError, seal
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -22,15 +21,26 @@ if TYPE_CHECKING:
     from xurcroh.runtime import RuntimeService
 
 
-def encode_public(key: X25519PublicKey) -> str:
-    return base64.b64encode(key.public_bytes(Encoding.Raw, PublicFormat.Raw)).decode()
+# Where the KEM encapsulation ends inside a sealed session master (ML-KEM-768 + X25519).
+ENCAPSULATION_BYTES = SEAL_OVERHEAD_BYTES - 16
 
 
-def decode_public(value: str) -> X25519PublicKey:
+def media_session_info(session_id: str) -> bytes:
+    return b"xurcroh-media-hpke-v3:" + session_id.encode()
+
+
+def encode_public(key: bytes) -> str:
+    return base64.b64encode(key).decode()
+
+
+def decode_public(value: str) -> bytes:
     try:
-        return X25519PublicKey.from_public_bytes(base64.b64decode(value, validate=True))
+        public = base64.b64decode(value, validate=True)
     except ValueError as error:
         raise ProtocolError("invalid protected-media public key") from error
+    if len(public) != PUBLIC_KEY_BYTES:
+        raise ProtocolError("invalid protected-media public key")
+    return public
 
 
 def seal_tensors(
@@ -81,15 +91,15 @@ class ProtectedMediaSessionStore:
             self._sessions.pop(session_id, None)
 
     def create(self, client_public: str) -> tuple[str, str, str]:
-        import xurcroh_quic
-
-        public = decode_public(client_public).public_bytes(Encoding.Raw, PublicFormat.Raw)
+        public = decode_public(client_public)
         session_id = f"media_{uuid.uuid4().hex}"
         context = session_id.encode()
         master = secrets.token_bytes(32)
-        encapsulated, handshake = xurcroh_quic.hpke_seal_session_master(
-            public, b"xurcroh-media-hpke-v1", context, master
-        )
+        try:
+            sealed = seal(public, media_session_info(session_id), master)
+        except KemError as error:
+            raise ProtocolError("invalid protected-media public key") from error
+        encapsulated, handshake = sealed[:ENCAPSULATION_BYTES], sealed[ENCAPSULATION_BYTES:]
         with self._lock:
             self._prune()
             if len(self._sessions) >= self.capacity:

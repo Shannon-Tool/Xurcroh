@@ -31,6 +31,7 @@ from xurcroh.errors import (
     RequestTimeoutError,
     ShardIntegrityError,
 )
+from xurcroh.kem import PUBLIC_KEY_BYTES as KEM_PUBLIC_KEY_BYTES
 from xurcroh.prompting import render_chat_prompt
 from xurcroh.requests import CompletionRequest
 from xurcroh.runtime.attestation import RemoteAttestationClient
@@ -113,7 +114,7 @@ class DenseStageEngine:
             if Path(stage["key_envelope"]).name != stage["key_envelope"]:
                 raise ShardIntegrityError("unsafe stage key path")
             recipient_public = bytes.fromhex(stage["recipient_public"])
-            if len(recipient_public) != 32:
+            if len(recipient_public) != KEM_PUBLIC_KEY_BYTES:
                 raise ShardIntegrityError("invalid stage recipient public key")
             self._recipient_public.append(recipient_public)
         if Path(boundary["file"]).name != boundary["file"]:

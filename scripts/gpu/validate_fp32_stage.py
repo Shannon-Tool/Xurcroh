@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from safetensors.torch import load_file, save_file
 
 from xurcroh.adapters.vllm_v1_stage import create_vllm_stage, hidden_from_intermediate
@@ -16,10 +15,11 @@ from xurcroh.models.dense import (
     layer_weights_from_dict,
 )
 from xurcroh.stage_worker import DenseStage
+from xurcroh.kem import HybridKemKey
 
 
 def optimized_outputs(root: Path, index: int, captured: dict[str, torch.Tensor]):
-    private = X25519PrivateKey.from_private_bytes((root / "stage.identity").read_bytes())
+    private = HybridKemKey.from_bytes((root / "stage.identity").read_bytes())
     stage = create_vllm_stage(
         root / "worker-artifacts/manifest.json",
         index,
@@ -78,7 +78,7 @@ def reference_outputs(
     atol: float,
     rtol: float,
 ):
-    private = X25519PrivateKey.from_private_bytes((root / "stage.identity").read_bytes())
+    private = HybridKemKey.from_bytes((root / "stage.identity").read_bytes())
     reference = DenseStage(root / "worker-artifacts/manifest.json", index, private)
     document = json.loads((root / "worker-artifacts/manifest.json").read_text())["stages"][index]
     inputs = {

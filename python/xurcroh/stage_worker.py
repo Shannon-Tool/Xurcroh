@@ -10,13 +10,12 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from xurcroh.adapters.pipeline import PipelineTensorInterceptor
 from xurcroh.errors import ModelLoadError, ProtocolError, ShardIntegrityError
+from xurcroh.kem import PRIVATE_KEY_BYTES, HybridKemKey
 from xurcroh.models.dense import DenseLayerWeights, DenseStageRunner, layer_weights_from_dict
 from xurcroh.models.moe import MoELayerWeights, moe_layer_weights_from_dict
 from xurcroh.runtime.stage_sessions import StageSessionStore
@@ -32,7 +31,8 @@ class StageExecutionRequest(BaseModel):
     session_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     session_token: str = Field(min_length=44, max_length=44)
     client_public: str = Field(min_length=44, max_length=44)
-    handshake: str = Field(min_length=64, max_length=64)
+    # Base64 of the session master sealed with ML-KEM-768 and X25519 (1168 bytes).
+    handshake: str = Field(min_length=1560, max_length=1560)
     stage_index: int = Field(ge=0)
     dtype: Literal["f64", "f32", "f16", "bf16", "u8"] = "f64"
     shape: list[int] = Field(min_length=1, max_length=2)
@@ -44,7 +44,7 @@ class DenseStage:
         self,
         manifest_path: str | Path,
         stage_index: int,
-        private_key: X25519PrivateKey,
+        private_key: HybridKemKey,
     ) -> None:
         path = Path(manifest_path)
         try:
@@ -62,7 +62,7 @@ class DenseStage:
             envelope = json.loads((path.parent / stage["key_envelope"]).read_text())
         except (OSError, KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
             raise ShardIntegrityError("invalid stage manifest") from error
-        public = private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        public = private_key.public_key
         if public.hex() != stage["recipient_public"]:
             raise ShardIntegrityError("stage recipient identity mismatch")
         key = open_stage_key(
@@ -170,7 +170,7 @@ def create_stage_app(
     manifest_path: str | Path,
     *,
     stage_index: int,
-    private_key: X25519PrivateKey,
+    private_key: HybridKemKey,
     attestation_document: dict[str, Any] | None = None,
     engine: Literal["reference", "vllm", "sglang"] = "reference",
     checkpoint: str | Path | None = None,
@@ -393,9 +393,12 @@ def main() -> None:
     if not args.development_http and (not args.tls_cert or not args.tls_key):
         parser.error("stage workers require TLS certificate/key or explicit --development-http")
     identity_bytes = args.stage_private_key.read_bytes()
-    if len(identity_bytes) != 32:
-        parser.error("stage private identity must contain exactly 32 bytes")
-    stage_identity = X25519PrivateKey.from_private_bytes(identity_bytes)
+    if len(identity_bytes) != PRIVATE_KEY_BYTES:
+        parser.error(
+            f"stage private identity must contain exactly {PRIVATE_KEY_BYTES} bytes "
+            "(create one with python -m xurcroh.kem)"
+        )
+    stage_identity = HybridKemKey.from_bytes(identity_bytes)
     attestation_document = (
         json.loads(args.attestation_evidence.read_text())
         if args.attestation_evidence is not None

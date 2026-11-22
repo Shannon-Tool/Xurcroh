@@ -6,36 +6,33 @@ from pathlib import Path
 
 import pytest
 import torch
-import xurcroh_quic
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
 
 from xurcroh.adapters.pipeline import PipelineTensorInterceptor
 from xurcroh.errors import ModelLoadError, ProtocolError
+from xurcroh.kem import HybridKemKey, open_sealed
 from xurcroh.runtime.media_sessions import (
     ProtectedMediaSessionStore,
     encode_public,
+    media_session_info,
     open_tensors,
     seal_tensors,
 )
 
 
 def _client_master(
-    private: X25519PrivateKey, session_id: str, encapsulated: str, handshake: str
+    private: HybridKemKey, session_id: str, encapsulated: str, handshake: str
 ) -> bytes:
-    return xurcroh_quic.hpke_open_session_master(
-        private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
-        base64.b64decode(encapsulated),
-        base64.b64decode(handshake),
-        b"xurcroh-media-hpke-v1",
-        session_id.encode(),
+    return open_sealed(
+        private,
+        media_session_info(session_id),
+        base64.b64decode(encapsulated) + base64.b64decode(handshake),
     )
 
 
 def test_media_session_authenticates_tensors_and_rejects_replay() -> None:
-    client_private = X25519PrivateKey.generate()
+    client_private = HybridKemKey.generate()
     store = ProtectedMediaSessionStore()
-    session_id, encapsulated, handshake = store.create(encode_public(client_private.public_key()))
+    session_id, encapsulated, handshake = store.create(encode_public(client_private.public_key))
     master = _client_master(client_private, session_id, encapsulated, handshake)
     sender = PipelineTensorInterceptor(master, b"client", b"worker", session_id.encode())
     session = store.get(session_id)
@@ -53,17 +50,17 @@ def test_media_session_authenticates_tensors_and_rejects_replay() -> None:
 
 def test_media_session_capacity_fails_closed() -> None:
     store = ProtectedMediaSessionStore(capacity=1)
-    private = X25519PrivateKey.generate()
-    store.create(encode_public(private.public_key()))
+    private = HybridKemKey.generate()
+    store.create(encode_public(private.public_key))
     with pytest.raises(ProtocolError, match="capacity"):
-        store.create(encode_public(private.public_key()))
+        store.create(encode_public(private.public_key))
     store.close()
 
 
 def test_media_session_directions_use_distinct_keys_for_the_same_sequence() -> None:
-    client_private = X25519PrivateKey.generate()
+    client_private = HybridKemKey.generate()
     store = ProtectedMediaSessionStore()
-    session_id, encapsulated, handshake = store.create(encode_public(client_private.public_key()))
+    session_id, encapsulated, handshake = store.create(encode_public(client_private.public_key))
     master = _client_master(client_private, session_id, encapsulated, handshake)
     context = session_id.encode()
     client_sender = PipelineTensorInterceptor(master, b"client", b"worker", context)

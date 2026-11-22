@@ -9,33 +9,35 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import (
-    Encoding,
-    NoEncryption,
-    PrivateFormat,
-    PublicFormat,
-)
-
 from xurcroh.adapters.pipeline import PipelineTensorInterceptor
 from xurcroh.errors import ProtocolError
+from xurcroh.kem import (
+    PUBLIC_KEY_BYTES,
+    SEAL_OVERHEAD_BYTES,
+    HybridKemKey,
+    KemError,
+    open_sealed,
+    seal,
+)
 
-HPKE_CIPHERTEXT_BYTES = 48
+# The session master sealed to the stage's key with ML-KEM-768 and X25519 together.
+HPKE_CIPHERTEXT_BYTES = SEAL_OVERHEAD_BYTES + 32
 SESSION_ENVELOPE_BYTES = 32 + 32 + 32 + HPKE_CIPHERTEXT_BYTES
 
 
-def encode_session_public(private: X25519PrivateKey) -> str:
-    public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
-    return base64.b64encode(public).decode()
+def _handshake_digest(handshake: bytes) -> bytes:
+    return hashlib.sha256(b"xurcroh-stage-handshake-v3" + handshake).digest()
 
 
 def decode_session_public(value: str) -> bytes:
+    """Decode the 32-byte digest that names a session's sealed handshake."""
+
     try:
         public = base64.b64decode(value, validate=True)
     except ValueError as error:
-        raise ProtocolError("invalid stage-session encapsulated key") from error
+        raise ProtocolError("invalid stage-session handshake digest") from error
     if len(public) != 32:
-        raise ProtocolError("stage-session encapsulated key must contain 32 bytes")
+        raise ProtocolError("stage-session handshake digest must contain 32 bytes")
     return public
 
 
@@ -58,34 +60,24 @@ def _context(stage_index: int, session_id: str) -> bytes:
     return f"xurcroh-stage-{stage_index}-session-v2:{session_id}".encode()
 
 
-def _hpke_info(stage_index: int) -> bytes:
-    return f"xurcroh-stage-hpke-v1:{stage_index}".encode()
-
-
-def _hpke_associated_data(session_id: str, token: bytes) -> bytes:
-    return session_id.encode() + token
+def _hpke_info(stage_index: int, session_id: str, token: bytes) -> bytes:
+    # Binds the sealed master to the stage, the session and its bearer token.
+    return f"xurcroh-stage-hpke-v3:{stage_index}:{session_id}:".encode() + token
 
 
 class ClientStageSession:
     def __init__(self, stage_index: int, recipient_public: bytes) -> None:
-        import xurcroh_quic
-
-        if len(recipient_public) != 32:
-            raise ValueError("recipient public key must contain 32 bytes")
+        if len(recipient_public) != PUBLIC_KEY_BYTES:
+            raise ValueError(f"recipient public key must contain {PUBLIC_KEY_BYTES} bytes")
         self.stage_index = stage_index
         self.session_id = uuid.uuid4().hex
         self._token = secrets.token_bytes(32)
         self.session_token = base64.b64encode(self._token).decode()
         master = secrets.token_bytes(32)
-        associated_data = _hpke_associated_data(self.session_id, self._token)
-        self.handshake: bytes
-        encapsulated, self.handshake = xurcroh_quic.hpke_seal_session_master(
-            recipient_public,
-            _hpke_info(stage_index),
-            associated_data,
-            master,
+        self.handshake: bytes = seal(
+            recipient_public, _hpke_info(stage_index, self.session_id, self._token), master
         )
-        self.client_public = base64.b64encode(encapsulated).decode()
+        self.client_public = base64.b64encode(_handshake_digest(self.handshake)).decode()
         context = _context(stage_index, self.session_id)
         self.sender = PipelineTensorInterceptor(master, b"client", b"stage", context)
         self.receiver = PipelineTensorInterceptor(master, b"client", b"stage", context)
@@ -129,7 +121,7 @@ class _ServerSession:
 class StageSessionStore:
     def __init__(
         self,
-        private_key: X25519PrivateKey,
+        private_key: HybridKemKey,
         stage_index: int,
         *,
         ttl_seconds: float = 300,
@@ -154,8 +146,6 @@ class StageSessionStore:
         session_token: str | bytes,
         handshake: bytes,
     ) -> tuple[PipelineTensorInterceptor, PipelineTensorInterceptor]:
-        import xurcroh_quic
-
         if len(session_id) != 32:
             raise ProtocolError("invalid stage-session identifier")
         try:
@@ -179,16 +169,16 @@ class StageSessionStore:
                 raise ProtocolError("stage-session capacity is exhausted")
             if len(handshake) != HPKE_CIPHERTEXT_BYTES:
                 raise ProtocolError("stage-session HPKE ciphertext is invalid")
-            recipient_private = self._private.private_bytes(
-                Encoding.Raw, PrivateFormat.Raw, NoEncryption()
-            )
-            master = xurcroh_quic.hpke_open_session_master(
-                recipient_private,
-                public,
-                handshake,
-                _hpke_info(self.stage_index),
-                _hpke_associated_data(session_id, token),
-            )
+            if not hmac.compare_digest(public, _handshake_digest(handshake)):
+                raise ProtocolError("stage-session handshake digest does not match")
+            try:
+                master = open_sealed(
+                    self._private, _hpke_info(self.stage_index, session_id, token), handshake
+                )
+            except KemError as error:
+                raise ProtocolError("stage-session HPKE ciphertext does not open") from error
+            if len(master) != 32:
+                raise ProtocolError("stage-session master must contain 32 bytes")
             context = _context(self.stage_index, session_id)
             session = _ServerSession(
                 expires_at=time.monotonic() + self.ttl_seconds,

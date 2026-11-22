@@ -8,10 +8,10 @@ from typing import Any
 from unittest.mock import PropertyMock, patch
 
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from xurcroh.adapters.sglang_kv import scrub_sglang_request
 from xurcroh.errors import CompatibilityError, ModelLoadError, ProtocolError
+from xurcroh.kem import HybridKemKey
 from xurcroh.shards.key_broker import register_stage_identity, revoke_stage_identity
 from xurcroh.shards.recipients import verify_manifest_digest
 
@@ -121,7 +121,7 @@ class SGLangStage:
 def create_sglang_stage(
     manifest_path: str | Path,
     stage_index: int,
-    private_key: X25519PrivateKey,
+    private_key: HybridKemKey,
     *,
     checkpoint: str | Path,
     device: int = 0,

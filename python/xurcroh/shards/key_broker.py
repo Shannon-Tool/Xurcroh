@@ -3,23 +3,22 @@ from __future__ import annotations
 import secrets
 import threading
 
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-
 from xurcroh.errors import ModelLoadError
+from xurcroh.kem import HybridKemKey
 
 
 class StageIdentityBroker:
     def __init__(self) -> None:
-        self._identities: dict[str, X25519PrivateKey] = {}
+        self._identities: dict[str, HybridKemKey] = {}
         self._lock = threading.Lock()
 
-    def register(self, private_key: X25519PrivateKey) -> str:
+    def register(self, private_key: HybridKemKey) -> str:
         handle = secrets.token_urlsafe(32)
         with self._lock:
             self._identities[handle] = private_key
         return handle
 
-    def resolve(self, handle: str) -> X25519PrivateKey:
+    def resolve(self, handle: str) -> HybridKemKey:
         with self._lock:
             try:
                 return self._identities[handle]
@@ -34,11 +33,11 @@ class StageIdentityBroker:
 _STAGE_IDENTITIES = StageIdentityBroker()
 
 
-def register_stage_identity(private_key: X25519PrivateKey) -> str:
+def register_stage_identity(private_key: HybridKemKey) -> str:
     return _STAGE_IDENTITIES.register(private_key)
 
 
-def resolve_stage_identity(handle: str) -> X25519PrivateKey:
+def resolve_stage_identity(handle: str) -> HybridKemKey:
     return _STAGE_IDENTITIES.resolve(handle)
 
 

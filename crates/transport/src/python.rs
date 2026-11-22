@@ -262,46 +262,6 @@ fn generate_self_signed(name: &str) -> PyResult<(Py<PyBytes>, Py<PyBytes>)> {
     })
 }
 
-#[pyfunction]
-fn hpke_seal_session_master(
-    recipient_public: &[u8],
-    info: &[u8],
-    associated_data: &[u8],
-    master: &[u8],
-) -> PyResult<(Py<PyBytes>, Py<PyBytes>)> {
-    let master: &[u8; 32] = master
-        .try_into()
-        .map_err(|_| value_error("master key must be 32 bytes"))?;
-    let envelope =
-        xurcroh_crypto::seal_session_master(recipient_public, info, associated_data, master)
-            .map_err(crypto_error)?;
-    Python::attach(|py| {
-        Ok((
-            PyBytes::new(py, &envelope.encapsulated_key).into(),
-            PyBytes::new(py, &envelope.ciphertext).into(),
-        ))
-    })
-}
-
-#[pyfunction]
-fn hpke_open_session_master(
-    recipient_private: &[u8],
-    encapsulated_key: &[u8],
-    ciphertext: &[u8],
-    info: &[u8],
-    associated_data: &[u8],
-) -> PyResult<Py<PyBytes>> {
-    let master = xurcroh_crypto::open_session_master(
-        recipient_private,
-        encapsulated_key,
-        ciphertext,
-        info,
-        associated_data,
-    )
-    .map_err(crypto_error)?;
-    Python::attach(|py| Ok(PyBytes::new(py, &master).into()))
-}
-
 #[pyclass]
 struct ServerConnection {
     connection: Connection,
@@ -621,8 +581,6 @@ fn xurcroh_quic(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(encode_frame, module)?)?;
     module.add_function(wrap_pyfunction!(decode_frame, module)?)?;
     module.add_function(wrap_pyfunction!(generate_self_signed, module)?)?;
-    module.add_function(wrap_pyfunction!(hpke_seal_session_master, module)?)?;
-    module.add_function(wrap_pyfunction!(hpke_open_session_master, module)?)?;
     fortress::register(module)?;
     Ok(())
 }

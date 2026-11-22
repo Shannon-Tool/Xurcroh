@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 
 import pytest
-from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
 
 from shards.identities import StageIdentities
 from xurcroh.errors import ShardIntegrityError
@@ -41,9 +40,7 @@ def test_worker_credentials_cannot_open_boundary_or_peer_artifacts(
     identities = StageIdentities.create(2)
     compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=241)
     identity_path = tmp_path / "stage-0.identity"
-    identity_path.write_bytes(
-        identities.private_keys[0].private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
-    )
+    identity_path.write_bytes(identities.private_keys[0].to_bytes())
     environment = dict(os.environ)
     environment.pop("XURCROH_MASTER_KEY", None)
     process = subprocess.Popen(  # noqa: S603 - fixed local adversarial-test executable
@@ -69,9 +66,7 @@ def test_worker_credentials_cannot_open_boundary_or_peer_artifacts(
         assert result["peer_opened_with_own_identity"] is False
         assert result["basis_tensor_names"] == []
         assert memory_contains(process.pid, identities.boundary_key) is False
-        peer_private = identities.private_keys[1].private_bytes(
-            Encoding.Raw, PrivateFormat.Raw, NoEncryption()
-        )
+        peer_private = identities.private_keys[1].to_bytes()
         assert memory_contains(process.pid, peer_private) is False
     finally:
         process.terminate()

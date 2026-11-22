@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from xurcroh.errors import ModelLoadError
+from xurcroh.kem import HybridKemKey
 from xurcroh.shards.key_broker import (
     register_stage_identity,
     resolve_stage_identity,
@@ -12,7 +12,7 @@ from xurcroh.shards.key_broker import (
 
 
 def test_stage_identity_broker_revokes_handles() -> None:
-    private = X25519PrivateKey.generate()
+    private = HybridKemKey.generate()
     handle = register_stage_identity(private)
     assert resolve_stage_identity(handle) is private
     revoke_stage_identity(handle)

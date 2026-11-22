@@ -1,9 +1,7 @@
 //! Cryptographic session primitives for Xurcroh.
 
-mod hpke_session;
 mod session;
 
-pub use hpke_session::{open_session_master, seal_session_master, HpkeEnvelope};
 pub use session::{AeadSession, ReplayWindow, Sealed};
 
 use thiserror::Error;

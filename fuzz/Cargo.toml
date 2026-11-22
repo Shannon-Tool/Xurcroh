@@ -25,9 +25,3 @@ name = "aead_open"
 path = "fuzz_targets/aead_open.rs"
 test = false
 doc = false
-
-[[bin]]
-name = "hpke_open"
-path = "fuzz_targets/hpke_open.rs"
-test = false
-doc = false

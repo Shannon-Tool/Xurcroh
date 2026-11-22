@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from xurcroh.errors import ProtocolError
+from xurcroh.kem import HybridKemKey
 from xurcroh.runtime.stage_sessions import ClientStageSession, StageSessionStore
 
 
 def test_stage_session_directions_use_distinct_keys_for_the_same_sequence() -> None:
-    private = X25519PrivateKey.generate()
-    recipient_public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    private = HybridKemKey.generate()
+    recipient_public = private.public_key
     client = ClientStageSession(0, recipient_public)
     store = StageSessionStore(private, 0)
     receiver, sender = store.get_or_create(
@@ -32,12 +31,13 @@ def test_stage_session_directions_use_distinct_keys_for_the_same_sequence() -> N
 
 
 def test_native_session_envelope_carries_an_authentication_secret() -> None:
-    private = X25519PrivateKey.generate()
-    recipient_public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    private = HybridKemKey.generate()
+    recipient_public = private.public_key
     client = ClientStageSession(0, recipient_public)
 
     packet = client.wire_packet(b"payload")
 
-    assert len(packet) == 32 + 32 + 32 + 48 + len(b"payload")
+    # digest, session id, token, then the master sealed with ML-KEM-768 and X25519
+    assert len(packet) == 32 + 32 + 32 + (1136 + 32) + len(b"payload")
     assert packet[32:64] == client.session_id.encode()
-    assert packet[96:144] == client.handshake
+    assert packet[96 : 96 + 1168] == client.handshake
