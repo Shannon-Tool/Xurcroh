@@ -29,7 +29,7 @@ def test_assigned_quantized_role_has_only_its_weight_share_and_no_client_secrets
     compiled = compile_fortress_checkpoint(checkpoint, seed=731, load_model=False)
     name = next(iter(compiled.operations))
     operation = compiled.operations[name]
-    encoded = encode_role_artifact(operation, 0, bytes(range(32)))
+    encoded = encode_role_artifact(operation, 0, bytes(1216))
     document = json.loads(encoded)
     assert "input_basis" not in document and "output_basis" not in document
     assert "trellis" not in document and "q_weight" not in document
@@ -56,7 +56,7 @@ def test_quantized_role_cannot_derive_peer_or_client_boundary_tensors(
     checkpoint = write_llama_exl3(tiny_llama_path, tmp_path / "exl3")
     compiled = compile_fortress_checkpoint(checkpoint, seed=731, load_model=False)
     operation = next(iter(compiled.operations.values()))
-    encoded = encode_role_artifact(operation, 1, bytes(range(32)))
+    encoded = encode_role_artifact(operation, 1, bytes(1216))
     for secret in (
         compiled.embedding.numpy().tobytes(),
         compiled.final_norm.numpy().tobytes(),
@@ -88,7 +88,7 @@ def test_namespaced_media_artifact_contains_no_latent_or_vae_material(tmp_path: 
     compiled = compile_media_checkpoint(definition, adapter)
     for component, operations in compiled.items():
         for operation in operations.values():
-            encoded = encode_role_artifact(operation, 0, bytes(range(32)))
+            encoded = encode_role_artifact(operation, 0, bytes(1216))
             assert f"{component}:".encode() not in encoded
             assert b"latents" not in encoded
             assert b"vae" not in encoded
