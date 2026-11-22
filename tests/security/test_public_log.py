@@ -184,3 +184,87 @@ def test_an_unreachable_log_is_not_reported_as_a_rewritten_one(tmp_path: Path) -
     with pytest.raises(PublicLogError, match="request failed") as failure:
         offline.extends(head)
     assert "no longer contains" not in str(failure.value)
+
+
+def test_verify_command_checks_the_live_log_and_required_witnesses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import argparse
+
+    from xurcroh import cli, public_log
+    from xurcroh.receipts import sign_trace, trace_digest
+
+    key = HybridSigningKey.generate()
+    log = PublicLog(tmp_path / "log", key)
+    client = serve(log)
+    trace = sign_trace({"task_id": "t"}, HybridSigningKey.generate())
+    client.publish("trace", trace_digest(trace).hex())
+    witness = Witness(HybridSigningKey.generate(), tmp_path / "witness.json")
+    witness.observe(client)
+    proof = client.find("trace", trace_digest(trace).hex())
+    client.publish("trace", digest("later entry"))
+    (tmp_path / "trace.json").write_text(json.dumps(trace))
+    (tmp_path / "proof.json").write_text(json.dumps(proof))
+    monkeypatch.setattr(public_log, "LogClient", lambda url, log_key: serve(log, token=None))
+
+    def run(**changes: object) -> int:
+        options = {
+            "trace": tmp_path / "trace.json",
+            "public_key": None,
+            "messages": None,
+            "media_input": None,
+            "output": None,
+            "proof": tmp_path / "proof.json",
+            "log_key": log.public_key.hex(),
+            "log_url": "https://log.invalid",
+            "witness_key": [witness.public_key.hex()],
+        }
+        return cli._verify(argparse.Namespace(**{**options, **changes}))
+
+    assert run() == 0
+    output = capsys.readouterr().out
+    assert "log: included at tree size 1" in output
+    assert "public log: still holds that history, now at tree size 2" in output
+    assert "witnesses: " in output
+
+    stranger = HybridSigningKey.generate().public_key.hex()
+    assert run(witness_key=[stranger]) == 1
+    assert "no countersignature from required witness" in capsys.readouterr().err
+    assert run(proof=None) == 1
+    assert "requires --proof" in capsys.readouterr().err
+
+    # The same operator now serves a history without the entry the proof is for.
+    rewritten = PublicLog(tmp_path / "rewritten", key)
+    serve(rewritten).publish("trace", digest("something else"))
+    monkeypatch.setattr(public_log, "LogClient", lambda url, log_key: serve(rewritten, token=None))
+    assert run(witness_key=[]) == 1
+    assert "no longer contains the history" in capsys.readouterr().err
+
+
+def test_command_line_publishes_finds_and_witnesses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from xurcroh import public_log
+    from xurcroh.signatures import write_signing_key
+
+    log = PublicLog(tmp_path / "log", HybridSigningKey.generate())
+    monkeypatch.setattr(
+        public_log,
+        "LogClient",
+        lambda url, log_key, write_token=None: serve(log, token=write_token),
+    )
+    monkeypatch.setenv("XURCROH_LOG_WRITE_TOKEN", "write")
+    write_signing_key(tmp_path / "witness.key")
+    common = ["--url", "https://log.invalid", "--log-key", log.public_key.hex()]
+    entry = ["--kind", "manifest", "--digest", digest("model")]
+
+    with pytest.raises(SystemExit, match="not in the log"):
+        public_log.main(["find", *common, *entry])
+    public_log.main(["publish", *common, *entry])
+    assert json.loads(capsys.readouterr().out)["leaf_index"] == 0
+    public_log.main(["find", *common, *entry])
+    assert json.loads(capsys.readouterr().out)["kind"] == "manifest"
+    state = ["--signing-key", str(tmp_path / "witness.key"), "--state", str(tmp_path / "w.json")]
+    public_log.main(["witness", *common, *state])
+    assert json.loads(capsys.readouterr().out)["tree_size"] == 1
+    assert len(log.tree_head()["cosignatures"]) == 1

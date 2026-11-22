@@ -422,3 +422,69 @@ class Witness:
         temporary.replace(self._state)
         log._request("POST", "/v1/cosignatures", json=cosignature)
         return cosignature
+
+
+def main(argv: list[str] | None = None) -> None:
+    import argparse
+
+    from xurcroh.signatures import load_signing_key
+
+    parser = argparse.ArgumentParser(description="Run or use a Xurcroh public digest log")
+    commands = parser.add_subparsers(dest="command", required=True)
+    serve = commands.add_parser("serve", help="serve a log over HTTPS")
+    serve.add_argument("--storage", required=True, type=Path)
+    serve.add_argument("--signing-key", required=True, type=Path)
+    serve.add_argument("--write-token-env", default="XURCROH_LOG_WRITE_TOKEN")
+    serve.add_argument("--host", default="0.0.0.0")  # noqa: S104
+    serve.add_argument("--port", type=int, default=9401)
+    serve.add_argument("--ssl-certfile", required=True, type=Path)
+    serve.add_argument("--ssl-keyfile", required=True, type=Path)
+    for name, text in (
+        ("publish", "log a digest and print its proof"),
+        ("find", "print the proof for a logged digest"),
+        ("witness", "check the log extends the last head seen and countersign it"),
+    ):
+        command = commands.add_parser(name, help=text)
+        command.add_argument("--url", required=True)
+        command.add_argument("--log-key", required=True, help="hex key of the log")
+        if name == "witness":
+            command.add_argument("--signing-key", required=True, type=Path)
+            command.add_argument("--state", required=True, type=Path)
+        else:
+            command.add_argument("--kind", required=True, choices=KINDS)
+            command.add_argument("--digest", required=True)
+        if name == "publish":
+            command.add_argument("--write-token-env", default="XURCROH_LOG_WRITE_TOKEN")
+    args = parser.parse_args(argv)
+    if args.command == "serve":
+        import uvicorn
+
+        token = os.environ.get(args.write_token_env)
+        if not token:
+            raise PublicLogError(f"write token variable {args.write_token_env} is unset")
+        log = PublicLog(args.storage, load_signing_key(args.signing_key))
+        uvicorn.run(
+            create_app(log, write_token=token),
+            host=args.host,
+            port=args.port,
+            access_log=False,
+            ssl_certfile=str(args.ssl_certfile),
+            ssl_keyfile=str(args.ssl_keyfile),
+        )
+        return
+    token = os.environ.get(args.write_token_env) if args.command == "publish" else None
+    client = LogClient(args.url, bytes.fromhex(args.log_key), write_token=token)
+    if args.command == "witness":
+        witness = Witness(load_signing_key(args.signing_key), args.state)
+        print(json.dumps(witness.observe(client), sort_keys=True))
+    elif args.command == "publish":
+        print(json.dumps(client.publish(args.kind, args.digest), sort_keys=True))
+    else:
+        found = client.find(args.kind, args.digest)
+        if found is None:
+            raise SystemExit("digest is not in the log")
+        print(json.dumps(found, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()
