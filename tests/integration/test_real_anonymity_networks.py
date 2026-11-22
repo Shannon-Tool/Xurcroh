@@ -136,3 +136,96 @@ def test_real_quic_through_real_i2p(
 
     assert report["key_exchange_group"] == "X25519MLKEM768"
     assert len(report["round_trip_seconds"]) == ROUND_TRIPS  # type: ignore[arg-type]
+
+
+@pytest.mark.skipif(
+    not (os.environ.get("XURCROH_TOR_SOCKS") and os.environ.get("XURCROH_TOR_ONION")),
+    reason="needs a running Tor daemon and onion service (see module docstring)",
+)
+def test_complete_model_request_through_real_tor(
+    tiny_llama_path: Path,
+    tmp_path: Path,
+    mtls_identities: MutualTLSIdentities,  # noqa: F811
+) -> None:
+    """A whole chat request with every role worker reached through its own Tor circuit.
+
+    The onion service must also forward ports 9447-9450 to the four ports after
+    ``XURCROH_CARRIER_RELAY_PORT``.
+    """
+
+    from tests.fortress.test_sdk import _signed_remote_grid
+
+    from Xurcroh import Xurcroh
+    from xurcroh.receipts import verify_trace
+
+    base = int(os.environ["XURCROH_CARRIER_RELAY_PORT"])
+    cluster, workers = _signed_remote_grid(tiny_llama_path, tmp_path, mtls_identities, 2)
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    relays = []
+    try:
+        for index, worker in enumerate(cluster):
+            host, port = worker["endpoint"].removeprefix("quic://").rsplit(":", 1)
+            relays.append(
+                asyncio.run_coroutine_threadsafe(
+                    TcpDatagramRelay.bind("127.0.0.1", base + 1 + index, host, int(port)), loop
+                ).result(timeout=30)
+            )
+            worker["labels"].update(
+                {
+                    "carrier": "tor",
+                    "carrier_target": f"{os.environ['XURCROH_TOR_ONION']}:{9447 + index}",
+                    "carrier_proxy": os.environ["XURCROH_TOR_SOCKS"],
+                    "server_name": "localhost",
+                }
+            )
+        started = time.perf_counter()
+        with Xurcroh(
+            cluster=cluster,
+            model_path={
+                "tiny": {
+                    "path": str(tiny_llama_path),
+                    "revision": "a" * 40,
+                    "engine": "fortress",
+                    "fortress_seed": 731,
+                    "fortress_shares": 2,
+                }
+            },
+        ) as client:
+            response = client.chat.completions.create(
+                model="tiny",
+                messages=[{"role": "user", "content": "hello"}],
+                temperature=0,
+                max_tokens=1,
+                timeout=3000,
+            )
+            elapsed = time.perf_counter() - started
+            trace = client.tasks.trace(response.execution.request_id)
+    finally:
+        for relay in relays:
+            loop.call_soon_threadsafe(relay.close)
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=10)
+        for worker in workers:
+            worker.close()
+
+    assert response.usage.completion_tokens == 1
+    assert verify_trace(trace)["worker_checkpoints"] == 4
+    routes = trace["transport"]["routes"]
+    assert [route["carrier"] for route in routes] == ["tor"] * 4
+    assert all(route["negotiated"]["key_exchange_group"] == "X25519MLKEM768" for route in routes)
+    report = {
+        "carrier": "tor",
+        "test": "complete model request",
+        "model": "tiny Llama test checkpoint, 2x2 role grid",
+        "completion_tokens": 1,
+        "seconds_including_model_load": round(elapsed, 1),
+        "role_requests": trace["transport"]["counters"]["fortress_role_requests"],
+        "reconnections": trace["transport"]["counters"]["fortress_reconnections"],
+    }
+    output = os.environ.get("XURCROH_CARRIER_REPORT")
+    if output:
+        path = Path(output)
+        existing = json.loads(path.read_text()) if path.is_file() else []
+        path.write_text(json.dumps([*existing, report], indent=2) + "\n")
