@@ -20,17 +20,16 @@ import os
 import sys
 from pathlib import Path
 
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from xurcroh.kem import HybridKemKey
 
 output = Path(sys.argv[1])
 for index in range(int(sys.argv[2])):
     path = output / "identities" / f"stage-{index}.key"
     if path.exists():
         raise SystemExit(f"refusing to overwrite {path}")
-    key = X25519PrivateKey.generate()
-    private = key.private_bytes_raw()
-    public = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    key = HybridKemKey.generate()
+    private = key.to_bytes()
+    public = key.public_key
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "wb") as handle:
         handle.write(private)
