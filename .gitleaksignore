@@ -1,2 +1,3 @@
-# False positive: a type annotation (signing_key: Ed25519PrivateKey | None = None), not a secret.
+# Two false positives: a type annotation in an old commit, and the first version of this file quoting it.
 209ece2f26c7aa1b314f0d22b6e2f8160e5f9c2b:python/xurcroh/receipts.py:generic-api-key:140
+49075edf59f28d7a2928285d57b840dfb8eb4df7:.gitleaksignore:generic-api-key:1
