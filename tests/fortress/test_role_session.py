@@ -198,3 +198,24 @@ def test_capacity_is_bounded_and_handshake_cannot_be_finished_twice() -> None:
         client.hello()
     with pytest.raises(ProtocolError, match="malformed"):
         split_data_packet(b"XFD1" + b"0" * 32)
+
+
+def test_arbitrary_bytes_are_rejected_with_a_protocol_error_only() -> None:
+    """A worker must never fail in an unexpected way on attacker-chosen input."""
+
+    import random
+
+    from xurcroh.fortress.onion import unwrap_onion
+
+    generator = random.Random(20261122)
+    recipient = kem.HybridKemKey.generate()
+    store = RoleSessionStore(recipient, 1, artifact_digest=ARTIFACTS)
+    genuine = ClientRoleSession(1, recipient.public_key).hello()
+    lengths = [0, 1, 4, 35, 36, 37, 1251, len(genuine) - 1, len(genuine), len(genuine) + 1, 4096]
+    for length in lengths:
+        for prefix in (b"", b"XFH1", b"XFD1", genuine[:36], genuine[:1252]):
+            body = prefix + generator.randbytes(max(0, length - len(prefix)))
+            for parse in (store.accept, split_data_packet, lambda b: unwrap_onion(recipient, b)):
+                with pytest.raises(ProtocolError):
+                    parse(body)
+    assert store.active_count == 0
