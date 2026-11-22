@@ -63,6 +63,7 @@ class FortressEngine:
         self._clients: dict[str, FortressRoleClient] = {}
         self._grid_runtime: FortressGridRuntime | None = None
         self._grid_runtimes: list[FortressGridRuntime] = []
+        self._carriers: dict[str, Any] = {}
         self._load_lock = threading.Lock()
         self._inference_lock = threading.Lock()
         self._closed = False
@@ -139,6 +140,7 @@ class FortressEngine:
                 ) from error
             if not address:
                 raise ConfigurationError(f"worker {worker.name} requires a QUIC endpoint")
+            address = self._carried_address(worker.name, dict(worker.labels), address)
             identity_public = None
             if "identity_public" in worker.labels:
                 from xurcroh.signatures import PUBLIC_KEY_BYTES
@@ -168,6 +170,26 @@ class FortressEngine:
         if operation_name is not None and not roles:
             raise ConfigurationError(f"operation {operation_name!r} has no assigned Fortress roles")
         return roles
+
+    def _carried_address(self, worker: str, labels: dict[str, str], address: str) -> str:
+        """The address to dial for a worker: a local carrier relay when one is configured."""
+
+        from xurcroh.fortress.carriers import CarrierRelay, carrier_from_labels
+
+        spec = carrier_from_labels(labels, worker=worker)
+        if spec is None:
+            return address
+        if "relay_path" in labels or "onion_public" in labels:
+            # The onion route names the worker's own address as its last hop, which a
+            # carrier replaces; the two cannot be combined yet.
+            raise ConfigurationError(
+                f"worker {worker} sets both a carrier and an onion relay route; use one"
+            )
+        relay = self._carriers.get(worker)
+        if relay is None:
+            relay = CarrierRelay(spec)
+            self._carriers[worker] = relay
+        return str(relay.address)
 
     def _grid_clients(
         self, operations: Mapping[str, CompiledOperation], *, namespace: str | None = None
@@ -715,6 +737,10 @@ class FortressEngine:
                 {
                     "worker": worker.name,
                     "route": "direct" if route is None else "onion",
+                    # Taken from the relay this client is actually running, not the label.
+                    "carrier": self._carriers[worker.name].spec.kind
+                    if worker.name in self._carriers
+                    else "direct",
                     "relay_hops": 0 if route is None else route.hop_count,
                     "link_peer": "worker" if route is None else "entry relay",
                     "negotiated": handshakes.get(worker.name),
@@ -778,6 +804,9 @@ class FortressEngine:
                 runtime.close()
             self._grid_runtimes.clear()
             self._grid_runtime = None
+            for relay in self._carriers.values():
+                relay.close()
+            self._carriers.clear()
         self._combiner = None
         self._compiled = None
         self._tokenizer = None
