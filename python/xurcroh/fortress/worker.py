@@ -15,6 +15,13 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from xurcroh.errors import CompatibilityError, ProtocolError
 from xurcroh.fortress.arithmetic import FIELD_MODULUS, _seeded_uniform
+from xurcroh.fortress.checkpoint import (
+    CHECKPOINT_OPERATION,
+    SessionTranscript,
+    artifact_set_digest,
+    checkpoint_nonce,
+    sign_checkpoint,
+)
 from xurcroh.fortress.native import canonical_field_words
 from xurcroh.fortress.transport import (
     DEFAULT_FRAME_BYTES,
@@ -25,6 +32,7 @@ from xurcroh.fortress.transport import (
 )
 from xurcroh.memory_native import activate_burn_on_read_allocator
 from xurcroh.runtime.stage_sessions import SESSION_ENVELOPE_BYTES, StageSessionStore
+from xurcroh.signatures import HybridSigningKey
 
 MAX_ROLE_PACKET_BYTES = 16 * 1024 * 1024
 MAX_ACTIVATION_ELEMENTS = 1_048_576
@@ -51,6 +59,7 @@ class FortressRoleWorker:
         strict: bool = True,
         attest: Callable[[int], bool] | None = None,
         allow_unattested: bool = False,
+        identity_key: bytes | None = None,
     ) -> None:
         import xurcroh_quic
 
@@ -76,6 +85,13 @@ class FortressRoleWorker:
         serialized = {"operation": artifacts} if isinstance(artifacts, bytes) else artifacts
         if not serialized:
             raise ValueError("Fortress role worker requires at least one operation")
+        if CHECKPOINT_OPERATION in serialized:
+            raise ValueError(f"operation name {CHECKPOINT_OPERATION!r} is reserved")
+        # Digest the bytes as received, before decoding, so the value names exactly
+        # what was deployed to this role.
+        self.artifact_digest = artifact_set_digest(serialized)
+        self._identity = None if identity_key is None else HybridSigningKey.from_bytes(identity_key)
+        self._transcripts: dict[str, SessionTranscript] = {}
         self.artifacts = {
             name: decode_role_artifact(artifact, attest=attest, allow_unattested=allow_unattested)
             for name, artifact in serialized.items()
@@ -246,6 +262,17 @@ class FortressRoleWorker:
             activation_device.zero_()
             output.zero_()
 
+    def _checkpoint(self, transcript: SessionTranscript, nonce: bytes) -> bytes:
+        if self._identity is None:
+            raise ProtocolError("this role has no identity key and cannot sign a checkpoint")
+        return sign_checkpoint(
+            self._identity,
+            transcript,
+            artifacts=self.artifact_digest,
+            weight_index=self.weight_index,
+            nonce=nonce,
+        )
+
     def _execute(self, connection: Any) -> None:
         try:
             while not self._closed.is_set():
@@ -256,6 +283,7 @@ class FortressRoleWorker:
                     with self._lock:
                         self._requests.pop(session_id, None)
                         self._session_completed.pop(session_id, None)
+                        self._transcripts.pop(session_id, None)
                         self._active_sessions.discard(session_id)
                         remaining = bool(self._active_sessions)
                     self.sessions.remove(session_id)
@@ -295,22 +323,27 @@ class FortressRoleWorker:
                 activation = torch.empty(0, dtype=torch.int64)
                 exact_payload = bytearray()
                 try:
-                    result_dtype, result_shape, payload = receiver.open_tensor(
-                        packet[SESSION_ENVELOPE_BYTES:]
-                    )
+                    sealed_request = packet[SESSION_ENVELOPE_BYTES:]
+                    result_dtype, result_shape, payload = receiver.open_tensor(sealed_request)
                     if result_dtype != "u8" or result_shape != [len(payload)]:
                         raise ProtocolError("Fortress operation payload must be a byte vector")
-                    name, activation = self._decode_activation(payload)
-                    values = self._execute_activation(name, activation)
-                    exact_payload = bytearray(
-                        b"".join(value.to_bytes(4, "little", signed=False) for value in values)
+                    with self._lock:
+                        transcript = self._transcripts.setdefault(
+                            session_id, SessionTranscript(session_id)
+                        )
+                    nonce = checkpoint_nonce(payload)
+                    if nonce is not None:
+                        exact_payload = bytearray(self._checkpoint(transcript, nonce))
+                    else:
+                        name, activation = self._decode_activation(payload)
+                        values = self._execute_activation(name, activation)
+                        exact_payload = bytearray(
+                            b"".join(value.to_bytes(4, "little", signed=False) for value in values)
+                        )
+                    sealed_response = sender.seal(
+                        request_id.hex(), "u8", [len(exact_payload)], bytes(exact_payload)
                     )
-                    response = pad_packet(
-                        sender.seal(
-                            request_id.hex(), "u8", [len(exact_payload)], bytes(exact_payload)
-                        ),
-                        self._frame_bytes,
-                    )
+                    response = pad_packet(sealed_response, self._frame_bytes)
                     connection.send(
                         request_id,
                         self.weight_index,
@@ -320,6 +353,7 @@ class FortressRoleWorker:
                         [len(response)],
                         response,
                     )
+                    transcript.update(sealed_request, sealed_response)
                     with self._lock:
                         completed = self._session_completed.get(session_id, 0) + 1
                         self._session_completed[session_id] = completed
@@ -353,6 +387,7 @@ class FortressRoleWorker:
             threads = list(self._threads)
             self._requests.clear()
             self._session_completed.clear()
+            self._transcripts.clear()
             self._active_sessions.clear()
         for thread in threads:
             thread.join(timeout=max(0.0, deadline - time.monotonic()))

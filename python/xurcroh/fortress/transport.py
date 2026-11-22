@@ -26,6 +26,12 @@ from xurcroh.fortress.arithmetic import (
     quantized_weight_bound,
     seeded_share_seed,
 )
+from xurcroh.fortress.checkpoint import (
+    CHECKPOINT_NONCE_BYTES,
+    SessionTranscript,
+    checkpoint_request,
+    open_checkpoint,
+)
 from xurcroh.fortress.compiler import CompiledOperation
 from xurcroh.fortress.grid import RoleExecutionError, WeightShare
 from xurcroh.fortress.storage import DispersedShard, reconstruct_shard
@@ -152,6 +158,8 @@ class RoleEndpoint:
     relay: RelayRoute | None = None
     server_name: str | None = None
     generation: int = 0
+    identity_public: bytes | None = None
+    artifact_digest: str | None = None
 
 
 @dataclass(frozen=True)
@@ -362,6 +370,7 @@ class _SharedRoleConnection:
         self.generation = role.generation
         self.client: Any = None
         self.session = ClientStageSession(role.weight_index, role.recipient_public)
+        self.transcript = SessionTranscript(self.session.session_id)
         self.completed = 0
         self.used = False
         self.call_lock = threading.Lock()
@@ -390,6 +399,7 @@ class _SharedRoleConnection:
             self.generation = self.recover_callback(self.role.provider_id, self.generation)
             self.connect()
         self.session = ClientStageSession(self.role.weight_index, self.role.recipient_public)
+        self.transcript = SessionTranscript(self.session.session_id)
         self.completed = 0
         self.used = False
 
@@ -436,6 +446,7 @@ class _RoleTransport:
             if connection is not None
             else ClientStageSession(role.weight_index, role.recipient_public)
         )
+        self._transcript = SessionTranscript(self._session.session_id)
         self._identity = identity
         self._connection = connection
         self.client: Any = None
@@ -453,6 +464,10 @@ class _RoleTransport:
     @property
     def session(self) -> ClientStageSession:
         return self._connection.session if self._connection is not None else self._session
+
+    @property
+    def transcript(self) -> SessionTranscript:
+        return self._connection.transcript if self._connection is not None else self._transcript
 
     def _connect(self) -> None:
         if self._connection is not None:
@@ -500,6 +515,7 @@ class _RoleTransport:
                     self._session = ClientStageSession(
                         self.role.weight_index, self.role.recipient_public
                     )
+                    self._transcript = SessionTranscript(self._session.session_id)
                     self._completed = 0
                     self._used = False
                 result = self._execute(activation, request_id, sequence, activation_seed)
@@ -513,7 +529,6 @@ class _RoleTransport:
         sequence: int,
         activation_seed: bytes | None = None,
     ) -> tuple[list[int], int, int]:
-        request_hash = hashlib.sha256(request_id.encode()).digest()[:16]
         canonical = (
             activation.detach()
             .cpu()
@@ -537,6 +552,49 @@ class _RoleTransport:
                 + self._operation_name
                 + canonical.numpy().tobytes()
             )
+        payload, sent, received = self._round_trip(request_id, sequence, operation_payload)
+        if not payload or len(payload) % 4:
+            raise ProtocolError("role result must contain canonical 32-bit field elements")
+        result = [
+            int.from_bytes(payload[offset : offset + 4], "little", signed=False)
+            for offset in range(0, len(payload), 4)
+        ]
+        return result, sent, received
+
+    def checkpoint(self) -> dict[str, Any]:
+        """Ask the role to sign what it has seen this session and check it against our view."""
+
+        role = self.role
+        if role.identity_public is None:
+            raise ProtocolError(f"role {role.provider_id} has no pinned identity for a checkpoint")
+        nonce = secrets.token_bytes(CHECKPOINT_NONCE_BYTES)
+        with self._execution_lock:
+            if self._connection is not None:
+                self.client = self._connection.client
+            # Copy our view first: the exchange below is itself added to the transcript.
+            seen = self.transcript.snapshot()
+            try:
+                payload, _, _ = self._round_trip(
+                    f"checkpoint:{uuid.uuid4().hex}", 0, checkpoint_request(nonce)
+                )
+            except ValueError as error:
+                raise ProtocolError(
+                    f"role {role.provider_id} did not return a checkpoint: {error}"
+                ) from error
+        return open_checkpoint(
+            payload,
+            worker=role.provider_id,
+            identity_public=role.identity_public,
+            transcript=seen,
+            weight_index=role.weight_index,
+            nonce=nonce,
+            expected_artifacts=role.artifact_digest,
+        )
+
+    def _round_trip(
+        self, request_id: str, sequence: int, operation_payload: bytes
+    ) -> tuple[bytes, int, int]:
+        request_hash = hashlib.sha256(request_id.encode()).digest()[:16]
         sealed = self.session.sender.seal(
             request_id, "u8", [len(operation_payload)], operation_payload
         )
@@ -567,21 +625,11 @@ class _RoleTransport:
         if shape != [self._frame_bytes] or len(response) != self._frame_bytes:
             raise ProtocolError("role response tensor descriptor is invalid")
         self._frame_sizes.add(len(response))
-        result_dtype, result_shape, payload = self.session.receiver.open_tensor(
-            unpad_packet(response, self._frame_bytes)
-        )
-        if (
-            result_dtype != "u8"
-            or len(result_shape) != 1
-            or result_shape[0] == 0
-            or result_shape[0] % 4
-            or len(payload) != result_shape[0]
-        ):
-            raise ProtocolError("role result must contain canonical 32-bit field elements")
-        result = [
-            int.from_bytes(payload[offset : offset + 4], "little", signed=False)
-            for offset in range(0, len(payload), 4)
-        ]
+        sealed_response = unpad_packet(response, self._frame_bytes)
+        result_dtype, result_shape, payload = self.session.receiver.open_tensor(sealed_response)
+        if result_dtype != "u8" or result_shape != [len(payload)]:
+            raise ProtocolError("role result must be a byte vector")
+        self.transcript.update(sealed, sealed_response)
         if self._connection is not None:
             self._connection.completed += 1
             completed = self._connection.completed
@@ -590,7 +638,7 @@ class _RoleTransport:
             completed = self._completed
         if completed % self._rotation_interval == 0:
             self.session.rotate(completed // self._rotation_interval)
-        return result, sent, received
+        return bytes(payload), sent, received
 
     def close(self) -> None:
         if self._connection is not None:
@@ -777,6 +825,15 @@ class FortressGridRuntime:
                 self.cover_failure_count += 1
                 return
 
+    def checkpoints(self) -> list[dict[str, Any]]:
+        """A verified, worker-signed checkpoint for every role of this grid, in role order."""
+
+        with self._lock:
+            if not self._clients:
+                raise ProtocolError("a checkpoint requires an open client on this grid")
+            client = self._clients[0]
+        return client.checkpoints()
+
     def close(self) -> None:
         with self._lock:
             if self._closed:
@@ -923,6 +980,11 @@ class FortressRoleClient:
             with self._lock:
                 self.verified_result_count += len(results)
         return combined
+
+    def checkpoints(self) -> list[dict[str, Any]]:
+        """A verified, worker-signed checkpoint for every role session of this client."""
+
+        return [self._transports[key].checkpoint() for key in sorted(self._transports)]
 
     def _cover_loop(self) -> None:
         features = self.operation.quantized.dimensions[1]
