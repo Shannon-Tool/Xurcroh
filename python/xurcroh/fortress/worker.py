@@ -396,6 +396,9 @@ class FortressRoleWorker:
                 logging.getLogger(__name__).debug(
                     "Fortress role connection ended: %s", type(error).__name__, exc_info=error
                 )
+            # Close at once so the client learns the connection is gone and starts a
+            # new session, instead of waiting for its own timeout.
+            connection.abort()
 
     def close(self) -> None:
         if self._closed.is_set():

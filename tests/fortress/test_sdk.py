@@ -169,6 +169,8 @@ def test_public_sdk_executes_remote_fortress_grid(
                 assert negotiated["key_exchange_group"] == "X25519MLKEM768"
                 assert negotiated["session_forward_secret"] is True
                 assert negotiated["session_signed_by_worker"] is True
+                # A direct route ties the session to the TLS connection it runs on.
+                assert negotiated["session_bound_to_tls"] is True
             # The manifest names the artifacts each worker then signed for.
             assert trace["model"]["role_artifacts"] == {
                 item["worker"]: item["body"]["artifacts"] for item in checkpoints

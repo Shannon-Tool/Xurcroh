@@ -302,53 +302,6 @@ fn hpke_open_session_master(
     Python::attach(|py| Ok(PyBytes::new(py, &master).into()))
 }
 
-#[pyfunction]
-fn seal_onion(
-    hops: Vec<(Vec<u8>, String)>,
-    return_key: [u8; 32],
-    reply_id: u64,
-    payload: Vec<u8>,
-) -> PyResult<Vec<Py<PyBytes>>> {
-    let hops = hops
-        .into_iter()
-        .map(|(public, next_hop)| {
-            let public: [u8; 32] = public
-                .try_into()
-                .map_err(|_| value_error("onion public key must be 32 bytes"))?;
-            Ok(xurcroh_crypto::OnionHop {
-                public: x25519_dalek::PublicKey::from(public),
-                next_hop,
-            })
-        })
-        .collect::<PyResult<Vec<_>>>()?;
-    let packet =
-        xurcroh_crypto::seal_onion(&hops, return_key, reply_id, payload).map_err(crypto_error)?;
-    Python::attach(|py| {
-        packet
-            .layers
-            .into_iter()
-            .map(|layer| Ok(PyBytes::new(py, &layer).into()))
-            .collect()
-    })
-}
-
-#[pyfunction]
-fn unwrap_onion(
-    secret: [u8; 32],
-    layer: &[u8],
-) -> PyResult<(String, Option<Py<PyBytes>>, u64, Py<PyBytes>)> {
-    let secret = x25519_dalek::StaticSecret::from(secret);
-    let (hop, remaining) = xurcroh_crypto::unwrap_onion(&secret, layer).map_err(crypto_error)?;
-    Python::attach(|py| {
-        Ok((
-            hop.next_hop,
-            hop.return_key.map(|key| PyBytes::new(py, &key).into()),
-            hop.reply_id,
-            PyBytes::new(py, &remaining).into(),
-        ))
-    })
-}
-
 #[pyclass]
 struct ServerConnection {
     connection: Connection,
@@ -396,6 +349,23 @@ impl ServerConnection {
     fn close(&self) {
         let connection = self.connection.clone();
         Python::attach(|py| py.detach(|| runtime().block_on(connection.closed())));
+    }
+
+    /// Close the connection now, so the peer learns at once instead of timing out.
+    fn abort(&self) {
+        self.connection.close(1u32.into(), b"protocol error");
+    }
+
+    /// TLS exporter value shared with the client on this connection.
+    fn export_keying_material(
+        &self,
+        label: &[u8],
+        context: &[u8],
+        length: usize,
+    ) -> PyResult<Py<PyBytes>> {
+        let material = crate::export_keying_material(&self.connection, label, context, length)
+            .map_err(value_error)?;
+        Python::attach(|py| Ok(PyBytes::new(py, &material).into()))
     }
 }
 
@@ -536,6 +506,24 @@ impl TensorClient {
         })
     }
 
+    /// TLS exporter value shared with the server on this connection.
+    fn export_keying_material(
+        &self,
+        label: &[u8],
+        context: &[u8],
+        length: usize,
+    ) -> PyResult<Py<PyBytes>> {
+        let material = {
+            let guard = self.inner.lock().map_err(value_error)?;
+            guard
+                .as_ref()
+                .ok_or_else(|| value_error("client is closed"))?
+                .export_keying_material(label, context, length)
+                .map_err(value_error)?
+        };
+        Python::attach(|py| Ok(PyBytes::new(py, &material).into()))
+    }
+
     /// Key-exchange group negotiated by this connection's TLS handshake.
     fn key_exchange_group(&self) -> PyResult<Option<String>> {
         let guard = self.inner.lock().map_err(value_error)?;
@@ -635,8 +623,6 @@ fn xurcroh_quic(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(generate_self_signed, module)?)?;
     module.add_function(wrap_pyfunction!(hpke_seal_session_master, module)?)?;
     module.add_function(wrap_pyfunction!(hpke_open_session_master, module)?)?;
-    module.add_function(wrap_pyfunction!(seal_onion, module)?)?;
-    module.add_function(wrap_pyfunction!(unwrap_onion, module)?)?;
     fortress::register(module)?;
     Ok(())
 }

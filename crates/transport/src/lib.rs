@@ -386,6 +386,16 @@ impl TensorClient {
         })
     }
 
+    /// Keying material both ends of this TLS session derive and no one else can.
+    pub fn export_keying_material(
+        &self,
+        label: &[u8],
+        context: &[u8],
+        length: usize,
+    ) -> Result<Vec<u8>, TransportError> {
+        export_keying_material(&self.connection, label, context, length)
+    }
+
     /// Key-exchange group negotiated by this connection's TLS handshake.
     pub fn key_exchange_group(&self) -> Option<String> {
         let handshake = self
@@ -431,6 +441,24 @@ impl TensorClient {
         self.connection.close(0u32.into(), b"complete");
         self.endpoint.wait_idle().await;
     }
+}
+
+/// TLS exporter (RFC 8446 section 7.5) for a connection, client or server side.
+///
+/// Both ends of one TLS session compute the same value for the same label and
+/// context; a different session, including one relayed through a third party,
+/// yields a different value.
+pub fn export_keying_material(
+    connection: &Connection,
+    label: &[u8],
+    context: &[u8],
+    length: usize,
+) -> Result<Vec<u8>, TransportError> {
+    let mut output = vec![0u8; length];
+    connection
+        .export_keying_material(&mut output, label, context)
+        .map_err(|_| TransportError::Connection("keying material export failed".into()))?;
+    Ok(output)
 }
 
 #[cfg(feature = "python")]
