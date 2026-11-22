@@ -108,7 +108,10 @@ def test_public_sdk_generates_image_with_fortress_diffusion(tmp_path: Path, shar
     inputs = {"prompt": "a small red square", "image": None, "mask": None}
     assert verify_trace(
         trace, public_key=public_key, media_input=inputs, output=unseeded.data[0].b64_json
-    ) == {"signature": True, "prompt": True, "output": True}
+    ) == {"signature": True, "prompt": True, "output": True, "worker_checkpoints": None}
+    # A media trace carries the same sharing and transport facts as a chat trace.
+    assert trace["model"]["share_count"] >= 2
+    assert trace["transport"]["worker_checkpoints"] is None
     with pytest.raises(TraceError, match="prompt"):
         verify_trace(trace, public_key=public_key, media_input={**inputs, "prompt": "other"})
     with pytest.raises(TraceError, match="output"):

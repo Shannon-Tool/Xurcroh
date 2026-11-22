@@ -98,8 +98,12 @@ def verify_trace(
     messages: Sequence[Any] | None = None,
     media_input: Mapping[str, Any] | None = None,
     output: str | None = None,
-) -> dict[str, bool | None]:
+) -> dict[str, bool | int | None]:
     """Check a trace's signature and, when given, that it refers to this prompt and output.
+
+    Every worker checkpoint in the trace is re-verified against the identity key stored
+    with it; the count is reported as ``worker_checkpoints`` (``None`` when workers signed
+    nothing).
 
     ``public_key`` pins the signer. Without it the key embedded in the trace is used,
     which detects accidental damage but not a trace re-signed by someone else.
@@ -120,7 +124,12 @@ def verify_trace(
         Ed25519PublicKey.from_public_bytes(key).verify(signature, canonical(body))
     except (KeyError, TypeError, ValueError, InvalidSignature) as error:
         raise TraceError("trace signature is missing or does not verify") from error
-    report: dict[str, bool | None] = {"signature": True, "prompt": None, "output": None}
+    report: dict[str, bool | int | None] = {
+        "signature": True,
+        "prompt": None,
+        "output": None,
+        "worker_checkpoints": _verify_checkpoints(document),
+    }
     if messages is not None and media_input is not None:
         raise TraceError("give chat messages or a media input to check the prompt, not both")
     if messages is not None or media_input is not None:
@@ -135,6 +144,22 @@ def verify_trace(
             raise TraceError("trace does not refer to this output")
         report["output"] = True
     return report
+
+
+def _verify_checkpoints(document: Mapping[str, Any]) -> int | None:
+    transport = document.get("transport")
+    checkpoints = transport.get("worker_checkpoints") if isinstance(transport, Mapping) else None
+    if checkpoints is None:
+        return None
+    from xurcroh.errors import ProtocolError
+    from xurcroh.fortress.checkpoint import verify_checkpoint_signature
+
+    try:
+        for checkpoint in checkpoints:
+            verify_checkpoint_signature(checkpoint)
+    except (ProtocolError, TypeError) as error:
+        raise TraceError(str(error)) from error
+    return len(checkpoints)
 
 
 def trace_digest(document: Mapping[str, Any]) -> bytes:
@@ -171,6 +196,15 @@ def describe_trace(document: Mapping[str, Any]) -> list[str]:
     lines = [f"task: {document.get('task_id')}", f"mode: {document.get('mode')}"]
     for section in ("model", "security", "transport"):
         for name, value in sorted(dict(document.get(section, {})).items()):
+            if name == "worker_checkpoints" and value is not None:
+                for item in value:
+                    body = item["body"]
+                    lines.append(
+                        f"transport.worker_checkpoint[{item['worker']}]: calls={body['calls']} "
+                        f"artifacts={body['artifacts']} identity={body['identity']} "
+                        f"artifacts_pinned={json.dumps(item['artifacts_pinned'])}"
+                    )
+                continue
             lines.append(f"{section}.{name}: {json.dumps(value, sort_keys=True)}")
     request = dict(document.get("request", {}))
     for group in ("settings", "effective"):

@@ -65,11 +65,18 @@ def test_trace_records_every_setting_and_verifies(tiny_model_path: Path) -> None
 
     output = response.choices[0].message.content
     report = verify_trace(trace, public_key=public_key, messages=MESSAGES, output=output)
-    assert report == {"signature": True, "prompt": True, "output": True}
+    # This model runs in-process, so no worker signed anything and the report says so.
+    assert report == {
+        "signature": True,
+        "prompt": True,
+        "output": True,
+        "worker_checkpoints": None,
+    }
     assert verify_trace(trace, public_key=public_key) == {
         "signature": True,
         "prompt": None,
         "output": None,
+        "worker_checkpoints": None,
     }
 
 
