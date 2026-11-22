@@ -93,8 +93,11 @@ and `xurcroh verify` prints that workers signed nothing.
   heads are still to be built on the same proofs.
 - Each remote Fortress route reports under `negotiated` the TLS key-exchange group and the SHA-256
   of the peer's leaf certificate, read from the live connection. With onion routing the peer is the
-  entry relay (`link_peer`), so the trace does not show what the later hops negotiated. The session
-  suite string is the configured one.
+  entry relay (`link_peer`), so the trace does not show what the later hops negotiated. The same
+  entry reports, read from the live session object, whether the role session is established and
+  forward-secret (`session_forward_secret`), whether it is bound to the TLS connection
+  (`session_bound_to_tls`, true on direct routes and false through relays), and whether the worker
+  signed the handshake with its pinned identity (`session_signed_by_worker`).
 - Worker labels such as country and CPU vendor are operator declarations and are recorded under
   `declared`. A worker checkpoint (below) identifies a signing key, not a location.
 - Image and video traces record size, steps, strength, frames, frame rate, and the effective seed,
