@@ -16,6 +16,7 @@ def _verify(args: argparse.Namespace) -> int:
     import json
     import sys
 
+    from xurcroh.errors import XurcrohError
     from xurcroh.receipts import TraceError, describe_trace, verify_trace, verify_trace_proof
 
     try:
@@ -30,13 +31,33 @@ def _verify(args: argparse.Namespace) -> int:
             output=None if args.output is None else args.output.read_text(),
         )
         logged = None
+        live = None
+        witnessed: list[str] = []
+        if args.proof is None and (args.log_url or args.witness_key):
+            raise TraceError("checking the public log or its witnesses requires --proof")
         if args.proof is not None:
             if args.log_key is None:
                 raise TraceError("checking a log proof requires --log-key")
-            logged = verify_trace_proof(
-                document, json.loads(args.proof.read_text()), log_key=bytes.fromhex(args.log_key)
-            )
-    except (TraceError, OSError, ValueError) as error:
+            from xurcroh.public_log import LogClient, witnesses_of
+            from xurcroh.signatures import key_fingerprint
+
+            log_key = bytes.fromhex(args.log_key)
+            proof = json.loads(args.proof.read_text())
+            logged = verify_trace_proof(document, proof, log_key=log_key)
+            heads = [proof["tree_head"]]
+            if args.log_url is not None:
+                # Shows the log, as served now, still contains the history this proof is from.
+                heads.append(LogClient(args.log_url, log_key).extends(proof["tree_head"]))
+                live = int(heads[-1]["tree_size"])
+            trusted = [bytes.fromhex(key) for key in args.witness_key]
+            seen = {name for head in heads for name in witnesses_of(head, trusted)}
+            missing = [key_fingerprint(key) for key in trusted if key_fingerprint(key) not in seen]
+            if missing:
+                raise TraceError(
+                    "no countersignature from required witness " + ", ".join(sorted(missing))
+                )
+            witnessed = sorted(seen)
+    except (TraceError, XurcrohError, OSError, ValueError) as error:
         print(f"trace rejected: {error}", file=sys.stderr)
         return 1
     pinned = "verified" if args.public_key is not None else "verified against the embedded key"
@@ -44,6 +65,10 @@ def _verify(args: argparse.Namespace) -> int:
     for name in ("prompt", "output"):
         print(f"{name}: {'matches' if report[name] else 'not checked'}")
     print(f"log: {'not checked' if logged is None else f'included at tree size {logged}'}")
+    if live is not None:
+        print(f"public log: still holds that history, now at tree size {live}")
+    if witnessed:
+        print("witnesses: " + ", ".join(witnessed))
     signed = report["worker_checkpoints"]
     print(
         "worker checkpoints: "
@@ -81,6 +106,15 @@ def main() -> None:
     verify.add_argument("--output", type=Path, help="text file with the generated output")
     verify.add_argument("--proof", type=Path, help="JSON inclusion proof from tasks.proof")
     verify.add_argument("--log-key", help="hex key of the log expected to hold the trace")
+    verify.add_argument(
+        "--log-url", help="public log to ask whether it still holds the proof's history"
+    )
+    verify.add_argument(
+        "--witness-key",
+        action="append",
+        default=[],
+        help="hex key of a witness that must have countersigned; repeat for each one",
+    )
     args = parser.parse_args()
     if args.command == "verify":
         raise SystemExit(_verify(args))
