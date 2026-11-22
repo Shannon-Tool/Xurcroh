@@ -3,7 +3,7 @@
 ## Scope and acceptance status
 
 - Engineering branch: `feat/fortress-implementation`
-- Current verification revision: `94f69a5` (rented single CPU host; see “Verifiability features and rented-CPU evidence”)
+- Current verification revision: `94ba0e9` (rented single CPU host; see “Worker signatures, post-quantum layers and forward-secret sessions”)
 - Local implementation: **standard suite and current static checks passed**
 - Scoped single-GPU encrypted vLLM stage execution: **passed**
 - Independent multi-host numerical inference: **not validated**
@@ -365,3 +365,40 @@ At `79582191ece6e690bec403ecdb57cdeae71befee`, built-in provider adapters cover 
 The initial adapter slice reported **43 provider tests passed** at `7958219`. Subsequent integration regressions bring the current focused provider/lifecycle total to **52 passed**. These tests use mocked provider APIs and generated certificates, not physical cloud infrastructure. They cover confidential configuration flags, scoped ingress, GCP availability filtering and `UNNEST(labels)` billing with bound parameters, Alibaba OIDC policy/runtime validation, OCI Veraison nonce/measurement appraisal, AWS COSE/certificate/PCR/nonce validation, optional Cost Explorer pagination, attested KMS requests, IBM DCAP delegation, and AF_VSOCK framing. Four relay tests execute real local UDP/socketpair forwarding with peer filtering and opaque datagram round trips. Four smoke-harness tests cover create/charge/destroy and recovery. Teardown tests verify built-in provider registration, charge-before-destroy ordering, continued destruction when billing fails, Azure deletion of the per-worker NIC, public IP, vNet, and NSG after the VM disappears, Alibaba deletion of the attached worker security group after instance termination, and Google deletion of the worker-specific firewall rule after VM teardown.
 
 No physical Azure, Google, Alibaba, OCI, AWS, or IBM instance was launched, no cloud charge was incurred, and no physical provider attestation result is claimed. Provider availability, image compatibility, API response shapes, trust collateral, AF_VSOCK kernel support, cost-export contents, and independent destruction remain hardware-validation gates in `docs/gpu-agent-handoff.md`.
+
+## Worker signatures, post-quantum layers and forward-secret sessions
+
+This section records work at `94ba0e9` on one rented CPU host (16 vCPU, 64 GiB, no GPU) with loopback workers. It is local evidence only: no GPU, independent host, official-checkpoint or production result is claimed, and none of this has been externally reviewed. The worker protocol changed in this work, so earlier transport evidence, including `docs/evidence/fortress/transport.json`, describes the previous protocol.
+
+### What was added
+
+- Hybrid signatures (Ed25519 with ML-DSA-65, both required) for task traces, log tree heads, transparency entries, release manifests, ladder evidence, worker registrations and worker checkpoints.
+- A signing identity per role worker, a digest of the artifacts each role loads, and signed session checkpoints that the client checks against its own running hash of the session and stores in the trace. One manifest digest per trace binds model source, format, quantization, share count and role artifacts.
+- A role session handshake over X25519 with ML-KEM-768 in which client and worker each contribute a secret, signed by the worker identity when pinned, followed by a one-way key ratchet. It is bound to the TLS connection by a TLS exporter on direct routes and is unbound through relays. An expired session is refused instead of being re-created.
+- Onion layers sealed with the same hybrid KEM. The X25519-only Rust onion code was removed.
+- A ProVerif model of the handshake over an attacker-controlled channel (`protocol/fortress_role_session.pv`). Its three queries hold with client authentication modelled explicitly; a first version without it failed the response-secrecy query. It does not cover relayed routes.
+- NIST ACVP vectors for ML-KEM-768 key generation and ML-DSA-65 key generation and signature verification, checked against the installed library. There is no ML-KEM encapsulation vector, because the library does not expose deterministic encapsulation.
+
+### Results
+
+| Check | Result |
+|---|---|
+| Standard suite, `-m 'not hardware and not slow'`, at `94ba0e9` | 840 passed, 0 failed, 55 deselected, 82.10% coverage, 399.38 s |
+| Slow tests, `-m 'slow and not hardware'`, at `4abcf2a` | 20 passed, 1 failed, 9 skipped, 1,147.79 s |
+| Rust workspace tests, working tree later committed as `2d93ae8` | 27 passed, 0 failed |
+| `cargo clippy --workspace --all-targets -- -D warnings`; `cargo fmt --check` after formatting | Pass |
+| ProVerif, both session models | All queries true (development host, ProVerif 2.05) |
+| Ruff, format check, strict mypy (170 files) | Pass (development host) |
+
+The first standard run, at `4abcf2a`, had **10 failures** (829 passed). All ten were tests that still built 32-byte recipient keys, in files that had not been run on the development host. They were corrected at `94ba0e9`, the only change between the two revisions being those tests, one validator placeholder and one documentation sentence, and the suite was rerun in full. The slow suite was not rerun after that change.
+
+The slow failure is `tests/integration/test_managed_ssh.py::test_managed_role_crash_restarts_and_resumes_inference`, the host-dependent crash-recovery test that also failed on this kind of host before this work. It remains open. The nine skips are the media-ladder theory tests, whose miniature pipelines were not fetched on this host, so they were not exercised on the new protocol. The managed SSH tests that passed start real role worker processes with identity keys through the deployment path.
+
+The Rust test count fell from 31 to 27 because four tests of the removed onion code were deleted; one existing test gained the TLS exporter assertions.
+
+### Not done or not rerun
+
+- The older stage-worker and protected-media sessions and shard recipient sealing are still X25519 only. Converting them was planned and was not done: they share one X25519 identity across many modules that Fortress role workers do not use and that could not be regression-tested here.
+- Frontend tests and the manual content check, fuzzing, dependency audit, secret scan, container smoke test and the reproducible wheel build were not rerun. The fuzz targets do not cover the new handshake parser; a Python test feeds it malformed input instead.
+- Worker checkpoints, the new session and the hybrid onion layers have not run on GPU hardware or across independent hosts.
+- Hosted continuous integration is still blocked by account billing, so the ProVerif step added to the workflow has not run there.
