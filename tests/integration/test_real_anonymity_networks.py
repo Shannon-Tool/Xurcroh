@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 import xurcroh_quic
-from tests.fortress.conftest import MutualTLSIdentities
+from tests.fortress.conftest import MutualTLSIdentities, mtls_identities  # noqa: F401
 
 from xurcroh.fortress.carriers import CarrierRelay, CarrierSpec
 from xurcroh.fortress.datagram_tunnel import TcpDatagramRelay
@@ -106,7 +106,9 @@ def _measure(kind: str, target: str, proxy: str, mtls: MutualTLSIdentities) -> d
     not (os.environ.get("XURCROH_TOR_SOCKS") and os.environ.get("XURCROH_TOR_ONION")),
     reason="needs a running Tor daemon and onion service (see module docstring)",
 )
-def test_real_quic_through_real_tor_onion_service(mtls_identities: MutualTLSIdentities) -> None:
+def test_real_quic_through_real_tor_onion_service(
+    mtls_identities: MutualTLSIdentities,  # noqa: F811
+) -> None:
     report = _measure(
         "tor",
         os.environ["XURCROH_TOR_ONION"],
@@ -122,7 +124,9 @@ def test_real_quic_through_real_tor_onion_service(mtls_identities: MutualTLSIden
     not (os.environ.get("XURCROH_I2P_SAM") and os.environ.get("XURCROH_I2P_DESTINATION")),
     reason="needs a running i2pd with SAM and a server tunnel (see module docstring)",
 )
-def test_real_quic_through_real_i2p(mtls_identities: MutualTLSIdentities) -> None:
+def test_real_quic_through_real_i2p(
+    mtls_identities: MutualTLSIdentities,  # noqa: F811
+) -> None:
     report = _measure(
         "i2p",
         os.environ["XURCROH_I2P_DESTINATION"],
