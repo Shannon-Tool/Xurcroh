@@ -353,6 +353,10 @@ def test_public_sdk_generates_through_a_two_relay_onion_path(
             assert route["link_peer"] == "entry relay"
             assert route["negotiated"]["key_exchange_group"] == "X25519MLKEM768"
             assert len(route["negotiated"]["peer_certificate_sha256"]) == 64
+            # Through relays the session is still forward-secret, but the client's TLS
+            # connection ends at the entry relay, so there is nothing to bind to.
+            assert route["negotiated"]["session_forward_secret"] is True
+            assert route["negotiated"]["session_bound_to_tls"] is False
         assert trace["model"]["share_count"] == 2
         assert trace["model"]["weight_bits"] == 4
         assert trace["model"]["weight_shares"].startswith("seed-expanded")

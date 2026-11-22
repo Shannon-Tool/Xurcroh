@@ -156,23 +156,42 @@ async fn mutual_tls_negotiates_hybrid_post_quantum_key_exchange() {
             handshake.negotiated_key_exchange_group,
             NamedGroup::X25519MLKEM768
         );
+        let exported =
+            xurcroh_quic::export_keying_material(&connection, b"EXPORTER-xurcroh-test", b"", 32)
+                .unwrap();
         let frame = TensorServer::receive_frame(&connection).await.unwrap();
         TensorServer::send_frame(&connection, &frame).await.unwrap();
         connection.closed().await;
+        // A second connection to the same server must export a different value.
+        let second = server.accept_connection().await.unwrap();
+        let second_exported =
+            xurcroh_quic::export_keying_material(&second, b"EXPORTER-xurcroh-test", b"", 32)
+                .unwrap();
+        second.closed().await;
+        (exported, second_exported)
     });
 
     let client = TensorClient::connect_mutual(
         address,
         "localhost",
         ca_certificate.clone(),
-        vec![certificate, ca_certificate],
-        client_key,
+        vec![certificate.clone(), ca_certificate.clone()],
+        client_key.clone_key(),
     )
     .await
     .unwrap();
     assert_eq!(
         client.key_exchange_group().as_deref(),
         Some("X25519MLKEM768")
+    );
+    let client_exported = client
+        .export_keying_material(b"EXPORTER-xurcroh-test", b"", 32)
+        .unwrap();
+    assert_ne!(
+        client_exported,
+        client
+            .export_keying_material(b"EXPORTER-xurcroh-other", b"", 32)
+            .unwrap()
     );
     let presented = {
         use sha2::{Digest, Sha256};
@@ -184,7 +203,26 @@ async fn mutual_tls_negotiates_hybrid_post_quantum_key_exchange() {
     let response = client.receive_frame().await.unwrap();
     assert_eq!(response.sequence, 10);
     client.close().await;
-    server_task.await.unwrap();
+
+    let second_client = TensorClient::connect_mutual(
+        address,
+        "localhost",
+        ca_certificate.clone(),
+        vec![certificate, ca_certificate],
+        client_key,
+    )
+    .await
+    .unwrap();
+    let second_client_exported = second_client
+        .export_keying_material(b"EXPORTER-xurcroh-test", b"", 32)
+        .unwrap();
+    second_client.close().await;
+
+    let (server_exported, second_server_exported) = server_task.await.unwrap();
+    // Both ends of one TLS session agree; another session does not.
+    assert_eq!(client_exported, server_exported);
+    assert_eq!(second_client_exported, second_server_exported);
+    assert_ne!(client_exported, second_client_exported);
 }
 
 #[tokio::test]

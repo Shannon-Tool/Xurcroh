@@ -69,10 +69,9 @@ def channel_binding(link: Any, *, relayed: bool) -> bytes:
 
     if relayed:
         return UNBOUND
-    export = getattr(link, "export_keying_material", None)
-    if export is None:
-        return UNBOUND
-    return bytes(export(b"EXPORTER-xurcroh-role-session-v3", b"", BINDING_BYTES))
+    return bytes(
+        link.export_keying_material(b"EXPORTER-xurcroh-role-session-v3", b"", BINDING_BYTES)
+    )
 
 
 def _hash(*parts: bytes) -> bytes:
