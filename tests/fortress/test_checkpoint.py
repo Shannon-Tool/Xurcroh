@@ -261,8 +261,6 @@ def test_checkpoint_name_cannot_be_used_for_an_operation(
 
 
 def test_trace_verification_rejects_a_checkpoint_for_other_artifacts_than_the_manifest() -> None:
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
     from xurcroh.fortress.checkpoint import open_checkpoint, sign_checkpoint
     from xurcroh.receipts import TraceError, model_manifest_digest, sign_trace, verify_trace
 
@@ -283,7 +281,7 @@ def test_trace_verification_rejects_a_checkpoint_for_other_artifacts_than_the_ma
         model["manifest_sha256"] = model_manifest_digest(model)
         return sign_trace(
             {"task_id": "t", "model": model, "transport": {"worker_checkpoints": [item]}},
-            Ed25519PrivateKey.generate(),
+            HybridSigningKey.generate(),
         )
 
     assert verify_trace(trace("a" * 64))["worker_checkpoints"] == 1

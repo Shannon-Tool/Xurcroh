@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from xurcroh.merkle_log import (
     MerkleLog,
@@ -13,6 +12,7 @@ from xurcroh.merkle_log import (
     verify_inclusion,
     verify_tree_head,
 )
+from xurcroh.signatures import HybridSigningKey
 
 RFC6962_LEAVES = [
     b"",
@@ -27,14 +27,14 @@ RFC6962_LEAVES = [
 
 
 def filled(count: int) -> MerkleLog:
-    log = MerkleLog(Ed25519PrivateKey.generate())
+    log = MerkleLog(HybridSigningKey.generate())
     for index in range(count):
         assert log.append(f"leaf-{index}".encode()) == index
     return log
 
 
 def test_known_answers_for_empty_single_and_eight_leaf_trees() -> None:
-    log = MerkleLog(Ed25519PrivateKey.generate())
+    log = MerkleLog(HybridSigningKey.generate())
     assert log.root().hex() == hashlib.sha256(b"").hexdigest()
     log.append(RFC6962_LEAVES[0])
     assert log.root().hex() == "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
@@ -66,7 +66,7 @@ def test_every_consistency_proof_verifies_and_a_rewritten_log_fails() -> None:
         for first in range(1, second + 1):
             path = log.consistency_proof(first, second)
             verify_consistency(first, second, log.root(first), log.root(second), path)
-    rewritten = MerkleLog(Ed25519PrivateKey.generate())
+    rewritten = MerkleLog(HybridSigningKey.generate())
     for index in range(20):
         rewritten.append(b"changed" if index == 3 else f"leaf-{index}".encode())
     with pytest.raises(MerkleProofError):
@@ -78,7 +78,7 @@ def test_every_consistency_proof_verifies_and_a_rewritten_log_fails() -> None:
 
 
 def test_signed_tree_head_binds_size_root_and_log_key() -> None:
-    key = Ed25519PrivateKey.generate()
+    key = HybridSigningKey.generate()
     log = MerkleLog(key)
     log.append(b"a")
     head = log.signed_tree_head()

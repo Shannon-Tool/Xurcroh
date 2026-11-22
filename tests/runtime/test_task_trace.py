@@ -35,7 +35,8 @@ def test_trace_records_every_setting_and_verifies(tiny_model_path: Path) -> None
         public_key = client.tasks.public_key
         digest = client.preflight("tiny")["tiny"].source_digest
 
-    assert trace["format"] == "xurcroh-task-trace-v1"
+    assert trace["format"] == "xurcroh-task-trace-v2"
+    assert trace["signer"]["algorithm"] == "Ed25519+ML-DSA-65"
     assert trace["task_id"] == response.execution.request_id
     assert trace["mode"] == "local"
     assert trace["request"]["kind"] == "chat"
@@ -200,9 +201,8 @@ def test_trace_hash_is_anchored_in_an_append_only_log(tiny_model_path: Path) -> 
 
 
 def test_trace_binds_the_model_to_one_manifest_digest(tiny_model_path: Path) -> None:
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
     from xurcroh.receipts import model_manifest_digest, sign_trace
+    from xurcroh.signatures import HybridSigningKey
 
     with client_for(tiny_model_path) as client:
         response = client.chat.completions.create(model="tiny", messages=MESSAGES, max_tokens=1)
@@ -215,7 +215,25 @@ def test_trace_binds_the_model_to_one_manifest_digest(tiny_model_path: Path) -> 
         assert model_manifest_digest({**model, name: "changed"}) != model["manifest_sha256"], name
     # Even a trace re-signed by someone else cannot pair the digest with other model facts.
     forged = sign_trace(
-        {**trace, "model": {**model, "source_format": "gguf"}}, Ed25519PrivateKey.generate()
+        {**trace, "model": {**model, "source_format": "gguf"}}, HybridSigningKey.generate()
     )
     with pytest.raises(TraceError, match="manifest"):
         verify_trace(forged)
+
+
+def test_a_classical_only_signature_is_not_accepted(tiny_model_path: Path) -> None:
+    """Dropping the post-quantum half must not leave a trace that still verifies."""
+
+    with client_for(tiny_model_path) as client:
+        response = client.chat.completions.create(model="tiny", messages=MESSAGES, max_tokens=1)
+        trace = client.tasks.trace(response.execution.request_id)
+
+    classical_only = {
+        **trace,
+        "signer": {"algorithm": "Ed25519", "public_key": trace["signer"]["public_key"][:64]},
+        "signature": trace["signature"][:128],
+    }
+    with pytest.raises(TraceError, match="signature"):
+        verify_trace(classical_only)
+    with pytest.raises(TraceError, match="signature"):
+        verify_trace({**trace, "signature": trace["signature"][:128]})

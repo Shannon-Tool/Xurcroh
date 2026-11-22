@@ -17,10 +17,6 @@ from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-
 from xurcroh.errors import ConfigurationError, XurcrohError
 from xurcroh.merkle_log import (
     MerkleLog,
@@ -29,10 +25,12 @@ from xurcroh.merkle_log import (
     verify_inclusion,
     verify_tree_head,
 )
+from xurcroh.signatures import ALGORITHM, HybridSigningKey, SignatureError, verify_hybrid
 
-TRACE_FORMAT = "xurcroh-task-trace-v1"
+TRACE_FORMAT = "xurcroh-task-trace-v2"
+TRACE_CONTEXT = b"xurcroh-task-trace"
 SAMPLER = "xurcroh-multinomial-v2"
-SIGNATURE_ALGORITHM = "Ed25519"
+SIGNATURE_ALGORITHM = ALGORITHM
 
 
 class TraceError(XurcrohError):
@@ -79,16 +77,14 @@ def _opens(commitment: Any, payload: bytes) -> bool:
         return False
 
 
-def public_key_bytes(key: Ed25519PrivateKey) -> bytes:
-    return key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
-
-
-def sign_trace(document: Mapping[str, Any], signing_key: Ed25519PrivateKey) -> dict[str, Any]:
+def sign_trace(document: Mapping[str, Any], signing_key: HybridSigningKey) -> dict[str, Any]:
     body = {key: value for key, value in document.items() if key != "signature"}
     body["format"] = TRACE_FORMAT
-    public_key = public_key_bytes(signing_key)
-    body["signer"] = {"algorithm": SIGNATURE_ALGORITHM, "public_key": public_key.hex()}
-    return {**body, "signature": signing_key.sign(canonical(body)).hex()}
+    body["signer"] = {
+        "algorithm": SIGNATURE_ALGORITHM,
+        "public_key": signing_key.public_key.hex(),
+    }
+    return {**body, "signature": signing_key.sign(TRACE_CONTEXT, canonical(body)).hex()}
 
 
 def verify_trace(
@@ -121,8 +117,8 @@ def verify_trace(
         key = embedded if public_key is None else public_key
         if not hmac.compare_digest(key, embedded):
             raise ValueError("signer does not match the expected key")
-        Ed25519PublicKey.from_public_bytes(key).verify(signature, canonical(body))
-    except (KeyError, TypeError, ValueError, InvalidSignature) as error:
+        verify_hybrid(key, TRACE_CONTEXT, canonical(body), signature)
+    except (KeyError, TypeError, ValueError, SignatureError) as error:
         raise TraceError("trace signature is missing or does not verify") from error
     _verify_manifest(document)
     report: dict[str, bool | int | None] = {
@@ -268,12 +264,12 @@ def describe_trace(document: Mapping[str, Any]) -> list[str]:
 class TraceStore:
     """Keep the most recent signed traces in memory, keyed by task ID."""
 
-    def __init__(self, limit: int, signing_key: Ed25519PrivateKey | None = None) -> None:
+    def __init__(self, limit: int, signing_key: HybridSigningKey | None = None) -> None:
         self._limit = limit
-        self._key = signing_key or Ed25519PrivateKey.generate()
+        self._key = signing_key or HybridSigningKey.generate()
         self._traces: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._indexes: dict[str, int] = {}
-        self._log = MerkleLog(Ed25519PrivateKey.generate())
+        self._log = MerkleLog(HybridSigningKey.generate())
         self._lock = threading.Lock()
 
     @property
@@ -296,7 +292,7 @@ class TraceStore:
 
     @property
     def public_key(self) -> bytes:
-        return public_key_bytes(self._key)
+        return self._key.public_key
 
     def record(self, document: Mapping[str, Any]) -> dict[str, Any]:
         signed = sign_trace(document, self._key)
