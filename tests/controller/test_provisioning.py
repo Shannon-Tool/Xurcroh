@@ -98,9 +98,27 @@ def test_fortress_provisioning_deploys_encrypted_roles_and_cleans_up(
     assert not (workspace / "tls" / "ca.key").exists()
     assert (workspace / "tls" / "client.key").is_file()
     assert all(not role.recipient_key.exists() for role in deployment._roles)
+    # Every role gets its own signing identity, pinned for the client with the digest of
+    # exactly the artifacts written for it; the private half leaves the controller.
+    from xurcroh.fortress.checkpoint import artifact_set_digest
+    from xurcroh.fortress.worker_cli import load_role_artifacts
+    from xurcroh.signatures import PUBLIC_KEY_BYTES
+
+    published = deployment.workers["tiny"]
+    identities = {worker.labels["identity_public"] for worker in published}
+    assert len(identities) == 20
+    assert all(len(bytes.fromhex(identity)) == PUBLIC_KEY_BYTES for identity in identities)
+    assert all(not role.identity_key.exists() for role in deployment._roles)
+    for role, worker in zip(deployment._roles, published, strict=True):
+        assert worker.labels["artifact_digest"] == artifact_set_digest(
+            load_role_artifacts(role.package)
+        )
+    assert sum(remote.endswith("/identity.key") for _, _, remote in executor.uploads) == 20
     deployment.close()
     deployment.close()
     commands = [command for _, command in executor.commands]
+    starts = [command for command in commands if "xurcroh.fortress.worker_cli" in command]
+    assert starts and all("--identity-key " in command for command in starts)
     assert any("xurcroh.fortress.worker_cli" in command for command in commands)
     assert all("python3 -m xurcroh.worker" not in command for command in commands)
     assert not workspace.exists()

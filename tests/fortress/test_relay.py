@@ -24,6 +24,7 @@ from xurcroh.fortress.transport import (
     encode_role_artifact,
 )
 from xurcroh.fortress.worker import FortressRoleWorker
+from xurcroh.signatures import HybridSigningKey
 
 
 def test_oblivious_relay_forwards_four_exact_role_calls(
@@ -44,6 +45,7 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
     roles: list[RoleEndpoint] = []
     for activation_index in range(2):
         for weight_index in range(2):
+            signing_key = HybridSigningKey.generate()
             recipient = X25519PrivateKey.generate()
             onion_private = X25519PrivateKey.generate()
             artifact = encode_role_artifact(
@@ -61,6 +63,7 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
                     Encoding.Raw, PrivateFormat.Raw, NoEncryption()
                 ),
                 allow_unattested=True,
+                identity_key=signing_key.to_bytes(),
             )
             worker.start()
             workers.append(worker)
@@ -81,6 +84,8 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
                     recipient.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw),
                     f"relay-role-{activation_index}-{weight_index}",
                     route,
+                    identity_public=signing_key.public_key,
+                    artifact_digest=worker.artifact_digest,
                 )
             )
     relay = ObliviousRelay(
@@ -103,6 +108,10 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
         expected = (operation.quantized.values @ torch.tensor([5, 7])).remainder(PRIME_MODULUS)
         assert torch.equal(client.execute(shares), expected)
         assert relay.forward_count == 4
+        # A checkpoint is an ordinary fixed-size frame, so it crosses the relay unchanged.
+        checkpoints = client.checkpoints()
+        assert [item["body"]["calls"] for item in checkpoints] == [1, 1, 1, 1]
+        assert relay.forward_count == 8
     finally:
         client.close()
         relay.close()

@@ -42,7 +42,15 @@ def _canonical(document: Any) -> bytes:
 def artifact_set_digest(artifacts: Mapping[str, bytes]) -> str:
     """One digest for every operation artifact a role holds, independent of load order."""
 
-    entries = [[name, hashlib.sha256(artifacts[name]).hexdigest()] for name in sorted(artifacts)]
+    return artifact_set_digest_from_hashes(
+        {name: hashlib.sha256(artifact).hexdigest() for name, artifact in artifacts.items()}
+    )
+
+
+def artifact_set_digest_from_hashes(hashes: Mapping[str, str]) -> str:
+    """The same digest, from each artifact's SHA-256 so the bytes need not be held."""
+
+    entries = [[name, hashes[name]] for name in sorted(hashes)]
     return hashlib.sha256(_ARTIFACT_DOMAIN + _canonical(entries)).hexdigest()
 
 
