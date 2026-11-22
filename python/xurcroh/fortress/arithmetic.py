@@ -158,8 +158,12 @@ def _secure_uniform(shape: tuple[int, ...], modulus: int) -> torch.Tensor:
     remaining = count
     while remaining:
         candidate = np.frombuffer(os.urandom(remaining * 8), dtype=np.uint64)
-        selected = candidate[candidate < limit].astype(np.int64)
-        accepted.append(torch.from_numpy(selected).remainder(modulus))
+        # Reduce while still unsigned. Converting to int64 first would wrap draws of
+        # 2**63 and above to negative numbers and reduce them to the wrong residue.
+        # When the modulus divides 2**64 every draw is usable and nothing is rejected.
+        usable = candidate if limit == 2**64 else candidate[candidate < np.uint64(limit)]
+        selected = (usable % np.uint64(modulus)).astype(np.int64)
+        accepted.append(torch.from_numpy(selected))
         remaining = count - sum(tensor.numel() for tensor in accepted)
     return torch.cat(accepted).reshape(shape)
 
