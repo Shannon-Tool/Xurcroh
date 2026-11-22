@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
+from xurcroh.signatures import HybridSigningKey
 from xurcroh.transparency import (
     TransparencyError,
     fetch_transparency_log,
@@ -17,7 +17,7 @@ from xurcroh.transparency_service import TransparencyService
 
 
 def test_live_transparency_service_is_persistent_and_authenticated(tmp_path: Path) -> None:
-    key = Ed25519PrivateKey.generate()
+    key = HybridSigningKey.generate()
     path = tmp_path / "public-log.json"
     service = TransparencyService(path, signing_key=key, write_token="write-secret")
     client = TestClient(service.app)
@@ -34,7 +34,7 @@ def test_live_transparency_service_is_persistent_and_authenticated(tmp_path: Pat
     public = client.get("/v1/log")
     verify_transparency_log(
         public.json(),
-        public_key=key.public_key().public_bytes_raw(),
+        public_key=key.public_key,
         expected_measurements={"a" * 64: "b" * 64},
     )
     restarted = TransparencyService(path, signing_key=key, write_token="write-secret")
@@ -44,7 +44,7 @@ def test_live_transparency_service_is_persistent_and_authenticated(tmp_path: Pat
 
 
 def test_transparency_service_detects_disk_tampering(tmp_path: Path) -> None:
-    key = Ed25519PrivateKey.generate()
+    key = HybridSigningKey.generate()
     path = tmp_path / "public-log.json"
     service = TransparencyService(path, signing_key=key, write_token="write-secret")
     client = TestClient(service.app)
@@ -74,7 +74,7 @@ def test_transparency_cli_uses_indirect_secret_configuration(
 def test_remote_transparency_log_is_verified_before_use(tmp_path: Path) -> None:
     import httpx
 
-    key = Ed25519PrivateKey.generate()
+    key = HybridSigningKey.generate()
     service = TransparencyService(
         tmp_path / "log.json", signing_key=key, write_token="write-secret"
     )
@@ -89,7 +89,7 @@ def test_remote_transparency_log_is_verified_before_use(tmp_path: Path) -> None:
     remote = httpx.Client(base_url="https://transparency.example", transport=transport)
     document = fetch_transparency_log(
         "https://transparency.example",
-        public_key=key.public_key().public_bytes_raw(),
+        public_key=key.public_key,
         expected_measurements={"a" * 64: "b" * 64},
         client=remote,
     )

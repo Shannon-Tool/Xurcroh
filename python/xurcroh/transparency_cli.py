@@ -4,8 +4,7 @@ import argparse
 import os
 from pathlib import Path
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
+from xurcroh.signatures import load_signing_key
 from xurcroh.transparency_service import TransparencyService
 
 
@@ -29,7 +28,7 @@ def main(argv: list[str] | None = None) -> None:
         raise ValueError(
             f"write token environment variable {args.write_token_env} is unset"
         ) from error
-    signing_key = Ed25519PrivateKey.from_private_bytes(args.signing_key.read_bytes())
+    signing_key = load_signing_key(args.signing_key)
     service = TransparencyService(
         args.storage,
         signing_key=signing_key,

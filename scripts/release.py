@@ -4,9 +4,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-
 from xurcroh.release import generate_sbom, sign_release
+from xurcroh.signatures import load_signing_key
 
 
 def main() -> None:
@@ -16,14 +15,10 @@ def main() -> None:
     parser.add_argument("--sbom", type=Path, required=True)
     parser.add_argument("--signing-key", type=Path, required=True)
     args = parser.parse_args()
-    private_bytes = args.signing_key.read_bytes()
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
-    private = Ed25519PrivateKey.from_private_bytes(private_bytes)
+    private = load_signing_key(args.signing_key)
     generate_sbom(args.project, args.sbom)
     manifest = sign_release(args.artifacts, sbom_path=args.sbom, signing_key=private)
-    public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
-    print(f"Signed {manifest}; public key: {public}")
+    print(f"Signed {manifest}; public key: {private.public_key.hex()}")
 
 
 if __name__ == "__main__":

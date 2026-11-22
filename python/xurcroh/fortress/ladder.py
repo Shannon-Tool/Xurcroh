@@ -8,8 +8,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from xurcroh.signatures import ALGORITHM, HybridSigningKey, SignatureError, verify_hybrid
+
+EVIDENCE_CONTEXT = b"xurcroh-ladder-evidence"
 
 
 class LadderEvidenceError(ValueError):
@@ -289,7 +290,7 @@ def write_rung_evidence(
     rung: LadderRung,
     report: Mapping[str, Any],
     *,
-    signing_key: Ed25519PrivateKey,
+    signing_key: HybridSigningKey,
     format_version: int | None = None,
 ) -> None:
     selected_version = format_version or int(report.get("evidence_version", 1))
@@ -304,10 +305,11 @@ def write_rung_evidence(
     validate_rung_evidence(rung, signed_report)
     document = {
         "format": f"xurcroh-rung-evidence-v{selected_version}",
+        "signature_algorithm": ALGORITHM,
         "rung": asdict(rung),
         "report": signed_report,
     }
-    document["signature"] = signing_key.sign(_canonical(document)).hex()
+    document["signature"] = signing_key.sign(EVIDENCE_CONTEXT, _canonical(document)).hex()
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(".tmp")
@@ -316,7 +318,7 @@ def write_rung_evidence(
 
 
 def verify_rung_evidence(
-    path: str | Path, *, public_key: Ed25519PublicKey
+    path: str | Path, *, public_key: bytes
 ) -> tuple[LadderRung, dict[str, Any]]:
     document = json.loads(Path(path).read_text())
     if not isinstance(document, dict) or document.get("format") not in {
@@ -327,9 +329,11 @@ def verify_rung_evidence(
     signature = document.pop("signature", None)
     if not isinstance(signature, str):
         raise LadderEvidenceError("rung evidence signature is missing")
+    if document.get("signature_algorithm") != ALGORITHM:
+        raise LadderEvidenceError(f"rung evidence must be signed with {ALGORITHM}")
     try:
-        public_key.verify(bytes.fromhex(signature), _canonical(document))
-    except (InvalidSignature, ValueError) as error:
+        verify_hybrid(public_key, EVIDENCE_CONTEXT, _canonical(document), bytes.fromhex(signature))
+    except (SignatureError, ValueError) as error:
         raise LadderEvidenceError("rung evidence signature is invalid") from error
     rung = LadderRung.from_mapping(document["rung"])
     report = document["report"]

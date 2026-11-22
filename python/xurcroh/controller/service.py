@@ -10,8 +10,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,7 +21,7 @@ from xurcroh.errors import ClusterUnavailableError
 
 @dataclass(frozen=True)
 class WorkerEnrollment:
-    public_key: Ed25519PublicKey
+    public_key: bytes
     endpoint: str
 
 
@@ -147,7 +145,7 @@ def create_controller_app(
         enrollment = worker_enrollments.get(registration.worker_id)
         if enrollment is None:
             raise HTTPException(status_code=403, detail="worker is not enrolled")
-        expected_public = enrollment.public_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
+        expected_public = enrollment.public_key
         if not hmac.compare_digest(public_bytes, expected_public):
             raise HTTPException(status_code=403, detail="worker key is not enrolled")
         if registration.endpoint != enrollment.endpoint:
@@ -177,9 +175,7 @@ def create_controller_app(
         except ValueError as error:
             raise ClusterUnavailableError("invalid registration encoding") from error
         validate_enrollment(request.registration, public_bytes)
-        record = worker_registry.register(
-            request.registration, signature, Ed25519PublicKey.from_public_bytes(public_bytes)
-        )
+        record = worker_registry.register(request.registration, signature, public_bytes)
         return {"worker_id": record.worker_id, "status": "registered"}
 
     @app.post("/v1/workers/{worker_id}/heartbeat")

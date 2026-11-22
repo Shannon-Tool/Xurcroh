@@ -6,12 +6,13 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-
-from xurcroh.controller.identity import Registration, registration_expired
+from xurcroh.controller.identity import (
+    REGISTRATION_CONTEXT,
+    Registration,
+    registration_expired,
+)
 from xurcroh.errors import AttestationError, ClusterUnavailableError
+from xurcroh.signatures import SignatureError, verify_hybrid
 
 
 @dataclass
@@ -41,17 +42,15 @@ class WorkerRegistry:
         self,
         registration: Registration,
         signature: bytes,
-        public_key: Ed25519PublicKey,
+        public_key: bytes,
     ) -> WorkerRecord:
         if registration_expired(registration, self.registration_ttl_seconds):
             raise AttestationError("worker registration is not fresh")
         try:
-            public_key.verify(signature, registration.canonical())
-        except InvalidSignature as error:
+            verify_hybrid(public_key, REGISTRATION_CONTEXT, registration.canonical(), signature)
+        except SignatureError as error:
             raise AttestationError("worker registration signature is invalid") from error
-        fingerprint = hashlib.sha256(
-            public_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
-        ).hexdigest()
+        fingerprint = hashlib.sha256(public_key).hexdigest()
         with self._lock:
             existing = self._workers.get(registration.worker_id)
             if existing is not None and (

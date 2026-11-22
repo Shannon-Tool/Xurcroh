@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from xurcroh.fortress.ladder import (
     LadderEvidenceError,
@@ -14,6 +13,7 @@ from xurcroh.fortress.ladder import (
     verify_rung_evidence,
     write_rung_evidence,
 )
+from xurcroh.signatures import HybridSigningKey
 
 
 def manifest_mapping(rung: str = "L0") -> dict:
@@ -116,8 +116,8 @@ def test_local_rungs_do_not_claim_hardware_validation() -> None:
 
 
 def test_signed_ladder_evidence_verifies_and_detects_tampering(tmp_path: Path) -> None:
-    private = Ed25519PrivateKey.generate()
-    public = private.public_key()
+    private = HybridSigningKey.generate()
+    public = private.public_key
     path = tmp_path / "l0.json"
     rung = LadderRung.from_mapping(manifest_mapping())
     write_rung_evidence(path, rung, evidence_mapping(), signing_key=private)

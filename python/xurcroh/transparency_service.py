@@ -7,11 +7,16 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from xurcroh.transparency import TransparencyError, TransparencyLog, verify_transparency_log
+from xurcroh.signatures import ALGORITHM, HybridSigningKey
+from xurcroh.transparency import (
+    TRANSPARENCY_FORMAT,
+    TransparencyError,
+    TransparencyLog,
+    verify_transparency_log,
+)
 
 
 class MeasurementEntry(BaseModel):
@@ -25,7 +30,7 @@ class TransparencyService:
         self,
         storage: str | Path,
         *,
-        signing_key: Ed25519PrivateKey,
+        signing_key: HybridSigningKey,
         write_token: str,
     ) -> None:
         if not write_token:
@@ -33,7 +38,7 @@ class TransparencyService:
         self.storage = Path(storage)
         self.storage.parent.mkdir(parents=True, exist_ok=True)
         self.log = TransparencyLog(signing_key)
-        self._public_key = signing_key.public_key().public_bytes_raw()
+        self._public_key = signing_key.public_key
         self._write_token = write_token
         self._lock = threading.Lock()
         self.app = FastAPI(title="Xurcroh transparency log")
@@ -41,7 +46,7 @@ class TransparencyService:
 
     def _document(self) -> dict[str, Any]:
         if not self.storage.is_file():
-            return {"format": "xurcroh-transparency-v1", "entries": []}
+            return {"format": TRANSPARENCY_FORMAT, "entries": []}
         document = json.loads(self.storage.read_text())
         if not isinstance(document, dict):
             raise TransparencyError("stored transparency document must be an object")
@@ -57,7 +62,7 @@ class TransparencyService:
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(descriptor, "w") as stream:
             json.dump(
-                {"format": "xurcroh-transparency-v1", "entries": self.log.entries},
+                {"format": TRANSPARENCY_FORMAT, "entries": self.log.entries},
                 stream,
                 indent=2,
                 sort_keys=True,
@@ -105,6 +110,6 @@ class TransparencyService:
         @self.app.get("/v1/public-key")
         def public_key() -> dict[str, str]:
             return {
-                "algorithm": "Ed25519",
+                "algorithm": ALGORITHM,
                 "public_key": self._public_key.hex(),
             }

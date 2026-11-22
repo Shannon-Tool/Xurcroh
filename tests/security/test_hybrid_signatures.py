@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from xurcroh.signatures import (
@@ -78,3 +80,21 @@ def test_malformed_public_keys_and_signatures_are_rejected(length: int) -> None:
         verify_hybrid(key.public_key, b"c", b"m", signature[:length])
     with pytest.raises(SignatureError):
         HybridSigningKey.from_bytes(bytes(length))
+
+
+def test_key_file_is_private_and_never_overwritten(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from xurcroh.signatures import load_signing_key, main, write_signing_key
+
+    path = tmp_path / "signing.key"
+    main([str(path), "--generate"])
+    public = capsys.readouterr().out.strip()
+
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert load_signing_key(path).public_key.hex() == public
+    main([str(path), "--public-out", str(tmp_path / "signing.pub")])
+    assert capsys.readouterr().out.strip() == public
+    assert (tmp_path / "signing.pub").read_bytes().hex() == public
+    with pytest.raises(FileExistsError):
+        write_signing_key(path)

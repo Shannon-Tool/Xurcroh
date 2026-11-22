@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 import torch
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
 from integration.test_stage_sdk import running_stage
@@ -15,6 +14,7 @@ from xurcroh.controller.identity import Registration, sign_registration
 from xurcroh.controller.registry import WorkerRegistry
 from xurcroh.controller.service import create_controller_app
 from xurcroh.runtime.stage_sessions import ClientStageSession
+from xurcroh.signatures import HybridSigningKey
 
 
 def test_circuit_relays_real_stage_execution_without_plaintext_logs(
@@ -23,7 +23,7 @@ def test_circuit_relays_real_stage_execution_without_plaintext_logs(
     identities = StageIdentities.create(1)
     compiled = identities.compile(tiny_llama_path, tmp_path / "compiled", seed=241)
     with running_stage(compiled.manifest_path, 0, identities.private_keys[0]) as endpoint:
-        private = Ed25519PrivateKey.generate()
+        private = HybridSigningKey.generate()
         registration = Registration(
             worker_id="local-stage-worker",
             endpoint=endpoint,
@@ -34,7 +34,7 @@ def test_circuit_relays_real_stage_execution_without_plaintext_logs(
         )
         registry = WorkerRegistry()
         registry.register(
-            registration, sign_registration(private, registration), private.public_key()
+            registration, sign_registration(private, registration), private.public_key
         )
         app = create_controller_app(registry, require_authentication=False)
         with TestClient(app) as client:

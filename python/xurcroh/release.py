@@ -11,10 +11,11 @@ from pathlib import Path
 from typing import Any
 from zipfile import ZIP_STORED, ZipFile
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
+from xurcroh.signatures import HybridSigningKey, SignatureError, verify_hybrid
 from xurcroh.transparency import TransparencyError
+
+RELEASE_FORMAT = "xurcroh-release-v3"
+RELEASE_CONTEXT = b"xurcroh-release"
 
 
 def _canonical(document: dict[str, Any]) -> bytes:
@@ -128,7 +129,7 @@ def sign_release(
     artifact_directory: str | Path,
     *,
     sbom_path: str | Path,
-    signing_key: Any,
+    signing_key: HybridSigningKey,
 ) -> Path:
     root = Path(artifact_directory)
     destination = root / "release-manifest.json"
@@ -143,27 +144,27 @@ def sign_release(
     if not artifacts:
         raise ValueError("release directory contains no artifacts")
     manifest = {
-        "format": "xurcroh-release-v2",
+        "format": RELEASE_FORMAT,
         "artifacts": artifacts,
         "sbom_path": str(Path(sbom_path).resolve()),
         "sbom_sha256": _digest(Path(sbom_path)),
     }
-    manifest["signature"] = signing_key.sign(_canonical(manifest)).hex()
+    manifest["signature"] = signing_key.sign(RELEASE_CONTEXT, _canonical(manifest)).hex()
     destination.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return destination
 
 
-def verify_release(manifest_path: str | Path, *, public_key: Ed25519PublicKey) -> None:
+def verify_release(manifest_path: str | Path, *, public_key: bytes) -> None:
     path = Path(manifest_path)
     document = json.loads(path.read_text())
-    if document.get("format") != "xurcroh-release-v2":
+    if document.get("format") != RELEASE_FORMAT:
         raise TransparencyError("unsupported release-manifest format")
     signature = document.pop("signature", None)
     if not isinstance(signature, str):
         raise TransparencyError("release signature is missing")
     try:
-        public_key.verify(bytes.fromhex(signature), _canonical(document))
-    except (InvalidSignature, ValueError) as error:
+        verify_hybrid(public_key, RELEASE_CONTEXT, _canonical(document), bytes.fromhex(signature))
+    except (SignatureError, ValueError) as error:
         raise TransparencyError("release signature is invalid") from error
     sbom_path = document.get("sbom_path")
     sbom_digest = document.get("sbom_sha256")

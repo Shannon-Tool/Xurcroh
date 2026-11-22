@@ -17,13 +17,13 @@ from typing import Any
 if str(Path(__file__).resolve().parents[2]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from scripts.fortress.deploy_ladder import pin_host_key, wait_for_ssh
 from scripts.gpu.deploy_two_node import download, scp, ssh
 
 from xurcroh.fortress.ladder import verify_rung_evidence
 from xurcroh.fortress.ladder_provider import destroy_ladder_instances
 from xurcroh.providers.vast import StateStore
+from xurcroh.signatures import load_signing_key
 
 ROOT = Path(__file__).resolve().parents[2]
 GIT = shutil.which("git")
@@ -190,8 +190,8 @@ def _run(args: argparse.Namespace) -> Path:
         if "error_type" in report:
             raise RuntimeError(f"remote grid smoke failed: {report['error_type']}")
     else:
-        private = Ed25519PrivateKey.from_private_bytes(args.signing_key.read_bytes())
-        verify_rung_evidence(evidence, public_key=private.public_key())
+        private = load_signing_key(args.signing_key)
+        verify_rung_evidence(evidence, public_key=private.public_key)
     print(evidence)
     return evidence
 

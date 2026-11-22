@@ -29,7 +29,7 @@ python3.12 -m venv .venv
 .venv/bin/maturin develop --manifest-path crates/transport/Cargo.toml --features python
 ```
 
-Provide provider credentials through the environment or the provider's secret mechanism. Do not put keys in YAML, shell history, process arguments, logs, manifests, or Git. Use a separate Ed25519 evidence-signing key at `/secure/evidence-signing.key` with mode `0600`; store only its public key at `/secure/evidence-signing.pub` for predecessor verification. Publish only that public key.
+Provide provider credentials through the environment or the provider's secret mechanism. Do not put keys in YAML, shell history, process arguments, logs, manifests, or Git. Use a separate evidence-signing key at `/secure/evidence-signing.key` with mode `0600`; store only its public key at `/secure/evidence-signing.pub` for predecessor verification. Publish only that public key. Evidence is signed with Ed25519 and ML-DSA-65 together, and an Ed25519-only key file from an earlier revision is rejected. Create both files with `python -m xurcroh.signatures /secure/evidence-signing.key --generate --public-out /secure/evidence-signing.pub`.
 
 Verify before provisioning:
 
