@@ -18,13 +18,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from xurcroh.errors import ConfigurationError, XurcrohError
-from xurcroh.merkle_log import (
-    MerkleLog,
-    MerkleProofError,
-    leaf_hash,
-    verify_inclusion,
-    verify_tree_head,
-)
+from xurcroh.merkle_log import MerkleLog
+from xurcroh.public_log import entry_leaf
 from xurcroh.signatures import ALGORITHM, HybridSigningKey, SignatureError, verify_hybrid
 
 TRACE_FORMAT = "xurcroh-task-trace-v2"
@@ -221,18 +216,15 @@ def verify_trace_proof(
     A trace changed after it was logged no longer matches its logged hash.
     """
 
+    from xurcroh.public_log import PublicLogError, verify_entry_proof
+
     try:
-        size, root = verify_tree_head(proof["tree_head"], log_key)
-        verify_inclusion(
-            leaf_hash(trace_digest(document)),
-            int(proof["leaf_index"]),
-            size,
-            [bytes.fromhex(node) for node in proof["path"]],
-            root,
+        head = verify_entry_proof(
+            proof, kind="trace", digest=trace_digest(document).hex(), log_key=log_key
         )
-    except (KeyError, TypeError, ValueError, MerkleProofError) as error:
+    except PublicLogError as error:
         raise TraceError(f"trace is not in the log: {error}") from error
-    return size
+    return int(head["tree_size"])
 
 
 def describe_trace(document: Mapping[str, Any]) -> list[str]:
@@ -264,8 +256,17 @@ def describe_trace(document: Mapping[str, Any]) -> list[str]:
 class TraceStore:
     """Keep the most recent signed traces in memory, keyed by task ID."""
 
-    def __init__(self, limit: int, signing_key: HybridSigningKey | None = None) -> None:
+    def __init__(
+        self,
+        limit: int,
+        signing_key: HybridSigningKey | None = None,
+        public_log: Any | None = None,
+    ) -> None:
         self._limit = limit
+        # A xurcroh.public_log.LogClient. Without one, trace hashes are anchored only
+        # in a log inside this process, which nobody else can inspect.
+        self._public_log = public_log
+        self._public_proofs: dict[str, dict[str, Any]] = {}
         self._key = signing_key or HybridSigningKey.generate()
         self._traces: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._indexes: dict[str, int] = {}
@@ -274,17 +275,38 @@ class TraceStore:
 
     @property
     def log_key(self) -> bytes:
+        if self._public_log is not None:
+            return bytes(self._public_log._key)
         return self._log.public_key
 
-    def proof(self, task_id: str) -> dict[str, Any]:
-        """Inclusion proof for a held trace against the current signed tree head."""
+    @property
+    def public(self) -> bool:
+        return self._public_log is not None
 
-        self.get(task_id)
+    def proof(self, task_id: str) -> dict[str, Any]:
+        """Inclusion proof for a held trace against a signed tree head.
+
+        With a public log configured this is the public proof; if publishing failed
+        when the trace was recorded it is attempted again here and any failure raises.
+        """
+
+        trace = self.get(task_id)
+        if self._public_log is not None:
+            with self._lock:
+                held = self._public_proofs.get(task_id)
+            if held is None:
+                held = self._public_log.publish("trace", trace_digest(trace).hex())
+                with self._lock:
+                    if task_id in self._traces:
+                        self._public_proofs[task_id] = held
+            return json.loads(canonical(held))  # type: ignore[no-any-return]
         with self._lock:
             index = self._indexes[task_id]
             head = self._log.signed_tree_head()
             path = self._log.inclusion_proof(index, head["tree_size"])
         return {
+            "kind": "trace",
+            "digest": trace_digest(trace).hex(),
             "leaf_index": index,
             "path": [node.hex() for node in path],
             "tree_head": head,
@@ -297,13 +319,27 @@ class TraceStore:
     def record(self, document: Mapping[str, Any]) -> dict[str, Any]:
         signed = sign_trace(document, self._key)
         task_id = str(signed["task_id"])
+        digest = trace_digest(signed)
         with self._lock:
-            self._indexes[task_id] = self._log.append(trace_digest(signed))
+            self._indexes[task_id] = self._log.append(entry_leaf("trace", digest.hex()))
             self._traces[task_id] = signed
             self._traces.move_to_end(task_id)
+            self._public_proofs.pop(task_id, None)
             while len(self._traces) > self._limit:
                 dropped, _ = self._traces.popitem(last=False)
                 self._indexes.pop(dropped, None)
+                self._public_proofs.pop(dropped, None)
+        if self._public_log is not None:
+            # The request has already produced its output; a log outage must not lose
+            # it. The proof is fetched again, and fails loudly, when it is asked for.
+            try:
+                published = self._public_log.publish("trace", digest.hex())
+            except XurcrohError:
+                published = None
+            if published is not None:
+                with self._lock:
+                    if task_id in self._traces:
+                        self._public_proofs[task_id] = published
         return signed
 
     def get(self, task_id: str) -> dict[str, Any]:

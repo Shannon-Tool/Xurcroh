@@ -48,9 +48,20 @@ class SecurityConfig(StrictModel):
     prompt_armour: bool = False
     prompt_armour_model: Path | None = None
     trace_history: int = Field(default=256, ge=1, le=100_000)
+    # A public log (see xurcroh.public_log). When set, the hash of every task trace
+    # is published there and tasks.proof returns the public inclusion proof.
+    trace_log_endpoint: str | None = None
+    trace_log_key: str | None = Field(default=None, pattern=r"^[0-9a-f]+$")
+    trace_log_token_env: str | None = None
+    # Refuse to return output from a model whose manifest digest is not in that log.
+    require_logged_manifest: bool = False
 
     @model_validator(mode="after")
     def validate_security_downgrades(self) -> Self:
+        if (self.trace_log_endpoint is None) != (self.trace_log_key is None):
+            raise ConfigurationError("trace_log_endpoint and trace_log_key must be set together")
+        if self.require_logged_manifest and self.trace_log_endpoint is None:
+            raise ConfigurationError("require_logged_manifest needs a trace_log_endpoint")
         if self.mode != "development" and (
             self.allow_plaintext_worker_weights or self.allow_unauthenticated_transport
         ):

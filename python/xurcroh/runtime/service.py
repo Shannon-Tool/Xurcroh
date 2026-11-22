@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import os
 import sys
 import threading
 import time
@@ -25,6 +27,7 @@ from xurcroh.fortress.prompt_armour import ArmouredMessages, MessageArmour, Prom
 from xurcroh.memory_host import protect_process
 from xurcroh.preflight import CheckpointPreflight, preflight_checkpoint
 from xurcroh.provisioning import provision_cluster_sync
+from xurcroh.public_log import LogClient
 from xurcroh.receipts import (
     SAMPLER,
     TraceStore,
@@ -71,13 +74,32 @@ class RequestHandle:
     finished: threading.Event
 
 
+def public_log_client(security: Any) -> LogClient | None:
+    """The public log named in the security settings, or ``None`` when none is set."""
+
+    if security.trace_log_endpoint is None:
+        return None
+    token = None
+    if security.trace_log_token_env is not None:
+        token = os.environ.get(security.trace_log_token_env)
+        if not token:
+            raise ConfigurationError(
+                f"public log token variable {security.trace_log_token_env} is unset"
+            )
+    return LogClient(
+        security.trace_log_endpoint, bytes.fromhex(security.trace_log_key), write_token=token
+    )
+
+
 class RuntimeService:
     def __init__(self, cluster: ClusterConfig, models: ModelRegistry) -> None:
         self.cluster = cluster
         self.models = models
         if cluster.security.process_hardening and sys.platform == "linux":
             protect_process()
-        self._traces = TraceStore(cluster.security.trace_history)
+        self._public_log = public_log_client(cluster.security)
+        self._logged_manifests: set[str] = set()
+        self._traces = TraceStore(cluster.security.trace_history, public_log=self._public_log)
         self._model_facts: dict[str, dict[str, Any]] = {}
         self._message_armour: MessageArmour | None = None
         if cluster.security.prompt_armour:
@@ -373,7 +395,17 @@ class RuntimeService:
 
     def _model_section(self, name: str, engine: Any, split: dict[str, Any]) -> dict[str, Any]:
         model = {**self._facts(name, engine), **split.get("sharing", {})}
-        model["manifest_sha256"] = model_manifest_digest(model)
+        digest = model_manifest_digest(model)
+        model["manifest_sha256"] = digest
+        if self.cluster.security.require_logged_manifest and digest not in self._logged_manifests:
+            assert self._public_log is not None
+            # Checked before any output is returned: an unlisted model build fails closed.
+            if self._public_log.find("manifest", digest) is None:
+                raise ConfigurationError(
+                    f"model {name!r} manifest {digest} is not in the public log; "
+                    "publish it or disable security.require_logged_manifest"
+                )
+            self._logged_manifests.add(digest)
         return model
 
     def _security_facts(self) -> dict[str, Any]:
@@ -384,6 +416,15 @@ class RuntimeService:
             "process_hardening": security.process_hardening,
             "prompt_armour": security.prompt_armour,
             "memory_scrubbing": security.memory_scrubbing,
+            "public_log": None
+            if security.trace_log_endpoint is None
+            else {
+                "endpoint": security.trace_log_endpoint,
+                "log_key_sha256": hashlib.sha256(
+                    bytes.fromhex(security.trace_log_key or "")
+                ).hexdigest(),
+                "manifest_required": security.require_logged_manifest,
+            },
         }
 
     def _record_media_trace(
