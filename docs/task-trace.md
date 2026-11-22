@@ -65,6 +65,34 @@ protected hardware. No task ID is sent to a worker; the request is an ordinary f
 crosses onion relays unchanged. If no role has a pinned identity, `worker_checkpoints` is `null`
 and `xurcroh verify` prints that workers signed nothing.
 
+## Public log
+
+Set `security.trace_log_endpoint` and `security.trace_log_key` to publish each trace hash to a
+shared log (`xurcroh.public_log`); `security.trace_log_token_env` names the environment variable
+holding the write token. `client.tasks.proof` then returns the public inclusion proof. If the log
+is unreachable when a request finishes, the trace is kept and the proof is requested again, and
+fails loudly, when it is asked for.
+
+- `xurcroh verify TRACE --proof PROOF --log-key KEY --log-url URL` also asks the log for a
+  consistency proof from the proof's tree head to its current one. If the log has dropped or
+  rewritten any earlier entry, that check fails.
+- `--witness-key KEY` (repeatable) requires a countersignature from that witness on the proof's
+  tree head or the current one. A witness (`python -m xurcroh.public_log witness`) keeps the last
+  head it saw and countersigns a new one only if it extends it.
+- `security.require_logged_manifest` refuses to return output from a model whose manifest digest
+  is not in the log. The operator publishes the digest of a build they have checked with
+  `python -m xurcroh.public_log publish --kind manifest --digest DIGEST`.
+- Release manifests can be logged and checked with the `--log-url` and `--log-key` options of
+  `scripts/release.py` and `scripts/verify_release.py`.
+
+What this does and does not give you: an inclusion proof shows the hash was in the log at that tree
+size, and a consistency proof shows a later log only appended to it. The log operator can still
+show different histories to parties who never compare tree heads; a witness you trust, run by
+someone other than the operator, is what narrows that. The project does not operate a public log
+or any witness. A deployment has to run them, and until an independent party runs a witness the
+log is only as trustworthy as its operator. The client does not check that its own software build
+is in the log.
+
 ## What a trace can and cannot prove
 
 | Claim | Local client | Hosted API |
@@ -83,14 +111,13 @@ and `xurcroh verify` prints that workers signed nothing.
 - Only the local mode exists. There is no hosted gateway, so no trace is "operator-asserted" yet.
 - The signing key is generated per client process. The signature shows a trace was not changed after
   that client produced it.
-- Each trace's hash is appended to a Merkle log (`xurcroh.merkle_log`, RFC 6962 hashing) and
+- Each trace's hash is appended to a Merkle log (RFC 6962 hashing) and
   `client.tasks.proof(task_id)` returns an inclusion proof against a signed tree head;
   `xurcroh verify --proof proof.json --log-key <hex>` checks it. The logged value is a hash of the
   trace, which already holds only salted commitments, so the log reveals nothing about a request.
-  This log lives inside the client process and its key is generated per process. It detects a trace
-  changed after logging, but it is not public and has no independent witness, so the last row of
-  the table above is not yet delivered. A hosted log service and consistency checking between tree
-  heads are still to be built on the same proofs.
+  Without further settings this log lives inside the client process with a per-process key, which
+  detects a trace changed after logging but is visible to nobody else. See "Public log" for the
+  shared one.
 - Each remote Fortress route reports under `negotiated` the TLS key-exchange group and the SHA-256
   of the peer's leaf certificate, read from the live connection. With onion routing the peer is the
   entry relay (`link_peer`), so the trace does not show what the later hops negotiated. The same
