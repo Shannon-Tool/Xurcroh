@@ -99,8 +99,8 @@ A role worker can be reached through Tor or I2P instead of directly (`xurcroh.fo
 - A task trace records the carrier each route actually used.
 - A carrier hides the client's network address from the worker's host and network. It does not hide that the client uses Tor or I2P, and an observer of both ends can still correlate timing and volume; constant cover traffic makes a long-lived flow easier to recognise, not harder.
 - A carrier and an onion relay route cannot be combined for the same worker.
-- Every model layer is a round trip through the anonymity network, so latency is far higher than direct. The only measurement is one run through real Tor to an onion service on the same host: 4.4 s to connect and 1.4 to 3.8 s per 16 KiB round trip.
-- The Tor carrier has passed one transport test against the real Tor network; a full model request over real Tor has not been run. The I2P carrier has run only against an in-process stand-in for the SAM bridge, because the I2P daemon crashed on the test host. See `docs/validation-report.md`.
+- Every model layer is a round trip through the anonymity network, so latency is far higher than direct. Measured through real Tor to an onion service on the same host: about 4 s to connect, 1.2 to 3.8 s per 16 KiB round trip, and 81.6 s for a complete one-token request on the tiny test model (168 role calls, model load included).
+- The Tor carrier has passed a transport test and a complete model request against the real Tor network, on one host. The I2P carrier has run only against an in-process stand-in for the SAM bridge: on the real network the test host's router never became reachable, so every attempt failed. See `docs/validation-report.md`.
 
 ## SSH datagram relay fallback
 
