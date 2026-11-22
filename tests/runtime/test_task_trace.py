@@ -237,3 +237,99 @@ def test_a_classical_only_signature_is_not_accepted(tiny_model_path: Path) -> No
         verify_trace(classical_only)
     with pytest.raises(TraceError, match="signature"):
         verify_trace({**trace, "signature": trace["signature"][:128]})
+
+
+def _public_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A live log service the client under test publishes to."""
+
+    from fastapi.testclient import TestClient
+
+    from xurcroh.public_log import LogClient, PublicLog, create_app
+    from xurcroh.runtime import service
+    from xurcroh.signatures import HybridSigningKey
+
+    log = PublicLog(tmp_path / "log", HybridSigningKey.generate())
+    http = TestClient(create_app(log, write_token="write"))
+    client = LogClient("https://log.invalid", log.public_key, write_token="write", client=http)
+    monkeypatch.setattr(service, "public_log_client", lambda security: client)
+    settings = {"trace_log_endpoint": "https://log.invalid", "trace_log_key": log.public_key.hex()}
+    return log, client, settings
+
+
+def test_trace_hash_is_published_to_a_public_log_and_checked_from_outside(
+    tiny_model_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xurcroh.receipts import trace_digest, verify_trace_proof
+
+    log, log_client, settings = _public_log(tmp_path, monkeypatch)
+    with client_for(tiny_model_path, security=settings) as client:
+        response = client.chat.completions.create(model="tiny", messages=MESSAGES, max_tokens=1)
+        trace = client.tasks.trace(response.execution.request_id)
+        proof = client.tasks.proof(response.execution.request_id)
+        assert client.tasks.log_key == log.public_key
+
+    # The log holds only a hash of the trace, and anyone with the log key can check it.
+    assert log.entries(0, 1) == [{"kind": "trace", "digest": trace_digest(trace).hex()}]
+    assert verify_trace_proof(trace, proof, log_key=log.public_key) == 1
+    assert trace["security"]["public_log"]["endpoint"] == "https://log.invalid"
+    assert log_client.extends(proof["tree_head"])["tree_size"] == 1
+    changed = copy.deepcopy(trace)
+    changed["result"]["completion_tokens"] += 1
+    with pytest.raises(TraceError, match="not in the log"):
+        verify_trace_proof(changed, proof, log_key=log.public_key)
+
+
+def test_log_outage_keeps_the_trace_and_the_proof_is_retried(
+    tiny_model_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xurcroh.public_log import PublicLogError
+
+    log, log_client, settings = _public_log(tmp_path, monkeypatch)
+    working = log_client._client
+
+    class Down:
+        def request(self, *_arguments: object, **_options: object) -> object:
+            raise OSError("connection refused")
+
+    with client_for(tiny_model_path, security=settings) as client:
+        log_client._client = Down()
+        response = client.chat.completions.create(model="tiny", messages=MESSAGES, max_tokens=1)
+        task = response.execution.request_id
+        assert client.tasks.trace(task)["task_id"] == task
+        with pytest.raises(PublicLogError, match="request failed"):
+            client.tasks.proof(task)
+        log_client._client = working
+        assert client.tasks.proof(task)["leaf_index"] == 0
+    assert log.size == 1
+
+
+def test_model_whose_manifest_is_not_logged_is_refused_when_required(
+    tiny_model_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log, log_client, settings = _public_log(tmp_path, monkeypatch)
+    required = {**settings, "require_logged_manifest": True}
+
+    with client_for(tiny_model_path, security=settings) as client:
+        response = client.chat.completions.create(model="tiny", messages=MESSAGES, max_tokens=1)
+        manifest = client.tasks.trace(response.execution.request_id)["model"]["manifest_sha256"]
+    with (
+        client_for(tiny_model_path, security=required) as client,
+        pytest.raises(ConfigurationError, match="not in the public log"),
+    ):
+        client.chat.completions.create(model="tiny", messages=MESSAGES, max_tokens=1)
+
+    log_client.publish("manifest", manifest)
+    with client_for(tiny_model_path, security=required) as client:
+        response = client.chat.completions.create(model="tiny", messages=MESSAGES, max_tokens=1)
+        trace = client.tasks.trace(response.execution.request_id)
+    assert trace["security"]["public_log"]["manifest_required"] is True
+    assert log.lookup("manifest", manifest) is not None
+
+
+def test_public_log_settings_must_be_complete() -> None:
+    from xurcroh.config import SecurityConfig
+
+    with pytest.raises(ValueError, match="set together"):
+        SecurityConfig(trace_log_endpoint="https://log.invalid")
+    with pytest.raises(ValueError, match="needs a trace_log_endpoint"):
+        SecurityConfig(require_logged_manifest=True)
