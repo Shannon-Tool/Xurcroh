@@ -139,6 +139,18 @@ class FortressEngine:
                 ) from error
             if not address:
                 raise ConfigurationError(f"worker {worker.name} requires a QUIC endpoint")
+            identity_public = None
+            if "identity_public" in worker.labels:
+                from xurcroh.signatures import PUBLIC_KEY_BYTES
+
+                try:
+                    identity_public = bytes.fromhex(worker.labels["identity_public"])
+                except ValueError:
+                    identity_public = b""
+                if len(identity_public) != PUBLIC_KEY_BYTES:
+                    raise ConfigurationError(
+                        f"worker {worker.name} has a malformed identity_public label"
+                    )
             roles.append(
                 RoleEndpoint(
                     activation_index=activation_index,
@@ -149,6 +161,8 @@ class FortressEngine:
                     relay=relay_route_from_labels(worker.labels, address, worker=worker.name),
                     server_name=worker.labels.get("server_name"),
                     generation=int(worker.labels.get("restart_generation", "0")),
+                    identity_public=identity_public,
+                    artifact_digest=worker.labels.get("artifact_digest"),
                 )
             )
         if operation_name is not None and not roles:
@@ -663,6 +677,20 @@ class FortressEngine:
                 break
         return facts
 
+    def worker_checkpoints(self) -> list[dict[str, Any]] | None:
+        """Verified worker-signed checkpoints for every role session.
+
+        Returns ``None`` when no role has a pinned identity key, so a trace can say the
+        workers signed nothing. A checkpoint that does not verify raises.
+        """
+
+        checkpoints: list[dict[str, Any]] = []
+        for runtime in self._grid_runtimes:
+            if all(role.identity_public is None for role in runtime._roles()):
+                continue
+            checkpoints.extend(runtime.checkpoints())
+        return checkpoints or None
+
     def trace_facts(self) -> dict[str, Any]:
         """Facts about how this model is split and reached, for a task trace."""
 
@@ -697,7 +725,7 @@ class FortressEngine:
                 else "uniform random (information-theoretic under non-collusion)",
                 "weight_bits": 4,
                 "activation_bits": None if compiled is None else compiled.activation_bits,
-                "operations": 0 if compiled is None else len(compiled.operations),
+                "operations": len(self._clients) if compiled is None else len(compiled.operations),
                 "reap_keep_fraction": self.definition.reap_keep_fraction,
             },
             "transport": {

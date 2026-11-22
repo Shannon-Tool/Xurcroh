@@ -44,6 +44,11 @@ def _verify(args: argparse.Namespace) -> int:
     for name in ("prompt", "output"):
         print(f"{name}: {'matches' if report[name] else 'not checked'}")
     print(f"log: {'not checked' if logged is None else f'included at tree size {logged}'}")
+    signed = report["worker_checkpoints"]
+    print(
+        "worker checkpoints: "
+        + ("none; workers signed nothing" if signed is None else f"{signed} verified")
+    )
     print("\n".join(describe_trace(document)))
     return 0
 

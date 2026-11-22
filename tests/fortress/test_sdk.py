@@ -30,10 +30,16 @@ def test_public_sdk_executes_fortress_checkpoint(tiny_llama_path: Path, shares: 
     assert response.execution.worker_ids == ["local"]
 
 
-@pytest.mark.parametrize("shares", [2, 3])
-def test_public_sdk_executes_remote_fortress_grid(
-    tiny_llama_path: Path, tmp_path: Path, mtls_identities: dict[str, bytes], shares: int
-) -> None:
+def _signed_remote_grid(
+    tiny_llama_path: Path,
+    tmp_path: Path,
+    mtls_identities: dict[str, bytes],
+    shares: int,
+    *,
+    artifact_digest: str | None = None,
+) -> tuple[list[dict], list]:
+    """Start in-process role workers with signing identities; return the cluster and workers."""
+
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
     from cryptography.hazmat.primitives.serialization import (
         Encoding,
@@ -42,9 +48,11 @@ def test_public_sdk_executes_remote_fortress_grid(
         PublicFormat,
     )
 
+    from xurcroh.fortress.checkpoint import artifact_set_digest
     from xurcroh.fortress.model_compiler import compile_fortress_checkpoint
     from xurcroh.fortress.transport import encode_role_artifact
     from xurcroh.fortress.worker import FortressRoleWorker
+    from xurcroh.signatures import HybridSigningKey
 
     compiled = compile_fortress_checkpoint(tiny_llama_path, seed=731, share_count=shares)
     workers: list[FortressRoleWorker] = []
@@ -52,6 +60,7 @@ def test_public_sdk_executes_remote_fortress_grid(
     for activation_index in range(shares):
         for weight_index in range(shares):
             private = X25519PrivateKey.generate()
+            identity = HybridSigningKey.generate()
             public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
             artifacts = {
                 name: encode_role_artifact(operation, weight_index, public)
@@ -64,6 +73,7 @@ def test_public_sdk_executes_remote_fortress_grid(
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],
                 allow_unattested=True,
+                identity_key=identity.to_bytes(),
             )
             worker.start()
             workers.append(worker)
@@ -77,6 +87,8 @@ def test_public_sdk_executes_remote_fortress_grid(
                         "weight_index": str(weight_index),
                         "recipient_public": public.hex(),
                         "cover_interval": "60",
+                        "identity_public": identity.public_key.hex(),
+                        "artifact_digest": artifact_digest or artifact_set_digest(artifacts),
                     },
                 }
             )
@@ -91,6 +103,14 @@ def test_public_sdk_executes_remote_fortress_grid(
                 "ca_path": str(tmp_path / "ca.crt"),
             }
         )
+    return cluster, workers
+
+
+@pytest.mark.parametrize("shares", [2, 3])
+def test_public_sdk_executes_remote_fortress_grid(
+    tiny_llama_path: Path, tmp_path: Path, mtls_identities: dict[str, bytes], shares: int
+) -> None:
+    cluster, workers = _signed_remote_grid(tiny_llama_path, tmp_path, mtls_identities, shares)
     try:
         with Xurcroh(
             cluster=cluster,
@@ -138,6 +158,18 @@ def test_public_sdk_executes_remote_fortress_grid(
                 ]
                 operation.execute(activation_shares, request_id=f"shared-rotation:{cycle}")
             assert all(connection.completed >= cycles for connection in grid.connections.values())
+            from xurcroh.fortress.checkpoint import verify_checkpoint_signature
+            from xurcroh.receipts import verify_trace
+
+            trace = client.tasks.trace(response.execution.request_id)
+            checkpoints = trace["transport"]["worker_checkpoints"]
+            assert sorted(item["worker"] for item in checkpoints) == sorted(
+                response.execution.worker_ids
+            )
+            for item in checkpoints:
+                body = verify_checkpoint_signature(item)
+                assert body["calls"] > 0 and item["artifacts_pinned"] is True
+            assert verify_trace(trace)["worker_checkpoints"] == shares**2
         assert response.usage.completion_tokens == 1
         assert response.execution.engine == "fortress-grid"
         assert len(response.execution.worker_ids) == shares**2
@@ -321,3 +353,37 @@ def test_fortress_inference_queue_honors_request_timeout(tiny_llama_path: Path) 
                 )
         finally:
             engine._inference_lock.release()
+
+
+def test_request_fails_when_a_worker_holds_other_artifacts_than_deployed(
+    tiny_llama_path: Path, tmp_path: Path, mtls_identities: dict[str, bytes]
+) -> None:
+    from xurcroh.errors import ProtocolError
+
+    cluster, workers = _signed_remote_grid(
+        tiny_llama_path, tmp_path, mtls_identities, 2, artifact_digest="0" * 64
+    )
+    try:
+        with (
+            Xurcroh(
+                cluster=cluster,
+                model_path={
+                    "tiny": {
+                        "path": str(tiny_llama_path),
+                        "revision": "a" * 40,
+                        "engine": "fortress",
+                        "fortress_seed": 731,
+                    }
+                },
+            ) as client,
+            pytest.raises(ProtocolError, match="artifacts other than the ones deployed"),
+        ):
+            client.chat.completions.create(
+                model="tiny",
+                messages=[{"role": "user", "content": "hello"}],
+                temperature=0,
+                max_tokens=1,
+            )
+    finally:
+        for worker in workers:
+            worker.close()

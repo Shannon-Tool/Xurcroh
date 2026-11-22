@@ -382,6 +382,9 @@ class RuntimeService:
     ) -> None:
         engine = self._engine(request.model)
         execution = response.execution
+        fortress = engine if isinstance(engine, FortressEngine) else None
+        split = fortress.trace_facts() if fortress is not None else {}
+        checkpoints = fortress.worker_checkpoints() if fortress is not None else None
         self._traces.record(
             {
                 "task_id": execution.request_id,
@@ -410,9 +413,14 @@ class RuntimeService:
                     "items": len(response.data),
                     "duration_ms": execution.duration_ms,
                 },
-                "model": self._facts(request.model, engine),
+                "model": {**self._facts(request.model, engine), **split.get("sharing", {})},
                 "security": self._security_facts(),
-                "transport": {"workers": execution.worker_ids, "counters": None},
+                "transport": {
+                    "workers": execution.worker_ids,
+                    **split.get("transport", {}),
+                    "counters": None,
+                    "worker_checkpoints": checkpoints,
+                },
             }
         )
 
@@ -426,7 +434,10 @@ class RuntimeService:
         armoured: ArmouredMessages | None,
     ) -> None:
         engine = self._engine(request.model)
-        split = engine.trace_facts() if isinstance(engine, FortressEngine) else {}
+        fortress = engine if isinstance(engine, FortressEngine) else None
+        split = fortress.trace_facts() if fortress is not None else {}
+        # A checkpoint that does not verify raises here, so the request fails closed.
+        checkpoints = fortress.worker_checkpoints() if fortress is not None else None
         self._traces.record(
             {
                 "task_id": task_id,
@@ -457,6 +468,7 @@ class RuntimeService:
                     "workers": getattr(engine, "worker_ids", [engine.worker_id]),
                     **split.get("transport", {}),
                     "counters": summary.transport,
+                    "worker_checkpoints": checkpoints,
                 },
             }
         )
