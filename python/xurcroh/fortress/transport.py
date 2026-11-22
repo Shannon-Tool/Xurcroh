@@ -25,6 +25,7 @@ from xurcroh.fortress.arithmetic import (
     check_unreduced_product_bound,
     quantized_weight_bound,
     seeded_share_seed,
+    seeded_split_secret,
 )
 from xurcroh.fortress.checkpoint import (
     CHECKPOINT_NONCE_BYTES,
@@ -614,10 +615,16 @@ class _RoleTransport:
             handshake_id = hashlib.sha256(f"handshake:{session.session_id}".encode()).digest()[:16]
             reply, _, _ = self._exchange(handshake_id, 0, session.hello())
             session.finish(reply)
-        request_hash = hashlib.sha256(request_id.encode()).digest()[:16]
-        sealed = session.sender.seal(request_id, "u8", [len(operation_payload)], operation_payload)
+        # The identifier and sequence number travel outside the session encryption, where
+        # a relay and the worker both read them. A fresh random identifier and a constant
+        # sequence number tell them nothing about which operation, row or request this is,
+        # nor whether it is a cover call.
+        del request_id, sequence
+        wire_id = secrets.token_hex(16)
+        request_hash = hashlib.sha256(wire_id.encode()).digest()[:16]
+        sealed = session.sender.seal(wire_id, "u8", [len(operation_payload)], operation_payload)
         sealed_response, sent, received = self._exchange(
-            request_hash, sequence, session.data_packet(sealed)
+            request_hash, 0, session.data_packet(sealed)
         )
         result_dtype, result_shape, payload = session.receiver.open_tensor(sealed_response)
         if result_dtype != "u8" or result_shape != [len(payload)]:
@@ -754,6 +761,51 @@ def execute_native_grid(
     return combine_role_results(activation_shares, weight_shares, results, providers)
 
 
+class _SlotClock:
+    """Hands out evenly spaced send slots, so calls leave at a constant rate.
+
+    A real call takes the next free slot. A cover call takes a slot only when no real
+    call is waiting for one, so real calls replace cover calls instead of adding to them.
+    """
+
+    def __init__(self, interval: float) -> None:
+        self.interval = interval
+        self._lock = threading.Lock()
+        self._next = time.monotonic() + interval
+        self._waiting = 0
+
+    def wait_for_slot(self) -> None:
+        with self._lock:
+            self._waiting += 1
+            slot = max(time.monotonic(), self._next)
+            self._next = slot + self.interval
+        try:
+            delay = slot - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+        finally:
+            with self._lock:
+                self._waiting -= 1
+
+    def take_idle_slot(self) -> float:
+        """Take the current slot for a cover call, or return how long to wait and retry."""
+
+        with self._lock:
+            now = time.monotonic()
+            if self._waiting:
+                return self.interval / 4
+            if now < self._next:
+                return self._next - now
+            self._next = max(self._next + self.interval, now + self.interval / 2)
+            return 0.0
+
+
+def _cover_failure_is_fatal(error: Exception) -> bool:
+    """A wrong answer or a broken protocol stops everything; a lost link does not."""
+
+    return isinstance(error, (RoleExecutionError, ProtocolError))
+
+
 class FortressGridRuntime:
     def __init__(
         self,
@@ -765,6 +817,7 @@ class FortressGridRuntime:
         cover_interval: float = 1.0,
         seeded_activations: bool = True,
         recover_role: Callable[[str, int], int] | None = None,
+        constant_rate: bool = False,
     ) -> None:
         if not roles or cover_interval <= 0:
             raise ValueError("a Fortress grid requires roles and a positive cover interval")
@@ -782,6 +835,8 @@ class FortressGridRuntime:
         self.frame_bytes = frame_bytes
         self.cover_interval = cover_interval
         self.seeded_activations = seeded_activations
+        self.constant_rate = constant_rate
+        self._clock = _SlotClock(cover_interval) if constant_rate else None
         self._clients: list[FortressRoleClient] = []
         self._lock = threading.Lock()
         self._closed = False
@@ -820,7 +875,15 @@ class FortressGridRuntime:
 
     def _cover_loop(self) -> None:
         index = 0
-        while not self._cover_stop.wait(self.cover_interval):
+        while not self._cover_stop.is_set():
+            if self._clock is None:
+                if self._cover_stop.wait(self.cover_interval):
+                    return
+            else:
+                delay = self._clock.take_idle_slot()
+                if delay > 0:
+                    self._cover_stop.wait(delay)
+                    continue
             with self._lock:
                 clients = list(self._clients)
             if not clients:
@@ -828,22 +891,14 @@ class FortressGridRuntime:
             client = clients[index % len(clients)]
             index += 1
             try:
-                shares = [
-                    torch.randint(
-                        0,
-                        FIELD_MODULUS,
-                        (client.operation.quantized.dimensions[1],),
-                        dtype=torch.int64,
-                    )
-                    for _ in range(len(client.operation.shares))
-                ]
-                client._execute_token(shares, f"cover:{uuid.uuid4().hex}", 0, cover=True)
+                client._send_cover()
             except Exception as error:
-                client._cover_error = error
                 client.cover_failure_count += 1
-                self._cover_error = error
                 self.cover_failure_count += 1
-                return
+                if _cover_failure_is_fatal(error):
+                    client._cover_error = error
+                    self._cover_error = error
+                    return
 
     def checkpoints(self) -> list[dict[str, Any]]:
         """A verified, worker-signed checkpoint for every role of this grid, in role order."""
@@ -960,6 +1015,9 @@ class FortressRoleClient:
         cover: bool = False,
         activation_seed: bytes | None = None,
     ) -> torch.Tensor:
+        clock = self._runtime._clock if self._runtime is not None else None
+        if clock is not None and not cover:
+            clock.wait_for_slot()
         futures = {
             key: self._executor.submit(
                 self._transports[key].execute,
@@ -1006,19 +1064,39 @@ class FortressRoleClient:
 
         return [self._transports[key].checkpoint() for key in sorted(self._transports)]
 
-    def _cover_loop(self) -> None:
+    def _send_cover(self) -> None:
+        """One call on random data, built exactly as a real call is built.
+
+        With seeded activations a real call gives every share but the last as a 32-byte
+        seed; the cover call does the same, so a role sees the same payload either way.
+        The last share of a real call is uniformly random to its holder, as here.
+        """
+
         features = self.operation.quantized.dimensions[1]
+        count = len(self.operation.shares)
+        if self.seeded_activations:
+            seed = secrets.token_bytes(32)
+            shares = seeded_split_secret(
+                torch.randint(0, FIELD_MODULUS, (features,), dtype=torch.int64),
+                seed=seed,
+                count=count,
+            ).shares
+            self._execute_token(shares, "cover", 0, cover=True, activation_seed=seed)
+            return
+        shares = [
+            torch.randint(0, FIELD_MODULUS, (features,), dtype=torch.int64) for _ in range(count)
+        ]
+        self._execute_token(shares, "cover", 0, cover=True)
+
+    def _cover_loop(self) -> None:
         while not self._cover_stop.wait(self._cover_interval):
             try:
-                shares = [
-                    torch.randint(0, FIELD_MODULUS, (features,), dtype=torch.int64)
-                    for _ in range(len(self.operation.shares))
-                ]
-                self._execute_token(shares, f"cover:{uuid.uuid4().hex}", 0, cover=True)
+                self._send_cover()
             except Exception as error:
-                self._cover_error = error
                 self.cover_failure_count += 1
-                return
+                if _cover_failure_is_fatal(error):
+                    self._cover_error = error
+                    return
 
     def execute(
         self,
