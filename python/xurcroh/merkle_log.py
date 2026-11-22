@@ -14,11 +14,10 @@ import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from xurcroh.signatures import HybridSigningKey, SignatureError, verify_hybrid
 
-TREE_HEAD_FORMAT = "xurcroh-tree-head-v1"
+TREE_HEAD_FORMAT = "xurcroh-tree-head-v2"
+TREE_HEAD_CONTEXT = b"xurcroh-tree-head"
 
 
 class MerkleProofError(ValueError):
@@ -44,7 +43,7 @@ def _canonical(document: Mapping[str, Any]) -> bytes:
 
 
 class MerkleLog:
-    def __init__(self, signing_key: Ed25519PrivateKey) -> None:
+    def __init__(self, signing_key: HybridSigningKey) -> None:
         self._key = signing_key
         self._leaves: list[bytes] = []
         self._cache: dict[tuple[int, int], bytes] = {}
@@ -52,7 +51,7 @@ class MerkleLog:
 
     @property
     def public_key(self) -> bytes:
-        return self._key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        return self._key.public_key
 
     @property
     def size(self) -> int:
@@ -128,7 +127,8 @@ class MerkleLog:
             "timestamp": time.time(),
             "log_key": self.public_key.hex(),
         }
-        return {**head, "signature": self._key.sign(_canonical(head)).hex()}
+        signature = self._key.sign(TREE_HEAD_CONTEXT, _canonical(head))
+        return {**head, "signature": signature.hex()}
 
 
 def verify_tree_head(head: Mapping[str, Any], public_key: bytes) -> tuple[int, bytes]:
@@ -138,11 +138,11 @@ def verify_tree_head(head: Mapping[str, Any], public_key: bytes) -> tuple[int, b
     try:
         if head["format"] != TREE_HEAD_FORMAT or bytes.fromhex(head["log_key"]) != public_key:
             raise ValueError("unexpected format or log key")
-        Ed25519PublicKey.from_public_bytes(public_key).verify(
-            bytes.fromhex(head["signature"]), _canonical(body)
+        verify_hybrid(
+            public_key, TREE_HEAD_CONTEXT, _canonical(body), bytes.fromhex(head["signature"])
         )
         return int(head["tree_size"]), bytes.fromhex(head["root_hash"])
-    except (KeyError, TypeError, ValueError, InvalidSignature) as error:
+    except (KeyError, TypeError, ValueError, SignatureError) as error:
         raise MerkleProofError("tree head signature is missing or does not verify") from error
 
 
