@@ -104,8 +104,12 @@ jobs:
           ocaml-compiler: "5.2"
       - name: Install ProVerif
         run: opam install proverif --yes
-      - name: Verify the Fortress session model
-        run: opam exec -- proverif protocol/fortress_session.pv | python3 scripts/check_proverif.py
+      - name: Verify the Fortress session models
+        run: |
+          set -o pipefail
+          for model in fortress_session fortress_role_session; do
+            opam exec -- proverif "protocol/${model}.pv" | python3 scripts/check_proverif.py
+          done
       - uses: dtolnay/rust-toolchain@nightly
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
