@@ -338,7 +338,7 @@ def test_concurrent_role_recovery_restarts_each_role_once(
     release = threading.Event()
     calls: list[str] = []
 
-    def stop(role) -> None:
+    def stop(role, force: bool = False) -> None:
         calls.append("stop")
         started.set()
         assert release.wait(timeout=5)
