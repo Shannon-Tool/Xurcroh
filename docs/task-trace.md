@@ -29,7 +29,7 @@ was signed by a different key, or if the supplied prompt or output is not the on
 | `model` | Name, revision and whether it is pinned, source format, digest of the source checkpoint files, layout digest, architecture, encodings; for Fortress models the share count, how weight and activation shares are generated, weight and activation bit widths, operation count, expert-pruning fraction |
 | `security` | Mode, whether attestation is required, process hardening, prompt armour, memory scrubbing |
 | `transport` | Worker names; for remote Fortress models the link and session suites, frame size, cover interval, each worker's route (direct or onion, with hop count) and operator-declared labels, and per-request counters |
-| `signer`, `signature` | Ed25519 public key and signature over the canonical trace |
+| `signer`, `signature` | Public key and signature over the canonical trace. The signature is Ed25519 and ML-DSA-65 together; both must verify |
 
 `transport.counters.fortress_verified_results` counts worker results that passed the client's
 Freivalds check during the request. It equals `fortress_role_requests` for a completed request,
@@ -73,4 +73,3 @@ because a failed check aborts the request and quarantines the role.
   `model_index.json` only, not the weight files.
 - Traces are held in memory for the most recent `security.trace_history` tasks (default 256) and are
   lost when the client closes. Save a trace if it must outlive the process.
-- The signature is Ed25519, which is not post-quantum.

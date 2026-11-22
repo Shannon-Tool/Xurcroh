@@ -8,10 +8,10 @@ from pathlib import Path
 from zipfile import ZipFile, ZipInfo
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from xurcroh import release
 from xurcroh.release import generate_sbom, sign_release, verify_release
+from xurcroh.signatures import HybridSigningKey
 from xurcroh.transparency import TransparencyError
 
 
@@ -32,14 +32,14 @@ def test_release_sbom_and_signature_cover_artifacts(tmp_path: Path) -> None:
     artifacts = tmp_path / "dist"
     artifacts.mkdir()
     (artifacts / "xurcroh.whl").write_bytes(b"wheel-content")
-    private = Ed25519PrivateKey.generate()
+    private = HybridSigningKey.generate()
     manifest = sign_release(artifacts, sbom_path=tmp_path / "sbom.json", signing_key=private)
-    verify_release(manifest, public_key=private.public_key())
+    verify_release(manifest, public_key=private.public_key)
     document = json.loads(manifest.read_text())
     document["artifacts"][0]["sha256"] = "0" * 64
     manifest.write_text(json.dumps(document))
     with pytest.raises(TransparencyError):
-        verify_release(manifest, public_key=private.public_key())
+        verify_release(manifest, public_key=private.public_key)
 
 
 def test_sbom_generation_is_reproducible(tmp_path: Path) -> None:
@@ -58,11 +58,11 @@ def test_release_verification_rejects_sbom_tampering_and_path_escape(tmp_path: P
     (root / "artifact.bin").write_bytes(b"artifact")
     sbom = tmp_path / "sbom.json"
     sbom.write_text('{"bomFormat":"CycloneDX"}\n')
-    private = Ed25519PrivateKey.generate()
+    private = HybridSigningKey.generate()
     manifest = sign_release(root, sbom_path=sbom, signing_key=private)
     sbom.write_text('{"bomFormat":"tampered"}\n')
     with pytest.raises(TransparencyError, match="SBOM"):
-        verify_release(manifest, public_key=private.public_key())
+        verify_release(manifest, public_key=private.public_key)
 
     sbom.write_text('{"bomFormat":"CycloneDX"}\n')
     outside = tmp_path / "outside.bin"
@@ -76,11 +76,11 @@ def test_release_verification_rejects_sbom_tampering_and_path_escape(tmp_path: P
         }
     ]
     document["signature"] = private.sign(
-        json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+        b"xurcroh-release", json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
     ).hex()
     manifest.write_text(json.dumps(document))
     with pytest.raises(TransparencyError, match="outside"):
-        verify_release(manifest, public_key=private.public_key())
+        verify_release(manifest, public_key=private.public_key)
 
 
 def _native_wheel(path: Path, workspace: Path) -> bytes:
@@ -172,9 +172,9 @@ def test_release_verification_cli_checks_real_manifest(tmp_path: Path) -> None:
     artifact.write_bytes(b"artifact")
     sbom = tmp_path / "sbom.json"
     sbom.write_text('{"bomFormat":"CycloneDX"}\n')
-    private = Ed25519PrivateKey.generate()
+    private = HybridSigningKey.generate()
     manifest = sign_release(artifacts, sbom_path=sbom, signing_key=private)
-    public = private.public_key().public_bytes_raw().hex()
+    public = private.public_key.hex()
     command = [sys.executable, "scripts/verify_release.py", str(manifest), "--public-key", public]
     result = subprocess.run(command, capture_output=True, text=True, check=False)  # noqa: S603
     assert result.returncode == 0, result.stderr

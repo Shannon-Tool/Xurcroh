@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import time
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
 from xurcroh.controller.identity import Registration, sign_registration
 from xurcroh.controller.registry import WorkerRegistry
 from xurcroh.controller.service import create_controller_app
+from xurcroh.signatures import HybridSigningKey
 
 
-def build_registry(private: Ed25519PrivateKey) -> WorkerRegistry:
+def build_registry(private: HybridSigningKey) -> WorkerRegistry:
     registration = Registration(
         worker_id="worker-a",
         endpoint="https://worker-a.invalid",
@@ -20,12 +20,12 @@ def build_registry(private: Ed25519PrivateKey) -> WorkerRegistry:
         engine="dense-stage",
     )
     registry = WorkerRegistry()
-    registry.register(registration, sign_registration(private, registration), private.public_key())
+    registry.register(registration, sign_registration(private, registration), private.public_key)
     return registry
 
 
 def test_heartbeat_refreshes_stale_worker_and_requires_authentication() -> None:
-    private = Ed25519PrivateKey.generate()
+    private = HybridSigningKey.generate()
     registry = build_registry(private)
     app = create_controller_app(registry, client_tokens={"secret": "client-a"})
     with TestClient(app, raise_server_exceptions=False) as client:
@@ -48,7 +48,7 @@ def test_heartbeat_refreshes_stale_worker_and_requires_authentication() -> None:
 
 
 def test_expired_circuits_are_purged_from_list_and_count() -> None:
-    private = Ed25519PrivateKey.generate()
+    private = HybridSigningKey.generate()
     registry = build_registry(private)
     app = create_controller_app(registry, circuit_ttl_seconds=0.05, require_authentication=False)
     with TestClient(app, raise_server_exceptions=False) as client:

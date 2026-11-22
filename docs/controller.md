@@ -2,7 +2,7 @@
 
 ## Worker identity and health
 
-Workers register with a fresh, canonical Ed25519-signed `Registration`. The controller verifies the public-key signature, freshness, and endpoint stability; it never receives the private key. Periodic signed re-registration replaces the former unsigned heartbeat endpoint and keeps workers healthy; stale workers expire. Capabilities include model names, modalities, engine, group, GPU model/memory, and admission capacity. Impersonation, stale registration, and endpoint reassignment fail closed.
+Workers register with a fresh, canonical `Registration` signed with Ed25519 and ML-DSA-65 together (`xurcroh.signatures`). The controller verifies the public-key signature, freshness, and endpoint stability; it never receives the private key. Periodic signed re-registration replaces the former unsigned heartbeat endpoint and keeps workers healthy; stale workers expire. Capabilities include model names, modalities, engine, group, GPU model/memory, and admission capacity. Impersonation, stale registration, and endpoint reassignment fail closed.
 
 ## Circuits and relay
 

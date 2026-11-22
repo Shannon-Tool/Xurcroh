@@ -95,9 +95,9 @@ def main() -> None:
 
     import httpx
     import uvicorn
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
     from xurcroh.controller.identity import Registration, sign_registration
+    from xurcroh.signatures import HybridSigningKey
 
     parser = argparse.ArgumentParser(prog="xurcroh-worker")
     parser.add_argument("--worker-id", required=True)
@@ -124,8 +124,8 @@ def main() -> None:
     scheme = "http+dev" if args.development_http else "https"
     endpoint = args.advertised_endpoint or f"{scheme}://{args.host}:{args.port}"
     if args.controller:
-        private_key = Ed25519PrivateKey.generate()
-        public_key = private_key.public_key().public_bytes_raw()
+        private_key = HybridSigningKey.generate()
+        public_key = private_key.public_key
         controller = args.controller.replace("http+dev://", "http://", 1).rstrip("/")
 
         def register() -> None:

@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from tests.fortress.test_ladder import evidence_mapping, manifest_mapping
 
 from xurcroh.fortress.ladder import (
@@ -12,6 +11,7 @@ from xurcroh.fortress.ladder import (
     verify_rung_evidence,
     write_rung_evidence,
 )
+from xurcroh.signatures import HybridSigningKey
 
 
 def valid_v2_report() -> dict:
@@ -35,7 +35,7 @@ def valid_v2_report() -> dict:
 
 def test_v2_requires_format_and_official_decoder_provenance(tmp_path: Path) -> None:
     rung = LadderRung.from_mapping(manifest_mapping())
-    private = Ed25519PrivateKey.generate()
+    private = HybridSigningKey.generate()
     report = valid_v2_report()
     del report["decoder_identity"]
     with pytest.raises(LadderEvidenceError, match="decoder_identity"):
@@ -43,7 +43,7 @@ def test_v2_requires_format_and_official_decoder_provenance(tmp_path: Path) -> N
     write_rung_evidence(
         tmp_path / "valid.json", rung, valid_v2_report(), signing_key=private, format_version=2
     )
-    _, verified = verify_rung_evidence(tmp_path / "valid.json", public_key=private.public_key())
+    _, verified = verify_rung_evidence(tmp_path / "valid.json", public_key=private.public_key)
     assert verified["source_format"] == "exl3"
     assert verified["official_decoder_validated"] is True
 
@@ -54,5 +54,21 @@ def test_v2_hardware_rung_rejects_unverified_official_decoder(tmp_path: Path) ->
     report["official_decoder_validated"] = False
     with pytest.raises(LadderEvidenceError, match="official decoder"):
         write_rung_evidence(
-            tmp_path / "invalid.json", rung, report, signing_key=Ed25519PrivateKey.generate()
+            tmp_path / "invalid.json", rung, report, signing_key=HybridSigningKey.generate()
         )
+
+
+def test_evidence_without_the_hybrid_signature_marker_is_rejected(tmp_path: Path) -> None:
+    import json
+
+    rung = LadderRung.from_mapping(manifest_mapping())
+    private = HybridSigningKey.generate()
+    path = tmp_path / "evidence.json"
+    write_rung_evidence(path, rung, valid_v2_report(), signing_key=private, format_version=2)
+    document = json.loads(path.read_text())
+    assert document["signature_algorithm"] == "Ed25519+ML-DSA-65"
+
+    del document["signature_algorithm"]
+    path.write_text(json.dumps(document))
+    with pytest.raises(LadderEvidenceError, match="must be signed with"):
+        verify_rung_evidence(path, public_key=private.public_key)

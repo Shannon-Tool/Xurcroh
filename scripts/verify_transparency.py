@@ -11,7 +11,7 @@ from xurcroh.transparency import verify_transparency_log
 def main() -> None:
     parser = argparse.ArgumentParser(description="Verify a signed Fortress transparency log")
     parser.add_argument("log", type=Path)
-    parser.add_argument("--public-key", required=True, help="Ed25519 public key in hex")
+    parser.add_argument("--public-key", required=True, help="hybrid signing public key in hex")
     parser.add_argument(
         "--expect",
         action="append",

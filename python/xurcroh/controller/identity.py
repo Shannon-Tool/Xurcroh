@@ -4,8 +4,11 @@ import json
 import time
 from typing import Any
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from pydantic import BaseModel, ConfigDict, Field
+
+from xurcroh.signatures import HybridSigningKey
+
+REGISTRATION_CONTEXT = b"xurcroh-worker-registration"
 
 
 class Registration(BaseModel):
@@ -29,8 +32,8 @@ class Registration(BaseModel):
         ).encode()
 
 
-def sign_registration(private_key: Ed25519PrivateKey, registration: Registration) -> bytes:
-    return private_key.sign(registration.canonical())
+def sign_registration(private_key: HybridSigningKey, registration: Registration) -> bytes:
+    return private_key.sign(REGISTRATION_CONTEXT, registration.canonical())
 
 
 def registration_expired(

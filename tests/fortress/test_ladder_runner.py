@@ -7,11 +7,11 @@ import sys
 from pathlib import Path
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from tests.fortress.test_ladder import manifest_mapping
 from tests.fortress.test_ladder_v2 import valid_v2_report
 
 from xurcroh.fortress.ladder import LadderRung, verify_rung_evidence, write_rung_evidence
+from xurcroh.signatures import HybridSigningKey
 
 
 def test_ladder_cli_entry_points_execute_directly() -> None:
@@ -37,9 +37,9 @@ def test_ladder_runner_writes_verified_signed_evidence(tmp_path: Path) -> None:
     manifest.write_text(json.dumps(manifest_mapping()))
     deployment = tmp_path / "deployment.json"
     deployment.write_text(json.dumps({"source_revision": "a" * 40, "workers": [], "sdk": {}}))
-    private = Ed25519PrivateKey.generate()
+    private = HybridSigningKey.generate()
     signing_key = tmp_path / "signing.key"
-    signing_key.write_bytes(private.private_bytes_raw())
+    signing_key.write_bytes(private.to_bytes())
     previous_report = valid_v2_report()
     previous_report["hardware_validated"] = False
     previous_report["source_revision"] = "a" * 40
@@ -52,7 +52,7 @@ def test_ladder_runner_writes_verified_signed_evidence(tmp_path: Path) -> None:
         format_version=2,
     )
     public_key = tmp_path / "signing.pub"
-    public_key.write_bytes(private.public_key().public_bytes_raw())
+    public_key.write_bytes(private.public_key)
     report = valid_v2_report()
     del report["worker_exit_codes"]
     del report["cost_usd"]
@@ -77,7 +77,7 @@ def test_ladder_runner_writes_verified_signed_evidence(tmp_path: Path) -> None:
         ]
     )
     rung, verified = verify_rung_evidence(
-        tmp_path / "evidence" / "evidence.json", public_key=private.public_key()
+        tmp_path / "evidence" / "evidence.json", public_key=private.public_key
     )
     assert rung.rung == "L0"
     assert verified["worker_exit_codes"] == [0, 0, 0, 0]
@@ -90,7 +90,7 @@ def test_ladder_rejects_mismatched_predecessor_revision(tmp_path: Path) -> None:
 
     from xurcroh.fortress.ladder import LadderEvidenceError
 
-    private = Ed25519PrivateKey.generate()
+    private = HybridSigningKey.generate()
     report = valid_v2_report()
     report["hardware_validated"] = False
     report["source_revision"] = "a" * 40
@@ -103,7 +103,7 @@ def test_ladder_rejects_mismatched_predecessor_revision(tmp_path: Path) -> None:
         format_version=2,
     )
     with pytest.raises(LadderEvidenceError, match="different source revision"):
-        verify_predecessor(previous, "L0", "b" * 40, private.public_key())
+        verify_predecessor(previous, "L0", "b" * 40, private.public_key)
 
 
 def test_ladder_requires_predecessor_arguments(

@@ -3,14 +3,14 @@ from __future__ import annotations
 import base64
 import time
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
 from xurcroh.controller.identity import Registration, sign_registration
 from xurcroh.controller.service import WorkerEnrollment, create_controller_app
+from xurcroh.signatures import HybridSigningKey
 
 
-def registration(private: Ed25519PrivateKey, endpoint: str) -> Registration:
+def registration(private: HybridSigningKey, endpoint: str) -> Registration:
     return Registration(
         worker_id="worker-a",
         endpoint=endpoint,
@@ -21,23 +21,23 @@ def registration(private: Ed25519PrivateKey, endpoint: str) -> Registration:
     )
 
 
-def register(client: TestClient, private: Ed25519PrivateKey, endpoint: str):
+def register(client: TestClient, private: HybridSigningKey, endpoint: str):
     document = registration(private, endpoint)
     return client.post(
         "/v1/workers/register",
         json={
             "registration": document.model_dump(mode="json"),
             "signature": base64.b64encode(sign_registration(private, document)).decode(),
-            "public_key": base64.b64encode(private.public_key().public_bytes_raw()).decode(),
+            "public_key": base64.b64encode(private.public_key).decode(),
         },
     )
 
 
 def test_controller_requires_enrollment_and_client_authentication() -> None:
-    private = Ed25519PrivateKey.generate()
+    private = HybridSigningKey.generate()
     endpoint = "https://worker-a.invalid"
     app = create_controller_app(
-        enrollments={"worker-a": WorkerEnrollment(private.public_key(), endpoint)},
+        enrollments={"worker-a": WorkerEnrollment(private.public_key, endpoint)},
         client_tokens={"secret": "client-a"},
     )
     with TestClient(app) as client:
@@ -63,11 +63,9 @@ def test_controller_requires_enrollment_and_client_authentication() -> None:
 
 
 def test_controller_rejects_changed_worker_endpoint() -> None:
-    private = Ed25519PrivateKey.generate()
+    private = HybridSigningKey.generate()
     app = create_controller_app(
-        enrollments={
-            "worker-a": WorkerEnrollment(private.public_key(), "https://worker-a.invalid")
-        },
+        enrollments={"worker-a": WorkerEnrollment(private.public_key, "https://worker-a.invalid")},
         client_tokens={"secret": "client-a"},
     )
     with TestClient(app) as client:

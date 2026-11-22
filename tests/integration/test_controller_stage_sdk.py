@@ -9,7 +9,6 @@ from pathlib import Path
 import httpx
 import pytest
 import uvicorn
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from integration.test_stage_sdk import running_stage
 from shards.identities import StageIdentities
@@ -17,11 +16,12 @@ from Xurcroh import Xurcroh
 from xurcroh.controller.identity import Registration, sign_registration
 from xurcroh.controller.registry import WorkerRegistry
 from xurcroh.controller.service import create_controller_app
+from xurcroh.signatures import HybridSigningKey
 
 
 @contextmanager
 def running_controller(worker_endpoint: str) -> Iterator[str]:
-    private = Ed25519PrivateKey.generate()
+    private = HybridSigningKey.generate()
     registration = Registration(
         worker_id="stage-0",
         endpoint=worker_endpoint,
@@ -31,7 +31,7 @@ def running_controller(worker_endpoint: str) -> Iterator[str]:
         engine="dense-stage",
     )
     registry = WorkerRegistry()
-    registry.register(registration, sign_registration(private, registration), private.public_key())
+    registry.register(registration, sign_registration(private, registration), private.public_key)
     app = create_controller_app(registry, require_authentication=False)
     config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="error")
     server = uvicorn.Server(config)

@@ -6,11 +6,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-)
+from xurcroh.signatures import HybridSigningKey, SignatureError, verify_hybrid
+
+TRANSPARENCY_FORMAT = "xurcroh-transparency-v2"
+TRANSPARENCY_CONTEXT = b"xurcroh-transparency-entry"
 
 
 class TransparencyError(ValueError):
@@ -26,7 +25,7 @@ def _entry_hash(entry: dict[str, Any]) -> str:
 
 
 class TransparencyLog:
-    def __init__(self, signing_key: Ed25519PrivateKey) -> None:
+    def __init__(self, signing_key: HybridSigningKey) -> None:
         self._signing_key = signing_key
         self.entries: list[dict[str, Any]] = []
 
@@ -39,12 +38,12 @@ class TransparencyLog:
             "measurement": measurement,
             "previous_hash": previous_hash,
         }
-        entry["signature"] = self._signing_key.sign(_canonical(entry)).hex()
+        entry["signature"] = self._signing_key.sign(TRANSPARENCY_CONTEXT, _canonical(entry)).hex()
         self.entries.append(entry)
         return dict(entry)
 
     def save(self, path: str | Path) -> None:
-        document = {"format": "xurcroh-transparency-v1", "entries": self.entries}
+        document = {"format": TRANSPARENCY_FORMAT, "entries": self.entries}
         Path(path).write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
 
 
@@ -54,12 +53,11 @@ def verify_transparency_log(
     public_key: bytes,
     expected_measurements: dict[str, str],
 ) -> None:
-    if document.get("format") != "xurcroh-transparency-v1":
+    if document.get("format") != TRANSPARENCY_FORMAT:
         raise TransparencyError("unsupported transparency-log format")
     entries = document.get("entries")
     if not isinstance(entries, list):
         raise TransparencyError("transparency entries are invalid")
-    verifier = Ed25519PublicKey.from_public_bytes(public_key)
     previous_hash = "0" * 64
     by_image: dict[str, str] = {}
     for sequence, entry in enumerate(entries):
@@ -72,8 +70,10 @@ def verify_transparency_log(
             raise TransparencyError("transparency signature is missing")
         unsigned = {key: value for key, value in entry.items() if key != "signature"}
         try:
-            verifier.verify(bytes.fromhex(signature), _canonical(unsigned))
-        except (InvalidSignature, ValueError) as error:
+            verify_hybrid(
+                public_key, TRANSPARENCY_CONTEXT, _canonical(unsigned), bytes.fromhex(signature)
+            )
+        except (SignatureError, ValueError) as error:
             raise TransparencyError("transparency signature is invalid") from error
         image = entry.get("image_digest")
         measurement = entry.get("measurement")

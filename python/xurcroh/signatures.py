@@ -8,6 +8,8 @@ so a signature made for one purpose is not valid for another.
 from __future__ import annotations
 
 import hashlib
+import os
+from pathlib import Path
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
@@ -80,6 +82,22 @@ class HybridSigningKey:
         return self._classical.sign(signed) + self._post_quantum.sign(signed)
 
 
+def load_signing_key(path: Path) -> HybridSigningKey:
+    """Read a key written by ``python -m xurcroh.signatures``."""
+
+    return HybridSigningKey.from_bytes(Path(path).read_bytes())
+
+
+def write_signing_key(path: Path) -> HybridSigningKey:
+    """Create a new key file readable only by its owner; refuse to overwrite one."""
+
+    key = HybridSigningKey.generate()
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as handle:
+        handle.write(key.to_bytes())
+    return key
+
+
 def verify_hybrid(public_key: bytes, context: bytes, message: bytes, signature: bytes) -> None:
     """Raise ``SignatureError`` unless both halves of ``signature`` verify."""
 
@@ -97,3 +115,23 @@ def verify_hybrid(public_key: bytes, context: bytes, message: bytes, signature: 
         )
     except (InvalidSignature, ValueError) as error:
         raise SignatureError("hybrid signature does not verify") from error
+
+
+def main(argv: list[str] | None = None) -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=f"Create a {ALGORITHM} signing key, or print the public key of one"
+    )
+    parser.add_argument("key", type=Path, help="private key file")
+    parser.add_argument("--generate", action="store_true", help="create the key file")
+    parser.add_argument("--public-out", type=Path, help="also write the raw public key here")
+    args = parser.parse_args(argv)
+    key = write_signing_key(args.key) if args.generate else load_signing_key(args.key)
+    if args.public_out is not None:
+        args.public_out.write_bytes(key.public_key)
+    print(key.public_key.hex())
+
+
+if __name__ == "__main__":
+    main()

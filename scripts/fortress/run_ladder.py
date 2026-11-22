@@ -11,10 +11,6 @@ if str(Path(__file__).resolve().parents[2]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import yaml
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-)
 from scripts.fortress.deploy_ladder import (
     collect_role_resources,
     deploy,
@@ -35,6 +31,7 @@ from xurcroh.fortress.ladder_provider import (
 )
 from xurcroh.fortress.ladder_verifier import verify_ladder
 from xurcroh.providers.vast import StateStore
+from xurcroh.signatures import load_signing_key
 
 
 def load_rung_manifest(path: Path, model: str | None) -> dict[str, Any]:
@@ -69,7 +66,7 @@ PREDECESSORS = {
 }
 
 
-def verify_predecessor(path: Path, rung: str, revision: str, public_key: Ed25519PublicKey) -> None:
+def verify_predecessor(path: Path, rung: str, revision: str, public_key: bytes) -> None:
     expected = PREDECESSORS.get(rung)
     if expected is None:
         raise LadderEvidenceError(f"{rung} is a root rung and has no predecessor")
@@ -93,7 +90,7 @@ def run(args: argparse.Namespace) -> Path:
             args.previous_evidence,
             template["rung"],
             revision,
-            Ed25519PublicKey.from_public_bytes(args.evidence_public_key.read_bytes()),
+            args.evidence_public_key.read_bytes(),
         )
     elif args.previous_evidence is not None:
         raise LadderEvidenceError("root rungs do not accept predecessor evidence")
@@ -140,7 +137,7 @@ def run(args: argparse.Namespace) -> Path:
         return destroy_ladder_instances(store, uncapped=args.uncapped, provisioned=provisioned)
 
     report = run_ladder_rung(rung, execute=execute, teardown=teardown)
-    signing_key = Ed25519PrivateKey.from_private_bytes(args.signing_key.read_bytes())
+    signing_key = load_signing_key(args.signing_key)
     destination = args.output / "evidence.json"
     write_rung_evidence(destination, rung, report, signing_key=signing_key, format_version=2)
     print(destination)
