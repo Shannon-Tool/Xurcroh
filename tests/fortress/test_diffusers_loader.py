@@ -47,6 +47,6 @@ def test_real_diffusers_layout_loads_only_transformer_linear_layers(tmp_path: Pa
     assert len(operations) == 4
     assert "transformer_blocks.0.norm.norm.weight" not in operations
     assert all(
-        b"basis" not in encode_role_artifact(operation, 0, bytes(range(32)))
+        b"basis" not in encode_role_artifact(operation, 0, bytes(1216))
         for operation in operations.values()
     )

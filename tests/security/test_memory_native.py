@@ -196,22 +196,16 @@ class _FakeQuicServer:
 
 def _build_cuda_worker(monkeypatch: pytest.MonkeyPatch, library, **overrides):
     import xurcroh_quic
-    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-    from cryptography.hazmat.primitives.serialization import (
-        Encoding,
-        NoEncryption,
-        PrivateFormat,
-        PublicFormat,
-    )
 
     from xurcroh.fortress import cuda_driver
     from xurcroh.fortress import native as fortress_native
     from xurcroh.fortress import worker as worker_module
     from xurcroh.fortress.compiler import compile_operation
     from xurcroh.fortress.transport import encode_role_artifact
+    from xurcroh.kem import HybridKemKey
 
-    private = X25519PrivateKey.generate()
-    recipient_public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    private = HybridKemKey.generate()
+    recipient_public = private.public_key
     operation = compile_operation(
         torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
     )
@@ -227,9 +221,7 @@ def _build_cuda_worker(monkeypatch: pytest.MonkeyPatch, library, **overrides):
     )
     options = {
         "artifacts": {"op": artifact},
-        "recipient_private_key": private.private_bytes(
-            Encoding.Raw, PrivateFormat.Raw, NoEncryption()
-        ),
+        "recipient_private_key": private.to_bytes(),
         "certificates": (b"cert",),
         "private_key": b"key",
         "client_ca": b"ca",

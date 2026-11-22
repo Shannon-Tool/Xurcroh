@@ -34,7 +34,7 @@ def test_real_checkpoint_compiles_without_retaining_full_client_weights(
     torch.testing.assert_close(actual, expected, atol=1e-7, rtol=1e-7)
     assert combiner.sample(actual[-1:]).item() == combiner.reference_sample(expected[-1:]).item()
     assert all(
-        b"basis" not in encode_role_artifact(operation, 0, bytes(range(32)))
+        b"basis" not in encode_role_artifact(operation, 0, bytes(1216))
         for operation in compiled.operations.values()
     )
     combiner.drop_request("compiled-request")

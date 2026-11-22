@@ -52,7 +52,7 @@ def template_workers() -> list[dict[str, Any]]:
                 "cpu_vendor": cpu,
                 "activation_index": activation,
                 "weight_index": weight,
-                "recipient_public": bytes([index + 1] * 32).hex(),
+                "recipient_public": bytes([index + 1] * 1216).hex(),
             }
         )
     return workers

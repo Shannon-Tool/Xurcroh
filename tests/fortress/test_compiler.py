@@ -86,5 +86,5 @@ def test_inner_bases_are_client_only_and_preserve_the_linear_reference() -> None
     )
     torch.testing.assert_close(recovered, expected, atol=1e-7, rtol=1e-7)
     assert torch.isfinite(recovered - hidden @ weight.T).all()
-    artifact = encode_role_artifact(compiled, 0, bytes(range(32)))
+    artifact = encode_role_artifact(compiled, 0, bytes(1216))
     assert b"basis" not in artifact
