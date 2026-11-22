@@ -1,0 +1,2 @@
+# False positive: a type annotation (signing_key: Ed25519PrivateKey | None = None), not a secret.
+209ece2f26c7aa1b314f0d22b6e2f8160e5f9c2b:python/xurcroh/receipts.py:generic-api-key:140
