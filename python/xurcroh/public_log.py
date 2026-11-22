@@ -42,7 +42,9 @@ from xurcroh.signatures import (
     verify_hybrid,
 )
 
-KINDS = ("trace", "manifest", "release")
+# trace: a task trace hash. manifest: a model build. release: a signed release manifest.
+# build: the digest a client installation reports for itself (``xurcroh.build``).
+KINDS = ("trace", "manifest", "release", "build")
 COSIGNATURE_CONTEXT = b"xurcroh-log-witness"
 
 
@@ -88,7 +90,7 @@ def verify_cosignature(head: Mapping[str, Any], cosignature: Mapping[str, Any]) 
 
 class LogEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: str = Field(pattern=r"^(trace|manifest|release)$")
+    kind: str = Field(pattern=r"^(trace|manifest|release|build)$")
     digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 

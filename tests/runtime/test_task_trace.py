@@ -326,6 +326,26 @@ def test_model_whose_manifest_is_not_logged_is_refused_when_required(
     assert log.lookup("manifest", manifest) is not None
 
 
+def test_client_whose_own_build_is_not_logged_is_refused_when_required(
+    tiny_model_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xurcroh.build import installed_build_digest
+
+    log, log_client, settings = _public_log(tmp_path, monkeypatch)
+    required = {**settings, "require_logged_build": True}
+
+    # Refused at start, before any model is loaded or any request is served.
+    with pytest.raises(ConfigurationError, match="client build .* is not in the public log"):
+        client_for(tiny_model_path, security=required)
+
+    log_client.publish("build", installed_build_digest())
+    with client_for(tiny_model_path, security=required) as client:
+        response = client.chat.completions.create(model="tiny", messages=MESSAGES, max_tokens=1)
+        trace = client.tasks.trace(response.execution.request_id)
+    assert trace["client"]["build_sha256"] == installed_build_digest()
+    assert trace["security"]["public_log"]["build_required"] is True
+
+
 def test_public_log_settings_must_be_complete() -> None:
     from xurcroh.config import SecurityConfig
 
@@ -333,3 +353,5 @@ def test_public_log_settings_must_be_complete() -> None:
         SecurityConfig(trace_log_endpoint="https://log.invalid")
     with pytest.raises(ValueError, match="needs a trace_log_endpoint"):
         SecurityConfig(require_logged_manifest=True)
+    with pytest.raises(ValueError, match="needs a trace_log_endpoint"):
+        SecurityConfig(require_logged_build=True)

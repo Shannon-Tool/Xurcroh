@@ -106,3 +106,55 @@ def test_unknown_cover_mode_is_refused(
     finally:
         for worker in workers:
             worker.close()
+
+
+def test_trace_records_what_the_client_observed_about_each_worker(
+    tiny_llama_path: Path, tmp_path: Path, mtls_identities: dict[str, bytes]
+) -> None:
+    from xurcroh.signatures import key_fingerprint
+
+    cluster, workers = _signed_remote_grid(tiny_llama_path, tmp_path, mtls_identities, 2)
+    for index, worker in enumerate(cluster):
+        worker["provider"] = {"country": f"declared-{index}"}
+    try:
+        with _client(tiny_llama_path, cluster) as client:
+            trace = _ask(client)
+    finally:
+        for worker in workers:
+            worker.close()
+
+    routes = trace["transport"]["routes"]
+    for worker, route in zip(cluster, routes, strict=True):
+        # What the operator typed stays labelled as declared; what the client saw is separate.
+        assert route["declared"] == worker["provider"]
+        assert route["observed"] == {
+            "address": worker["endpoint"].removeprefix("quic://"),
+            "host": "127.0.0.1",
+            "certificate_sha256": route["negotiated"]["peer_certificate_sha256"],
+            "identity_sha256": key_fingerprint(bytes.fromhex(worker["labels"]["identity_public"])),
+        }
+    assert trace["transport"]["observed_placement"] == {
+        "workers": 4,
+        "distinct_addresses": 4,
+        "distinct_hosts": 1,
+        "distinct_identity_keys": 4,
+        "distinct_certificates": 1,
+    }
+
+
+def test_workers_sharing_a_host_or_a_key_are_refused_when_distinct_workers_are_required(
+    tiny_llama_path: Path, tmp_path: Path, mtls_identities: dict[str, bytes]
+) -> None:
+    cluster, workers = _signed_remote_grid(tiny_llama_path, tmp_path, mtls_identities, 2)
+    for worker in cluster:
+        worker["labels"]["require_distinct_workers"] = "true"
+    try:
+        # The four test workers all listen on 127.0.0.1.
+        with (
+            _client(tiny_llama_path, cluster) as client,
+            pytest.raises(XurcrohError, match="share a host"),
+        ):
+            _ask(client)
+    finally:
+        for worker in workers:
+            worker.close()
