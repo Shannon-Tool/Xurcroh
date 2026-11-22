@@ -104,14 +104,14 @@ def test_worker_cli_requires_onion_wrapped_traffic_when_given_an_onion_key(
     monkeypatch.setattr(worker_cli, "load_role_artifacts", lambda _directory: {"op": b"x"})
     for name in ("recipient", "certificate", "key", "ca"):
         (tmp_path / name).write_bytes(name.encode())
-    (tmp_path / "onion").write_bytes(b"\x07" * 32)
+    (tmp_path / "onion").write_bytes(b"\x07" * 96)
     arguments = ["--artifact-dir", str(tmp_path), "--recipient-key", str(tmp_path / "recipient")]
     arguments += ["--certificate", str(tmp_path / "certificate"), "--ca", str(tmp_path / "ca")]
     arguments += ["--private-key", str(tmp_path / "key")]
 
     with pytest.raises(RuntimeError, match="stop"):
         worker_cli.main([*arguments, "--onion-key", str(tmp_path / "onion")])
-    assert captured["onion_private_key"] == b"\x07" * 32
+    assert captured["onion_private_key"] == b"\x07" * 96
 
     captured.clear()
     with pytest.raises(RuntimeError, match="stop"):
@@ -119,7 +119,7 @@ def test_worker_cli_requires_onion_wrapped_traffic_when_given_an_onion_key(
     assert captured["onion_private_key"] is None
 
     (tmp_path / "onion").write_bytes(b"short")
-    with pytest.raises(ValueError, match="32 bytes"):
+    with pytest.raises(ValueError, match="96 bytes"):
         worker_cli.main([*arguments, "--onion-key", str(tmp_path / "onion")])
 
 

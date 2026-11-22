@@ -7,6 +7,7 @@ from pathlib import Path
 
 from xurcroh.fortress.relay import ObliviousRelay
 from xurcroh.fortress.transport import MutualTLSIdentity
+from xurcroh.kem import PRIVATE_KEY_BYTES
 from xurcroh.memory_host import protect_process
 
 
@@ -14,7 +15,12 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Run a Fortress onion relay that forwards only to allowlisted next hops"
     )
-    parser.add_argument("--onion-key", required=True, type=Path, help="raw 32-byte X25519 key")
+    parser.add_argument(
+        "--onion-key",
+        required=True,
+        type=Path,
+        help="hybrid onion key created with python -m xurcroh.kem",
+    )
     parser.add_argument("--certificate", required=True, type=Path)
     parser.add_argument("--private-key", required=True, type=Path)
     parser.add_argument("--ca", required=True, type=Path)
@@ -34,8 +40,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     protect_process()
     onion_key = args.onion_key.read_bytes()
-    if len(onion_key) != 32:
-        raise ValueError("relay onion key must be exactly 32 bytes")
+    if len(onion_key) != PRIVATE_KEY_BYTES:
+        raise ValueError(f"relay onion key must be exactly {PRIVATE_KEY_BYTES} bytes")
     ca = args.ca.read_bytes()
     relay = ObliviousRelay(
         onion_key,

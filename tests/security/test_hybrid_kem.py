@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from xurcroh.kem import (
@@ -71,3 +73,20 @@ def test_malformed_keys_and_messages_are_rejected(length: int) -> None:
         HybridKemKey.from_bytes(bytes(length))
     with pytest.raises(KemError):
         open_sealed(key, b"i", bytes(length))
+
+
+def test_key_file_is_private_and_never_overwritten(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from xurcroh.kem import main, write_kem_key
+
+    path = tmp_path / "onion.key"
+    main([str(path), "--generate"])
+    public = capsys.readouterr().out.strip()
+
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert HybridKemKey.from_bytes(path.read_bytes()).public_key.hex() == public
+    main([str(path)])
+    assert capsys.readouterr().out.strip() == public
+    with pytest.raises(FileExistsError):
+        write_kem_key(path)

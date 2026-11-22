@@ -9,13 +9,6 @@ from pathlib import Path
 
 import pytest
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import (
-    Encoding,
-    NoEncryption,
-    PrivateFormat,
-    PublicFormat,
-)
 from tests.fortress.conftest import MutualTLSIdentities
 
 from xurcroh.fortress.arithmetic import PRIME_MODULUS, split_secret
@@ -31,12 +24,12 @@ from xurcroh.fortress.worker import FortressRoleWorker
 from xurcroh.kem import HybridKemKey
 
 
-def raw_private(key: X25519PrivateKey) -> bytes:
-    return key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+def raw_private(key: HybridKemKey) -> bytes:
+    return key.to_bytes()
 
 
-def raw_public(key: X25519PrivateKey) -> bytes:
-    return key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+def raw_public(key: HybridKemKey) -> bytes:
+    return key.public_key
 
 
 def test_relay_cli_requires_an_allowlist(tmp_path: Path) -> None:
@@ -60,14 +53,14 @@ def test_relay_process_forwards_role_calls_and_stops_cleanly(
         "client.key": mtls_identities["client_key"],
         "ca.crt": mtls_identities["ca"],
     }
-    relay_key = X25519PrivateKey.generate()
+    relay_key = HybridKemKey.generate()
     files["onion.key"] = raw_private(relay_key)
     for name, content in files.items():
         (tmp_path / name).write_bytes(content)
     workers: list[FortressRoleWorker] = []
-    keys: list[tuple[HybridKemKey, X25519PrivateKey]] = []
+    keys: list[tuple[HybridKemKey, HybridKemKey]] = []
     for index in range(4):
-        recipient, onion = HybridKemKey.generate(), X25519PrivateKey.generate()
+        recipient, onion = HybridKemKey.generate(), HybridKemKey.generate()
         worker = FortressRoleWorker(
             encode_role_artifact(operation, index % 2, recipient.public_key),
             recipient.to_bytes(),
