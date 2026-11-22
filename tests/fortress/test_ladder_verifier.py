@@ -3,13 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import (
-    Encoding,
-    NoEncryption,
-    PrivateFormat,
-    PublicFormat,
-)
 from tests.fortress.test_ladder import manifest_mapping
 
 from xurcroh.fortress.ladder import LadderRung
@@ -18,6 +11,7 @@ from xurcroh.fortress.ladder_verifier import verify_ladder
 from xurcroh.fortress.model_compiler import compile_fortress_checkpoint
 from xurcroh.fortress.transport import encode_role_artifact
 from xurcroh.fortress.worker import FortressRoleWorker
+from xurcroh.kem import HybridKemKey
 
 
 def test_ladder_verifier_compares_remote_tensors_and_public_sdk(
@@ -45,15 +39,15 @@ def test_ladder_verifier_compares_remote_tensors_and_public_sdk(
     mutable = manifest_mapping()
     try:
         for index, placement in enumerate(rung.workers):
-            private = X25519PrivateKey.generate()
-            public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+            private = HybridKemKey.generate()
+            public = private.public_key
             artifacts = {
                 name: encode_role_artifact(operation, placement.weight_index, public)
                 for name, operation in compiled.operations.items()
             }
             worker = FortressRoleWorker(
                 artifacts,
-                private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                private.to_bytes(),
                 certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],

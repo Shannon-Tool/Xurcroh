@@ -18,7 +18,7 @@ def _engine(role_document: object) -> FortressEngine:
             labels={
                 "operations": "*",
                 "operation_roles": json.dumps({"op": role_document}),
-                "recipient_public": "ab" * 32,
+                "recipient_public": "ab" * 1216,
             },
         )
     ]

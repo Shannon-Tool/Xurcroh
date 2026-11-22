@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import logging
 import os
 import threading
@@ -11,8 +10,8 @@ from typing import Any, cast
 
 import numpy as np
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
+from xurcroh import kem
 from xurcroh.errors import CompatibilityError, ProtocolError
 from xurcroh.fortress.arithmetic import FIELD_MODULUS, _seeded_uniform
 from xurcroh.fortress.checkpoint import (
@@ -23,6 +22,12 @@ from xurcroh.fortress.checkpoint import (
     sign_checkpoint,
 )
 from xurcroh.fortress.native import canonical_field_words
+from xurcroh.fortress.session import (
+    HANDSHAKE_MAGIC,
+    RoleSessionStore,
+    channel_binding,
+    split_data_packet,
+)
 from xurcroh.fortress.transport import (
     DEFAULT_FRAME_BYTES,
     decode_role_artifact,
@@ -31,7 +36,6 @@ from xurcroh.fortress.transport import (
     unpad_packet,
 )
 from xurcroh.memory_native import activate_burn_on_read_allocator
-from xurcroh.runtime.stage_sessions import SESSION_ENVELOPE_BYTES, StageSessionStore
 from xurcroh.signatures import HybridSigningKey
 
 MAX_ROLE_PACKET_BYTES = 16 * 1024 * 1024
@@ -100,7 +104,7 @@ class FortressRoleWorker:
         if len(weight_indices) != 1:
             raise ValueError("all operations in one role must use the same weight-share index")
         self.weight_index = weight_indices.pop()
-        private = X25519PrivateKey.from_private_bytes(recipient_private_key)
+        recipient = kem.HybridKemKey.from_bytes(recipient_private_key)
         # Every operation holds its own session with a role, so a fixed bound
         # rejects any model with more operations than the bound. The default
         # scales with the assigned operations and leaves headroom for
@@ -109,7 +113,13 @@ class FortressRoleWorker:
             session_capacity = max(64, SESSIONS_PER_OPERATION * len(self.artifacts))
         if session_capacity < len(self.artifacts):
             raise ValueError("session capacity is below the number of assigned operations")
-        self.sessions = StageSessionStore(private, self.weight_index, capacity=session_capacity)
+        self.sessions = RoleSessionStore(
+            recipient,
+            self.weight_index,
+            artifact_digest=self.artifact_digest,
+            identity=self._identity,
+            capacity=session_capacity,
+        )
         self._session_completed: dict[str, int] = {}
         self._active_sessions: set[str] = set()
         self._native_weights = (
@@ -307,23 +317,36 @@ class FortressRoleWorker:
                 ):
                     raise ProtocolError("Fortress role expects a fixed-size encrypted frame")
                 packet = unpad_packet(packet, self._frame_bytes)
-                if len(packet) <= SESSION_ENVELOPE_BYTES:
-                    raise ProtocolError("Fortress role session envelope is truncated")
-                client_public = base64.b64encode(packet[:32]).decode()
-                session_id = packet[32:64].decode()
-                session_token = packet[64:96]
-                handshake = packet[96:SESSION_ENVELOPE_BYTES]
-                receiver, sender = self.sessions.get_or_create(
-                    session_id, client_public, session_token, handshake
-                )
+                if packet.startswith(HANDSHAKE_MAGIC):
+                    binding = channel_binding(
+                        connection, relayed=self._onion_private_key is not None
+                    )
+                    session_id, reply = self.sessions.accept(packet, binding)
+                    with self._lock:
+                        self._active_sessions.add(session_id)
+                    reply = pad_packet(reply, self._frame_bytes)
+                    connection.send(
+                        request_id, self.weight_index, 0, "tensor", "u8", [len(reply)], reply
+                    )
+                    continue
+                session_id, sealed_request = split_data_packet(packet)
+                try:
+                    receiver, sender = self.sessions.channels(session_id)
+                except ProtocolError:
+                    # An expired session leaves nothing behind; the client must
+                    # start a new one with a fresh handshake.
+                    with self._lock:
+                        self._requests.pop(session_id, None)
+                        self._session_completed.pop(session_id, None)
+                        self._transcripts.pop(session_id, None)
+                        self._active_sessions.discard(session_id)
+                    raise
                 state_key = f"{session_id}:{request_id.hex()}"
                 with self._lock:
-                    self._active_sessions.add(session_id)
                     self._requests.setdefault(session_id, set()).add(state_key)
                 activation = torch.empty(0, dtype=torch.int64)
                 exact_payload = bytearray()
                 try:
-                    sealed_request = packet[SESSION_ENVELOPE_BYTES:]
                     result_dtype, result_shape, payload = receiver.open_tensor(sealed_request)
                     if result_dtype != "u8" or result_shape != [len(payload)]:
                         raise ProtocolError("Fortress operation payload must be a byte vector")

@@ -2,13 +2,6 @@ from __future__ import annotations
 
 import pytest
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import (
-    Encoding,
-    NoEncryption,
-    PrivateFormat,
-    PublicFormat,
-)
 from tests.fortress.conftest import MutualTLSIdentities
 
 from xurcroh.errors import ProtocolError
@@ -27,6 +20,7 @@ from xurcroh.fortress.transport import (
     encode_role_artifact,
 )
 from xurcroh.fortress.worker import FortressRoleWorker
+from xurcroh.kem import HybridKemKey
 from xurcroh.signatures import HybridSigningKey
 
 
@@ -75,13 +69,13 @@ class _Grid:
         roles = []
         for activation_index in range(2):
             for weight_index in range(2):
-                private = X25519PrivateKey.generate()
-                public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+                private = HybridKemKey.generate()
+                public = private.public_key
                 artifacts = {"op": encode_role_artifact(self.operation, weight_index, public)}
                 key = HybridSigningKey.generate()
                 worker = FortressRoleWorker(
                     artifacts,
-                    private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                    private.to_bytes(),
                     certificates=(mtls["server_certificate"], mtls["ca"]),
                     private_key=mtls["server_key"],
                     client_ca=mtls["ca"],
@@ -156,26 +150,26 @@ def test_every_role_returns_a_signed_checkpoint_matching_the_client_transcript(
         grid.close()
 
 
-def test_checkpoint_from_an_unpinned_identity_is_rejected(
+def test_worker_with_an_unpinned_identity_is_rejected_at_the_handshake(
     mtls_identities: MutualTLSIdentities,
 ) -> None:
+    # The session handshake already refuses a worker that cannot sign as the pinned
+    # identity, so no activation is ever sent to it.
     grid = _Grid(mtls_identities, swap_identity=True)
     try:
-        grid.call()
         with pytest.raises(ProtocolError, match="pinned worker identity"):
-            grid.runtime.checkpoints()
+            grid.call()
     finally:
         grid.close()
 
 
-def test_checkpoint_for_other_artifacts_is_rejected(
+def test_worker_with_other_artifacts_is_rejected_at_the_handshake(
     mtls_identities: MutualTLSIdentities,
 ) -> None:
     grid = _Grid(mtls_identities, swap_artifacts=True)
     try:
-        grid.call()
         with pytest.raises(ProtocolError, match="artifacts other than the ones deployed"):
-            grid.runtime.checkpoints()
+            grid.call()
     finally:
         grid.close()
 
@@ -229,14 +223,13 @@ def test_stored_checkpoint_fails_offline_verification_after_any_edit(
         verify_checkpoint_signature({**checkpoint, "identity_public": other})
 
 
-def test_roles_without_a_pinned_identity_report_no_checkpoint(
+def test_worker_without_an_identity_key_is_rejected_when_one_is_pinned(
     mtls_identities: MutualTLSIdentities,
 ) -> None:
     grid = _Grid(mtls_identities, signing=False)
     try:
-        grid.call()
-        with pytest.raises(ProtocolError, match="checkpoint"):
-            grid.runtime.checkpoints()
+        with pytest.raises(ProtocolError, match="pinned worker identity"):
+            grid.call()
     finally:
         grid.close()
 
@@ -247,12 +240,12 @@ def test_checkpoint_name_cannot_be_used_for_an_operation(
     operation = compile_operation(
         torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
     )
-    private = X25519PrivateKey.generate()
-    public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    private = HybridKemKey.generate()
+    public = private.public_key
     with pytest.raises(ValueError, match="reserved"):
         FortressRoleWorker(
             {CHECKPOINT_OPERATION: encode_role_artifact(operation, 0, public)},
-            private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+            private.to_bytes(),
             certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
             private_key=mtls_identities["server_key"],
             client_ca=mtls_identities["ca"],
@@ -287,3 +280,55 @@ def test_trace_verification_rejects_a_checkpoint_for_other_artifacts_than_the_ma
     assert verify_trace(trace("a" * 64))["worker_checkpoints"] == 1
     with pytest.raises(TraceError, match="artifacts"):
         verify_trace(trace("b" * 64))
+
+
+def test_checkpoint_reply_is_checked_against_the_pinned_identity_and_artifacts() -> None:
+    from xurcroh.fortress.checkpoint import open_checkpoint, sign_checkpoint
+
+    key = HybridSigningKey.generate()
+    transcript = SessionTranscript("session")
+    reply = sign_checkpoint(key, transcript, artifacts="a" * 64, weight_index=0, nonce=bytes(32))
+
+    def check(**changes: object) -> dict:
+        options: dict = {
+            "worker": "w",
+            "identity_public": key.public_key,
+            "transcript": transcript,
+            "weight_index": 0,
+            "nonce": bytes(32),
+            "expected_artifacts": "a" * 64,
+        }
+        return open_checkpoint(reply, **{**options, **changes})
+
+    assert check()["artifacts_pinned"] is True
+    with pytest.raises(ProtocolError, match="pinned worker identity"):
+        check(identity_public=HybridSigningKey.generate().public_key)
+    with pytest.raises(ProtocolError, match="artifacts other than the ones deployed"):
+        check(expected_artifacts="b" * 64)
+    with pytest.raises(ProtocolError, match="not fresh"):
+        check(nonce=b"\x01" * 32)
+    with pytest.raises(ProtocolError, match="another session"):
+        check(transcript=SessionTranscript("other"))
+
+
+def test_expired_session_is_replaced_by_a_fresh_handshake(
+    mtls_identities: MutualTLSIdentities,
+) -> None:
+    grid = _Grid(mtls_identities)
+    try:
+        grid.call()
+        first = {key: c.session.session_id for key, c in grid.runtime.connections.items()}
+        for worker in grid.workers:
+            for session in worker.sessions._sessions.values():
+                session.expires_at = 0
+            assert worker.sessions.active_count == 0  # every session has now expired
+
+        grid.call()  # the worker refuses the old session; the client starts a new one
+
+        second = {key: c.session.session_id for key, c in grid.runtime.connections.items()}
+        assert all(first[key] != second[key] for key in first)
+        checkpoints = grid.runtime.checkpoints()
+        assert [item["body"]["calls"] for item in checkpoints] == [1, 1, 1, 1]
+        assert all(not worker._transcripts.keys() & set(first.values()) for worker in grid.workers)
+    finally:
+        grid.close()

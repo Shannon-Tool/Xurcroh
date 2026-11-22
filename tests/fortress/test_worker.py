@@ -2,30 +2,24 @@ from __future__ import annotations
 
 import pytest
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import (
-    Encoding,
-    NoEncryption,
-    PrivateFormat,
-    PublicFormat,
-)
 from tests.fortress.conftest import MutualTLSIdentities
 
 from xurcroh.errors import AttestationError
 from xurcroh.fortress.compiler import compile_operation
 from xurcroh.fortress.transport import encode_role_artifact
 from xurcroh.fortress.worker import FortressRoleWorker
+from xurcroh.kem import HybridKemKey
 
 
 def _artifact(weight_index: int = 0) -> tuple[bytes, bytes]:
     operation = compile_operation(
         torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
     )
-    private = X25519PrivateKey.generate()
-    public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    private = HybridKemKey.generate()
+    public = private.public_key
     return (
         encode_role_artifact(operation, weight_index, public),
-        private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+        private.to_bytes(),
     )
 
 

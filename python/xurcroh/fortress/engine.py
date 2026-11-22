@@ -655,10 +655,10 @@ class FortressEngine:
         current = self.transport_metrics()
         return {name: value - baseline.get(name, 0) for name, value in current.items()}
 
-    def _handshakes(self, workers: int) -> dict[str, dict[str, str | None]]:
-        """What each worker link negotiated, read from the live TLS connections."""
+    def _handshakes(self, workers: int) -> dict[str, dict[str, Any]]:
+        """What each worker link and session negotiated, read from the live connections."""
 
-        facts: dict[str, dict[str, str | None]] = {}
+        facts: dict[str, dict[str, Any]] = {}
         for client in self._clients.values():
             for transport in client._transports.values():
                 name = transport.role.provider_id
@@ -667,9 +667,15 @@ class FortressEngine:
                     continue
                 try:
                     digest = link.peer_certificate_sha256()
+                    session = transport.session
                     facts[name] = {
                         "key_exchange_group": link.key_exchange_group(),
                         "peer_certificate_sha256": None if digest is None else bytes(digest).hex(),
+                        # Read from the session object, not from configuration.
+                        "session_established": session.established,
+                        "session_forward_secret": session.established,
+                        "session_bound_to_tls": session.established and session.tls_bound,
+                        "session_signed_by_worker": session.worker_signed,
                     }
                 except ValueError:
                     continue
@@ -694,6 +700,7 @@ class FortressEngine:
     def trace_facts(self) -> dict[str, Any]:
         """Facts about how this model is split and reached, for a task trace."""
 
+        from xurcroh.fortress.session import SESSION_SUITE
         from xurcroh.fortress.transport import relay_route_from_labels
 
         compiled = self._compiled
@@ -733,7 +740,7 @@ class FortressEngine:
             },
             "transport": {
                 "link": "QUIC, TLS 1.3, mutual certificates" if remote else "in-process",
-                "session": "HPKE X25519-HKDF-SHA256, ChaCha20-Poly1305" if remote else None,
+                "session": SESSION_SUITE if remote else None,
                 "frame_bytes": int(labels.get("frame_bytes", 16_384)) if remote else None,
                 "cover_interval_seconds": float(labels.get("cover_interval", 1.0))
                 if remote

@@ -17,14 +17,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import (
-    Encoding,
-    NoEncryption,
-    PrivateFormat,
-    PublicFormat,
-)
-
 from xurcroh.config import ClusterConfig, GPUConfig, ModelDefinition, WorkerConfig
 from xurcroh.errors import ClusterUnavailableError, ConfigurationError
 from xurcroh.fortress.checkpoint import artifact_set_digest_from_hashes
@@ -49,6 +41,7 @@ from xurcroh.fortress.placement import (
 from xurcroh.fortress.tls import generate_mutual_tls
 from xurcroh.fortress.transport import encode_role_artifact
 from xurcroh.fortress.worker_cli import artifact_file_name
+from xurcroh.kem import HybridKemKey
 from xurcroh.preflight import detect_modality, ensure_checkpoint, preflight_checkpoint
 from xurcroh.signatures import HybridSigningKey
 
@@ -378,12 +371,12 @@ class FortressDeployment:
                     for assignment in placement.assignments
                     if assignment.provider_id == worker.name
                 )
-                private = X25519PrivateKey.generate()
-                public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+                private = HybridKemKey.generate()
+                public = private.public_key
                 key_path = model_root / f"recipient-{index}.key"
                 self._write_secret(
                     key_path,
-                    private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                    private.to_bytes(),
                 )
                 identity = HybridSigningKey.generate()
                 identity_path = model_root / f"identity-{index}.key"

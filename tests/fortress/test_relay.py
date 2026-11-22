@@ -24,6 +24,7 @@ from xurcroh.fortress.transport import (
     encode_role_artifact,
 )
 from xurcroh.fortress.worker import FortressRoleWorker
+from xurcroh.kem import HybridKemKey
 from xurcroh.signatures import HybridSigningKey
 
 
@@ -46,16 +47,16 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
     for activation_index in range(2):
         for weight_index in range(2):
             signing_key = HybridSigningKey.generate()
-            recipient = X25519PrivateKey.generate()
+            recipient = HybridKemKey.generate()
             onion_private = X25519PrivateKey.generate()
             artifact = encode_role_artifact(
                 operation,
                 weight_index,
-                recipient.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw),
+                recipient.public_key,
             )
             worker = FortressRoleWorker(
                 artifact,
-                recipient.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                recipient.to_bytes(),
                 certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],
@@ -81,7 +82,7 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
                     activation_index,
                     weight_index,
                     worker.address,
-                    recipient.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw),
+                    recipient.public_key,
                     f"relay-role-{activation_index}-{weight_index}",
                     route,
                     identity_public=signing_key.public_key,
@@ -107,11 +108,12 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
     try:
         expected = (operation.quantized.values @ torch.tensor([5, 7])).remainder(PRIME_MODULUS)
         assert torch.equal(client.execute(shares), expected)
-        assert relay.forward_count == 4
+        # Four session handshakes, then four calls, all in the same fixed-size frames.
+        assert relay.forward_count == 8
         # A checkpoint is an ordinary fixed-size frame, so it crosses the relay unchanged.
         checkpoints = client.checkpoints()
         assert [item["body"]["calls"] for item in checkpoints] == [1, 1, 1, 1]
-        assert relay.forward_count == 8
+        assert relay.forward_count == 12
     finally:
         client.close()
         relay.close()
@@ -147,10 +149,10 @@ def test_three_relay_chain_hides_worker_from_entry_and_client_from_exit(
     worker_keys: list[tuple[X25519PrivateKey, X25519PrivateKey]] = []
     for _activation_index in range(2):
         for weight_index in range(2):
-            recipient, onion = X25519PrivateKey.generate(), X25519PrivateKey.generate()
+            recipient, onion = HybridKemKey.generate(), X25519PrivateKey.generate()
             worker = FortressRoleWorker(
-                encode_role_artifact(operation, weight_index, raw_public(recipient)),
-                raw_private(recipient),
+                encode_role_artifact(operation, weight_index, recipient.public_key),
+                recipient.to_bytes(),
                 onion_private_key=raw_private(onion),
                 allow_unattested=True,
                 **server,
@@ -199,7 +201,7 @@ def test_three_relay_chain_hides_worker_from_entry_and_client_from_exit(
                 index // 2,
                 index % 2,
                 worker.address,
-                raw_public(recipient),
+                recipient.public_key,
                 f"chain-role-{index}",
                 route,
             )
@@ -209,7 +211,7 @@ def test_three_relay_chain_hides_worker_from_entry_and_client_from_exit(
     try:
         expected = (operation.quantized.values @ torch.tensor([5, 7])).remainder(PRIME_MODULUS)
         assert torch.equal(client.execute(shares), expected)
-        assert [relay.forward_count for relay in relays] == [4, 4, 4]
+        assert [relay.forward_count for relay in relays] == [8, 8, 8]
         with pytest.raises(ProtocolError, match="authorized"):
             entry_relay._connect_upstream(f"quic://{workers[0].address}")
     finally:
@@ -281,13 +283,13 @@ def test_public_sdk_generates_through_a_two_relay_onion_path(
     cluster: list[dict[str, object]] = []
     for activation_index in range(2):
         for weight_index in range(2):
-            recipient, onion = X25519PrivateKey.generate(), X25519PrivateKey.generate()
+            recipient, onion = HybridKemKey.generate(), X25519PrivateKey.generate()
             worker = FortressRoleWorker(
                 {
-                    name: encode_role_artifact(operation, weight_index, raw_public(recipient))
+                    name: encode_role_artifact(operation, weight_index, recipient.public_key)
                     for name, operation in compiled.operations.items()
                 },
-                raw_private(recipient),
+                recipient.to_bytes(),
                 onion_private_key=raw_private(onion),
                 allow_unattested=True,
                 **server,
@@ -302,7 +304,7 @@ def test_public_sdk_generates_through_a_two_relay_onion_path(
                     "labels": {
                         "activation_index": str(activation_index),
                         "weight_index": str(weight_index),
-                        "recipient_public": raw_public(recipient).hex(),
+                        "recipient_public": recipient.public_key.hex(),
                         "onion_public": raw_public(onion).hex(),
                         "cover_interval": "60",
                         "client_certificate_path": str(tmp_path / "client_certificate"),

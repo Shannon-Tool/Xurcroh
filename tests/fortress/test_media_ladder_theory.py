@@ -14,13 +14,6 @@ from typing import Any
 
 import pytest
 import yaml
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import (
-    Encoding,
-    NoEncryption,
-    PrivateFormat,
-    PublicFormat,
-)
 from tests.fortress.test_ladder import manifest_mapping
 
 from xurcroh.config import ModelDefinition
@@ -31,6 +24,7 @@ from xurcroh.fortress.media_adapter import MediaArchitectureAdapter
 from xurcroh.fortress.media_components import compile_media_checkpoint
 from xurcroh.fortress.transport import encode_role_artifact
 from xurcroh.fortress.worker import FortressRoleWorker
+from xurcroh.kem import HybridKemKey
 
 FIXTURES = os.environ.get("XURCROH_TINY_PIPELINES", "")
 pytestmark = [
@@ -94,8 +88,8 @@ def test_media_rung_executes_in_theory_with_its_pipeline_family(
     workers: list[FortressRoleWorker] = []
     try:
         for index, placement in enumerate(rung.workers):
-            private = X25519PrivateKey.generate()
-            public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+            private = HybridKemKey.generate()
+            public = private.public_key
             worker = FortressRoleWorker(
                 {
                     f"{component}:{name}": encode_role_artifact(
@@ -104,7 +98,7 @@ def test_media_rung_executes_in_theory_with_its_pipeline_family(
                     for component, operations in compiled.items()
                     for name, operation in operations.items()
                 },
-                private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                private.to_bytes(),
                 certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],

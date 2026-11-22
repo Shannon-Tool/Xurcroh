@@ -28,6 +28,7 @@ from xurcroh.fortress.transport import (
     encode_role_artifact,
 )
 from xurcroh.fortress.worker import FortressRoleWorker
+from xurcroh.kem import HybridKemKey
 
 
 def raw_private(key: X25519PrivateKey) -> bytes:
@@ -64,12 +65,12 @@ def test_relay_process_forwards_role_calls_and_stops_cleanly(
     for name, content in files.items():
         (tmp_path / name).write_bytes(content)
     workers: list[FortressRoleWorker] = []
-    keys: list[tuple[X25519PrivateKey, X25519PrivateKey]] = []
+    keys: list[tuple[HybridKemKey, X25519PrivateKey]] = []
     for index in range(4):
-        recipient, onion = X25519PrivateKey.generate(), X25519PrivateKey.generate()
+        recipient, onion = HybridKemKey.generate(), X25519PrivateKey.generate()
         worker = FortressRoleWorker(
-            encode_role_artifact(operation, index % 2, raw_public(recipient)),
-            raw_private(recipient),
+            encode_role_artifact(operation, index % 2, recipient.public_key),
+            recipient.to_bytes(),
             certificates=(files["server.crt"], files["ca.crt"]),
             private_key=files["server.key"],
             client_ca=files["ca.crt"],
@@ -108,7 +109,7 @@ def test_relay_process_forwards_role_calls_and_stops_cleanly(
                 index // 2,
                 index % 2,
                 worker.address,
-                raw_public(keys[index][0]),
+                keys[index][0].public_key,
                 f"cli-role-{index}",
                 RelayRoute(
                     address, worker.address, raw_public(relay_key), raw_public(keys[index][1])

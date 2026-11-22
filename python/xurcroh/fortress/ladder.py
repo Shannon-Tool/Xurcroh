@@ -8,7 +8,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from xurcroh.kem import PUBLIC_KEY_BYTES as RECIPIENT_PUBLIC_BYTES
 from xurcroh.signatures import ALGORITHM, HybridSigningKey, SignatureError, verify_hybrid
+from xurcroh.signatures import PUBLIC_KEY_BYTES as IDENTITY_PUBLIC_BYTES
 
 EVIDENCE_CONTEXT = b"xurcroh-ladder-evidence"
 
@@ -48,6 +50,8 @@ class WorkerPlacement:
     weight_index: int
     recipient_public: str
     operation_roles: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # Hybrid signing identity of the role worker; when set the client pins it.
+    identity_public: str | None = None
 
     @classmethod
     def from_mapping(cls, document: Mapping[str, Any]) -> WorkerPlacement:
@@ -76,10 +80,17 @@ class WorkerPlacement:
             weight_index=_integer(document, "weight_index"),
             recipient_public=_string(document, "recipient_public"),
             operation_roles=operation_roles,
+            identity_public=(
+                _string(document, "identity_public")
+                if document.get("identity_public") is not None
+                else None
+            ),
         )
         if worker.machine_id < 1 or worker.activation_index < 0 or worker.weight_index < 0:
             raise LadderEvidenceError("worker machine and role indexes are invalid")
-        _hex(worker.recipient_public, 64, "recipient_public")
+        _hex(worker.recipient_public, 2 * RECIPIENT_PUBLIC_BYTES, "recipient_public")
+        if worker.identity_public is not None:
+            _hex(worker.identity_public, 2 * IDENTITY_PUBLIC_BYTES, "identity_public")
         return worker
 
 

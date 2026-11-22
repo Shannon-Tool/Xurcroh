@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from Xurcroh import Xurcroh
+from xurcroh.kem import HybridKemKey
 
 
 @pytest.mark.parametrize("shares", [2, 3])
@@ -40,14 +41,6 @@ def _signed_remote_grid(
 ) -> tuple[list[dict], list]:
     """Start in-process role workers with signing identities; return the cluster and workers."""
 
-    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-    from cryptography.hazmat.primitives.serialization import (
-        Encoding,
-        NoEncryption,
-        PrivateFormat,
-        PublicFormat,
-    )
-
     from xurcroh.fortress.checkpoint import artifact_set_digest
     from xurcroh.fortress.model_compiler import compile_fortress_checkpoint
     from xurcroh.fortress.transport import encode_role_artifact
@@ -59,16 +52,16 @@ def _signed_remote_grid(
     cluster = []
     for activation_index in range(shares):
         for weight_index in range(shares):
-            private = X25519PrivateKey.generate()
+            private = HybridKemKey.generate()
             identity = HybridSigningKey.generate()
-            public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+            public = private.public_key
             artifacts = {
                 name: encode_role_artifact(operation, weight_index, public)
                 for name, operation in compiled.operations.items()
             }
             worker = FortressRoleWorker(
                 artifacts,
-                private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                private.to_bytes(),
                 certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],
@@ -170,6 +163,12 @@ def test_public_sdk_executes_remote_fortress_grid(
                 body = verify_checkpoint_signature(item)
                 assert body["calls"] > 0 and item["artifacts_pinned"] is True
             assert verify_trace(trace)["worker_checkpoints"] == shares**2
+            assert "ML-KEM-768" in trace["transport"]["session"]
+            for route in trace["transport"]["routes"]:
+                negotiated = route["negotiated"]
+                assert negotiated["key_exchange_group"] == "X25519MLKEM768"
+                assert negotiated["session_forward_secret"] is True
+                assert negotiated["session_signed_by_worker"] is True
             # The manifest names the artifacts each worker then signed for.
             assert trace["model"]["role_artifacts"] == {
                 item["worker"]: item["body"]["artifacts"] for item in checkpoints
@@ -191,13 +190,6 @@ def test_public_sdk_executes_remote_fortress_grid(
 def test_public_sdk_executes_split_operation_grids(
     tiny_llama_path: Path, tmp_path: Path, mtls_identities: dict[str, bytes]
 ) -> None:
-    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-    from cryptography.hazmat.primitives.serialization import (
-        Encoding,
-        NoEncryption,
-        PrivateFormat,
-        PublicFormat,
-    )
 
     from xurcroh.config import WorkerConfig
     from xurcroh.fortress.model_compiler import compile_fortress_checkpoint
@@ -232,8 +224,8 @@ def test_public_sdk_executes_split_operation_grids(
         for index in range(4):
             name = f"grid-{group}-{index}"
             activation_index, weight_index = divmod(index, 2)
-            private = X25519PrivateKey.generate()
-            public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+            private = HybridKemKey.generate()
+            public = private.public_key
             assignments = {
                 assignment.unit_id: assignment
                 for assignment in placement.assignments
@@ -248,7 +240,7 @@ def test_public_sdk_executes_split_operation_grids(
             }
             worker = FortressRoleWorker(
                 artifacts,
-                private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                private.to_bytes(),
                 certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],

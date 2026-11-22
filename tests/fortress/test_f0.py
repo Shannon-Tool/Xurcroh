@@ -8,13 +8,6 @@ from multiprocessing.connection import Connection
 from threading import Event
 
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import (
-    Encoding,
-    NoEncryption,
-    PrivateFormat,
-    PublicFormat,
-)
 from tests.fortress.conftest import MutualTLSIdentities
 from tests.fortress.evidence import exercise_adversarial_evidence, write_fortress_evidence
 from tests.fortress.test_combiner import build_combiner
@@ -26,6 +19,7 @@ from xurcroh.fortress.transport import (
     RoleEndpoint,
     encode_role_artifact,
 )
+from xurcroh.kem import HybridKemKey
 from xurcroh.models.dense import execute_dense_layer
 
 
@@ -64,8 +58,8 @@ def test_f0_full_model_runs_over_four_independent_processes(
     try:
         for activation_index in range(2):
             for weight_index in range(2):
-                private = X25519PrivateKey.generate()
-                public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+                private = HybridKemKey.generate()
+                public = private.public_key
                 artifacts = {
                     name: encode_role_artifact(operation, weight_index, public)
                     for name, operation in reference.operations.items()
@@ -76,7 +70,7 @@ def test_f0_full_model_runs_over_four_independent_processes(
                     target=_role_process,
                     args=(
                         artifacts,
-                        private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                        private.to_bytes(),
                         mtls_identities,
                         child_ready,
                         stop,
