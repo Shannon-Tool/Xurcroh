@@ -28,7 +28,7 @@ was signed by a different key, or if the supplied prompt or output is not the on
 | `result` | Finish reason, token counts, duration |
 | `model` | Name, revision and whether it is pinned, source format, digest of the source checkpoint files, layout digest, architecture, encodings, the repository name when the checkpoint was downloaded, and `manifest_sha256`; for Fortress models the share count, each role's pinned artifact digest (`role_artifacts`), how weight and activation shares are generated, weight and activation bit widths, operation count, expert-pruning fraction |
 | `security` | Mode, whether attestation is required, process hardening, prompt armour, memory scrubbing |
-| `transport` | Worker names; for remote Fortress models the link and session suites, frame size, cover interval, each worker's route (direct or onion, with hop count), the carrier in use (direct, tor or i2p) and operator-declared labels, per-request counters, and each worker's signed checkpoint (`worker_checkpoints`) |
+| `transport` | Worker names; for remote Fortress models the link and session suites, frame size, cover interval and mode, decoy-task rate (never which tasks were decoys), each worker's route (direct or onion, with hop count), the carrier in use (direct, tor or i2p) and operator-declared labels, per-request counters, and each worker's signed checkpoint (`worker_checkpoints`) |
 | `signer`, `signature` | Public key and signature over the canonical trace. The signature is Ed25519 and ML-DSA-65 together; both must verify |
 
 `transport.counters.fortress_verified_results` counts worker results that passed the client's

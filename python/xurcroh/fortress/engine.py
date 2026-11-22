@@ -67,6 +67,10 @@ class FortressEngine:
         self._load_lock = threading.Lock()
         self._inference_lock = threading.Lock()
         self._closed = False
+        self._decoy_stop = threading.Event()
+        self._decoy_thread: threading.Thread | None = None
+        self.decoy_task_count = 0
+        self.decoy_failure_count = 0
 
     def require_modality(self, expected: str) -> None:
         supported = {"text", "vlm"} if self.definition.modality == "vlm" else {"text"}
@@ -202,6 +206,7 @@ class FortressEngine:
         seeded_activations = self.workers[0].labels.get(
             "seeded_activations", "true"
         ).lower() not in {"0", "false", "no"}
+        constant_rate = self._cover_mode() == "constant-rate"
         runtimes: dict[tuple[str, ...], FortressGridRuntime] = {}
         clients: dict[str, FortressRoleClient] = {}
         for name, operation in operations.items():
@@ -217,6 +222,7 @@ class FortressEngine:
                     cover_interval=cover_interval,
                     seeded_activations=seeded_activations,
                     recover_role=self._recover_role,
+                    constant_rate=constant_rate,
                 )
                 runtimes[group] = runtime
                 self._grid_runtimes.append(runtime)
@@ -224,6 +230,71 @@ class FortressEngine:
                     self._grid_runtime = runtime
             clients[name] = runtime.client(operation, qualified)
         return clients
+
+    def _cover_mode(self) -> str:
+        """``additive``: cover calls at an interval on top of real calls. ``constant-rate``:
+        one call per interval, real when one is waiting and cover otherwise."""
+
+        mode = self.workers[0].labels.get("cover_mode", "additive")
+        if mode not in {"additive", "constant-rate"}:
+            raise ConfigurationError("cover_mode must be 'additive' or 'constant-rate'")
+        return mode
+
+    def _decoy_settings(self) -> dict[str, float | int] | None:
+        labels = self.workers[0].labels
+        if "decoy_interval" not in labels or self.workers[0].endpoint == "local://cpu":
+            return None
+        try:
+            interval = float(labels["decoy_interval"])
+            max_tokens = int(labels.get("decoy_max_tokens", 16))
+        except ValueError as error:
+            raise ConfigurationError(
+                "decoy_interval and decoy_max_tokens must be numbers"
+            ) from error
+        if interval <= 0 or max_tokens < 1:
+            raise ConfigurationError("decoy_interval and decoy_max_tokens must be positive")
+        return {"mean_interval_seconds": interval, "max_tokens": max_tokens}
+
+    def _decoy_loop(self, interval: float, max_tokens: int) -> None:
+        """Run whole fake requests at random times through the same code as real ones.
+
+        Gaps are exponentially distributed, so when a decoy starts says nothing about when
+        the user is active. The prompt is random tokens and the output is discarded. A
+        decoy holds the inference lock like any request, so it can delay a real one.
+        """
+
+        import secrets
+
+        random = secrets.SystemRandom()
+        while not self._decoy_stop.wait(random.expovariate(1 / interval)):
+            try:
+                vocabulary = len(self._tokenizer)
+                tokens = [random.randrange(vocabulary) for _ in range(random.randint(1, 32))]
+                text = self._tokenizer.decode(tokens, skip_special_tokens=True).strip() or "?"
+                request = CompletionRequest(
+                    model=self.name,
+                    messages=[{"role": "user", "content": text}],  # type: ignore[list-item]
+                    max_tokens=random.randint(1, max_tokens),
+                )
+                for _ in self.generate(request, cancelled=self._decoy_stop, timeout=600.0):
+                    pass
+                self.decoy_task_count += 1
+            except Exception:
+                if self._decoy_stop.is_set():
+                    return
+                # A real request meeting the same fault reports it; a decoy only counts it.
+                self.decoy_failure_count += 1
+
+    def _start_decoys(self) -> None:
+        settings = self._decoy_settings()
+        if settings is None or self._decoy_thread is not None:
+            return
+        self._decoy_thread = threading.Thread(
+            target=self._decoy_loop,
+            args=(float(settings["mean_interval_seconds"]), int(settings["max_tokens"])),
+            daemon=True,
+        )
+        self._decoy_thread.start()
 
     def _load(self) -> None:
         if self._closed:
@@ -337,6 +408,7 @@ class FortressEngine:
                     activation_bits=compiled.activation_bits,
                     grid_clients=clients or None,
                 )
+                self._start_decoys()
             except Exception:
                 self.close()
                 raise
@@ -771,6 +843,9 @@ class FortressEngine:
                 "cover_interval_seconds": float(labels.get("cover_interval", 1.0))
                 if remote
                 else None,
+                "cover_mode": self._cover_mode() if remote else None,
+                # Says that decoys run and how often; nothing records which tasks were decoys.
+                "decoy_tasks": self._decoy_settings() if remote else None,
                 "routes": routes,
             },
         }
@@ -795,6 +870,10 @@ class FortressEngine:
 
     def close(self) -> None:
         self._closed = True
+        self._decoy_stop.set()
+        thread = self._decoy_thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=30)
         try:
             for client in self._clients.values():
                 client.close()
