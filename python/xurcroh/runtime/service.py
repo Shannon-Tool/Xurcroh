@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from xurcroh import __version__
+from xurcroh.build import installed_build_digest
 from xurcroh.config import ClusterConfig, ModelRegistry, WorkerConfig
 from xurcroh.errors import (
     CapabilityError,
@@ -100,6 +101,15 @@ class RuntimeService:
             protect_process()
         self._public_log = public_log_client(cluster.security)
         self._logged_manifests: set[str] = set()
+        self._build_digest = installed_build_digest()
+        if cluster.security.require_logged_build:
+            assert self._public_log is not None
+            # Checked before any model is loaded: an unpublished client build serves nothing.
+            if self._public_log.find("build", self._build_digest) is None:
+                raise ConfigurationError(
+                    f"this client build {self._build_digest} is not in the public log; "
+                    "install a published release or disable security.require_logged_build"
+                )
         self._traces = TraceStore(cluster.security.trace_history, public_log=self._public_log)
         self._trace_origin: dict[str, str] = {"mode": "local"}
         self._model_facts: dict[str, dict[str, Any]] = {}
@@ -460,6 +470,7 @@ class RuntimeService:
                     bytes.fromhex(security.trace_log_key or "")
                 ).hexdigest(),
                 "manifest_required": security.require_logged_manifest,
+                "build_required": security.require_logged_build,
             },
         }
 
@@ -481,7 +492,7 @@ class RuntimeService:
                 **self._trace_origin,
                 "created_at": started_at,
                 "completed_at": time.time(),
-                "client": {"version": __version__},
+                "client": {"version": __version__, "build_sha256": self._build_digest},
                 "request": {
                     "kind": kind,
                     "settings": request.model_dump(
@@ -534,7 +545,7 @@ class RuntimeService:
                 **self._trace_origin,
                 "created_at": started_at,
                 "completed_at": time.time(),
-                "client": {"version": __version__},
+                "client": {"version": __version__, "build_sha256": self._build_digest},
                 "request": {
                     "kind": "chat",
                     "settings": request.model_dump(mode="json", exclude={"messages", "request_id"}),

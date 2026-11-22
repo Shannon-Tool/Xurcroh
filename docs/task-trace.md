@@ -89,6 +89,15 @@ fails loudly, when it is asked for.
   `python -m xurcroh.public_log publish --kind manifest --digest DIGEST`.
 - Release manifests can be logged and checked with the `--log-url` and `--log-key` options of
   `scripts/release.py` and `scripts/verify_release.py`.
+- Every trace names the client build that produced it (`client.build_sha256`): one digest over
+  every Python source file of the client and its native transport module. `python -m xurcroh.build`
+  prints it for an installation and `python -m xurcroh.build dist/*.whl` for the wheels of a
+  release; `scripts/release.py --log-url` publishes it as a `build` entry.
+  `security.require_logged_build` makes the client refuse to start unless its own digest is in the
+  log, and `xurcroh verify --log-url` reports whether the build a trace names was published.
+  The digest in a trace is the client's own report: modified software can report any digest. To
+  know which build is installed, compute the digest from outside the running client and compare it
+  with the log.
 
 What this does and does not give you: an inclusion proof shows the hash was in the log at that tree
 size, and a consistency proof shows a later log only appended to it. The log operator can still
@@ -161,6 +170,13 @@ limiting, quotas or billing.
   signed the handshake with its pinned identity (`session_signed_by_worker`).
 - Worker labels such as country and CPU vendor are operator declarations and are recorded under
   `declared`. A worker checkpoint (below) identifies a signing key, not a location.
+- Beside them, `observed` holds what the client saw for itself: the address and host it connected
+  to, the SHA-256 of the certificate that answered (the worker's on a direct route, the entry
+  relay's otherwise), and the fingerprint of the identity key whose checkpoint it verified.
+  `transport.observed_placement` counts the distinct values of each. With the worker label
+  `require_distinct_workers: true` the client refuses a set of workers that share a host or an
+  identity key. Distinct hosts and keys do not prove distinct operators or countries; they rule out
+  the configurations that plainly are one party.
 - Image and video traces record size, steps, strength, frames, frame rate, and the effective seed,
   and commit to the prompt, input image, mask, and encoded output. They carry the same sharing facts, routes
   and worker checkpoints as chat traces, but no per-request transport counters, and the source digest of a diffusion pipeline covers its

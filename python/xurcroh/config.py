@@ -55,6 +55,8 @@ class SecurityConfig(StrictModel):
     trace_log_token_env: str | None = None
     # Refuse to return output from a model whose manifest digest is not in that log.
     require_logged_manifest: bool = False
+    # Refuse to start unless this client's own build digest is in the public log.
+    require_logged_build: bool = False
 
     @model_validator(mode="after")
     def validate_security_downgrades(self) -> Self:
@@ -62,6 +64,8 @@ class SecurityConfig(StrictModel):
             raise ConfigurationError("trace_log_endpoint and trace_log_key must be set together")
         if self.require_logged_manifest and self.trace_log_endpoint is None:
             raise ConfigurationError("require_logged_manifest needs a trace_log_endpoint")
+        if self.require_logged_build and self.trace_log_endpoint is None:
+            raise ConfigurationError("require_logged_build needs a trace_log_endpoint")
         if self.mode != "development" and (
             self.allow_plaintext_worker_weights or self.allow_unauthenticated_transport
         ):

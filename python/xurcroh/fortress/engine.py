@@ -173,7 +173,39 @@ class FortressEngine:
             )
         if operation_name is not None and not roles:
             raise ConfigurationError(f"operation {operation_name!r} has no assigned Fortress roles")
+        self._check_distinct_workers()
         return roles
+
+    @staticmethod
+    def _host(address: str) -> str:
+        return address.rsplit(":", 1)[0].strip("[]").lower()
+
+    def _check_distinct_workers(self) -> None:
+        """With ``require_distinct_workers``, refuse workers that share a host or a key.
+
+        Two roles on one host, or answering with one identity key, are one party for the
+        purpose of the non-collusion assumption. Distinct hosts and keys do not prove
+        distinct operators; they rule out the configurations that plainly are not.
+        """
+
+        workers = [worker for worker in self.workers if worker.endpoint != "local://cpu"]
+        if not workers or workers[0].labels.get("require_distinct_workers", "").lower() not in {
+            "1",
+            "true",
+            "yes",
+        }:
+            return
+        hosts = [self._host((worker.endpoint or "").removeprefix("quic://")) for worker in workers]
+        if len(set(hosts)) != len(hosts):
+            raise ConfigurationError(
+                "require_distinct_workers is set but some Fortress workers share a host"
+            )
+        keys = [worker.labels.get("identity_public") for worker in workers]
+        if None in keys or len(set(keys)) != len(keys):
+            raise ConfigurationError(
+                "require_distinct_workers is set but some Fortress workers share an identity "
+                "key or have none"
+            )
 
     def _carried_address(self, worker: str, labels: dict[str, str], address: str) -> str:
         """The address to dial for a worker: a local carrier relay when one is configured."""
@@ -802,9 +834,29 @@ class FortressEngine:
         labels = self.workers[0].labels if self.workers else {}
         routes = []
         handshakes = self._handshakes(len(remote))
+        from xurcroh.signatures import key_fingerprint
+
+        observed: list[dict[str, str | None]] = []
         for worker in remote:
             address = (worker.endpoint or "").removeprefix("quic://")
             route = relay_route_from_labels(worker.labels, address, worker=worker.name)
+            negotiated = handshakes.get(worker.name)
+            identity = worker.labels.get("identity_public")
+            # Seen by this client rather than typed by an operator: where it connected,
+            # the certificate that answered, and the key whose checkpoint signature it
+            # verified. Through a relay or carrier the certificate is the worker's only on
+            # a direct route.
+            seen: dict[str, str | None] = {
+                "address": address,
+                "host": self._host(address),
+                "certificate_sha256": None
+                if negotiated is None
+                else negotiated["peer_certificate_sha256"],
+                "identity_sha256": None
+                if identity is None
+                else key_fingerprint(bytes.fromhex(identity)),
+            }
+            observed.append(seen)
             routes.append(
                 {
                     "worker": worker.name,
@@ -815,10 +867,15 @@ class FortressEngine:
                     else "direct",
                     "relay_hops": 0 if route is None else route.hop_count,
                     "link_peer": "worker" if route is None else "entry relay",
-                    "negotiated": handshakes.get(worker.name),
+                    "negotiated": negotiated,
                     "declared": {key: worker.provider[key] for key in sorted(worker.provider)},
+                    "observed": seen,
                 }
             )
+
+        def distinct(name: str) -> int:
+            return len({item[name] for item in observed if item[name] is not None})
+
         return {
             "sharing": {
                 "share_count": self.definition.fortress_shares,
@@ -847,6 +904,15 @@ class FortressEngine:
                 # Says that decoys run and how often; nothing records which tasks were decoys.
                 "decoy_tasks": self._decoy_settings() if remote else None,
                 "routes": routes,
+                "observed_placement": {
+                    "workers": len(routes),
+                    "distinct_addresses": distinct("address"),
+                    "distinct_hosts": distinct("host"),
+                    "distinct_identity_keys": distinct("identity_sha256"),
+                    "distinct_certificates": distinct("certificate_sha256"),
+                }
+                if remote
+                else None,
             },
         }
 

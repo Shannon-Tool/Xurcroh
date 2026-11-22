@@ -32,6 +32,7 @@ def _verify(args: argparse.Namespace) -> int:
         )
         logged = None
         live = None
+        build_logged: bool | None = None
         witnessed: list[str] = []
         if args.proof is None and (args.log_url or args.witness_key):
             raise TraceError("checking the public log or its witnesses requires --proof")
@@ -49,6 +50,9 @@ def _verify(args: argparse.Namespace) -> int:
                 # Shows the log, as served now, still contains the history this proof is from.
                 heads.append(LogClient(args.log_url, log_key).extends(proof["tree_head"]))
                 live = int(heads[-1]["tree_size"])
+                build = (document.get("client") or {}).get("build_sha256")
+                if isinstance(build, str):
+                    build_logged = LogClient(args.log_url, log_key).find("build", build) is not None
             trusted = [bytes.fromhex(key) for key in args.witness_key]
             seen = {name for head in heads for name in witnesses_of(head, trusted)}
             missing = [key_fingerprint(key) for key in trusted if key_fingerprint(key) not in seen]
@@ -67,6 +71,10 @@ def _verify(args: argparse.Namespace) -> int:
     print(f"log: {'not checked' if logged is None else f'included at tree size {logged}'}")
     if live is not None:
         print(f"public log: still holds that history, now at tree size {live}")
+    if build_logged is not None:
+        # The digest is the client's own report; this shows only that such a build was published.
+        state = "is a published build" if build_logged else "is NOT in the log"
+        print(f"client build: the build this trace names {state}")
     if witnessed:
         print("witnesses: " + ", ".join(witnessed))
     signed = report["worker_checkpoints"]
