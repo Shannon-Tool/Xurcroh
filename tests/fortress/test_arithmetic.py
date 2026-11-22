@@ -135,3 +135,56 @@ def test_low_32_bit_truncation_is_not_a_valid_field_product() -> None:
     assert verify_freivalds(activation, product, challenge)
     assert not torch.equal(product, truncated)
     assert not verify_freivalds(activation, truncated, challenge)
+
+
+def test_secure_uniform_reduces_draws_above_the_signed_range_exactly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 64-bit draw at or above 2**63 must be reduced as the unsigned value it is.
+
+    Reducing it after a signed conversion maps it to a different residue, which makes
+    some share values very slightly more likely than others.
+    """
+
+    import numpy as np
+
+    from xurcroh.fortress import arithmetic
+
+    limit = (2**64 // arithmetic.FIELD_MODULUS) * arithmetic.FIELD_MODULUS
+    draws = [0, 7, 2**63 - 1, 2**63, 2**63 + 7, limit - 1]
+    monkeypatch.setattr(
+        arithmetic.os,
+        "urandom",
+        lambda size: np.array(draws, dtype=np.uint64).tobytes()[:size],
+    )
+
+    values = arithmetic._secure_uniform((len(draws),), arithmetic.FIELD_MODULUS)
+
+    assert values.tolist() == [draw % arithmetic.FIELD_MODULUS for draw in draws]
+
+
+def test_secure_uniform_rejects_draws_that_would_bias_the_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import numpy as np
+
+    from xurcroh.fortress import arithmetic
+
+    limit = (2**64 // arithmetic.FIELD_MODULUS) * arithmetic.FIELD_MODULUS
+    batches = iter([[limit, 2**64 - 1, 5], [limit + 1, 9], [11]])
+    monkeypatch.setattr(
+        arithmetic.os,
+        "urandom",
+        lambda size: np.array(next(batches), dtype=np.uint64).tobytes()[:size],
+    )
+
+    assert arithmetic._secure_uniform((3,), arithmetic.FIELD_MODULUS).tolist() == [5, 9, 11]
+
+
+def test_secure_uniform_supports_a_power_of_two_modulus() -> None:
+    from xurcroh.fortress import arithmetic
+
+    values = arithmetic._secure_uniform((64,), arithmetic.RING_MODULUS)
+
+    assert values.shape == (64,)
+    assert bool(((values >= 0) & (values < arithmetic.RING_MODULUS)).all())
