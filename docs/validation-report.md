@@ -439,3 +439,57 @@ The two standard-suite skips are the real-network carrier tests, which run only 
 - Still open from the plan: decoy calls, verified placement labels, an in-browser verification page, checking the client's own build against the log, and post-quantum conversion of the older stage-worker, protected-media and shard-sealing paths.
 - Frontend tests, fuzzing, dependency audit, secret scan, container smoke test and the reproducible wheel build were not rerun. Hosted continuous integration is still blocked by account billing.
 
+
+## Browser verification, traffic cover, post-quantum conversion and full gate run
+
+Date: 2026-11-22. Host: one rented 16-vCPU CPU machine (no GPU), destroyed afterwards and confirmed gone. First pass at `3e20387`; the final standard-suite run at `1070fef` on a clean tree.
+
+### What was added
+
+- A second implementation of trace verification, in TypeScript, served as the manual's Verify page. It reproduces Python's canonical JSON byte for byte and is tested against traces the Python client signs.
+- Cover calls that a worker or relay cannot tell from real calls one at a time, random frame identifiers for all traffic, an optional constant-rate mode and optional decoy tasks.
+- A fix to restarting a managed role that was killed and left unreaped, or that ignores termination.
+- Hybrid ML-KEM-768/X25519 sealing for the older stage sessions, protected-media sessions and shard key envelopes, and removal of the X25519-only HPKE code. Wycheproof known answers for ML-KEM-768 decapsulation and key validation.
+- A digest naming the client build, recorded in every trace, computable from release wheels and enforceable at start; and a record of what the client observed of each worker.
+- A ProVerif model of the relayed route with the key ratchet.
+- An end-to-end test of the log, a witness and the gateway as separate HTTPS processes.
+
+### Results
+
+| Check | Result |
+|---|---|
+| Standard suite at `1070fef`, `-m 'not hardware and not slow'` | 916 passed, 0 failed, 3 skipped, 56 deselected, 83% coverage, 555.60 s |
+| Slow tests, `-m 'slow and not hardware'` | 22 passed, 0 failed, 9 skipped, 2,462.52 s |
+| `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` | Pass; 26 Rust tests |
+| Frontend `npm run check` (typecheck, lint, 60 tests, production build, content validation) | Pass |
+| `npm audit`, `pip-audit` | No known vulnerabilities |
+| Secret scan (gitleaks, 540 commits) | Pass after ignoring two false positives |
+| Fuzz smoke, 30 s each: `frame_decode`, `aead_open` | No crash (4.7 million and 0.7 million runs) |
+| Reproducible wheel build (two builds, hashes compared) | Match, at `cfdc315` |
+| Build digest of those wheels against an installation of them | Equal |
+| ProVerif, three models | All queries true (development host) |
+| Transport test and a complete model request over the real Tor network | Passed |
+| Carrier over the real I2P network | Failed: destination never became reachable |
+| Ruff, format check, strict mypy | Pass (development host) |
+
+**First standard-suite pass.** At `3e20387` the suite had 3 failures in 916. Two were defects from this work and are fixed in `1070fef`: `scripts/gpu/compile_checkpoint.sh` still generated X25519 stage identities, and a new requirement ID duplicated an existing one. The third, `test_ladder_verifier_compares_remote_tensors_and_public_sdk`, reported one streamed token where two were expected. It passed five of five times when rerun alone and passed in the final full run. Its cause is not known; treat it as an intermittent failure seen once in two full runs.
+
+**Crash recovery.** `test_managed_role_crash_restarts_and_resumes_inference`, which had failed on every rented host, passed. The cause was that a role killed with SIGKILL stays a zombie where nothing reaps it, and a zombie still answers the liveness signal the restart waited on.
+
+**Slow-suite skips.** The 9 skips are again the media-ladder tests, which need tiny diffusion pipelines that were not fetched.
+
+**Real Tor.** One onion service forwarded five ports to worker-side datagram relays on the same host. The transport test connected in 3.9 s and eight 16 KiB round trips took 1.2 to 3.1 s each. A complete chat request (tiny Llama test checkpoint, four role workers each on its own Tor circuit, one generated token, 168 role calls) took 81.6 s including model load, with no reconnection, a verified trace and four worker checkpoints. Client and onion service were on the same host, so this measures the Tor path and not a distant worker.
+
+**Real I2P.** A current upstream `i2pd` (3.0.0) ran without crashing. The router reported itself firewalled behind symmetric NAT, with a tunnel build success rate of 41 to 55%, and logged that it had no usable inbound or outbound tunnels to publish or request a lease set. Eight attempts over 35 minutes failed: six with the SAM bridge answering "LeaseSet" (destination not found), two with a QUIC handshake timeout. The I2P carrier is therefore still unproven on the real network. The failure is consistent with the host's network, but nothing here shows the carrier code is correct either.
+
+**Services.** The log, witness and gateway ran as separate processes with a real certificate on one host; a hosted request was made with an API key, countersigned by the witness and checked with `xurcroh verify` against the live log. Nothing was operated at a public address.
+
+### Not done or not tested
+
+- Attestation for Fortress role workers was not built. In `tee` mode the role worker still cannot start. It needs a per-session hardware quote bound to the handshake, and no confidential hardware is available to validate one.
+- No container image exists for the log, witness or gateway, and the worker image smoke test was not run: no host used here can run Docker.
+- Constant-rate mode and decoy tasks were tested with in-process workers only, and no outside party has studied the traffic pattern.
+- The build-digest check has not been used with a published release, because no log is operated.
+- The project operates no public log and no witness.
+- I2P on the real network, as above.
+- The 9 media-ladder slow tests, GPU and hardware tests. Hosted continuous integration is still blocked by account billing.

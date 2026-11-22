@@ -37,7 +37,7 @@ evaluation and have not been independently audited."
 | "Cover traffic that a worker cannot tell from real requests." | `tests/fortress/test_cover_traffic.py` | "Per call. In the default mode a request still adds traffic on top of the cover rate." |
 | "Optional constant-rate mode: one frame per time slot whether or not you are prompting." | Trace field `cover_mode` | "Off by default, and slow." |
 | "Optional decoy requests at random times." | Trace field `decoy_tasks` | "Off by default." |
-| "Workers can be reached through Tor." | Trace field `carrier` on each route | "This hides your address from the worker side. It does not make you anonymous, and it is slow: see the measured latency in the validation report." |
+| "Workers can be reached through Tor." | Trace field `carrier` on each route | "This hides your address from the worker side. It does not make you anonymous, and it is slow: about 1 to 4 seconds per network round trip in our one measurement." |
 | "The client records what it saw of each worker and can refuse workers that share a host or a key." | Trace field `observed` on each route | "Distinct hosts and keys do not prove distinct operators or countries; those remain the operator's declaration." |
 
 ### Cryptography
