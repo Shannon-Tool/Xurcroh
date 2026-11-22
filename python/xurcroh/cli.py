@@ -74,6 +74,12 @@ def _verify(args: argparse.Namespace) -> int:
         "worker checkpoints: "
         + ("none; workers signed nothing" if signed is None else f"{signed} verified")
     )
+    if document.get("mode") == "hosted":
+        print(
+            "note: a hosted gateway produced this trace. The checks above show it was not "
+            "changed afterwards; what it says about the model and settings is the "
+            "operator's statement, not something you ran."
+        )
     print("\n".join(describe_trace(document)))
     return 0
 

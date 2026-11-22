@@ -47,6 +47,7 @@ from xurcroh.runtime.remote import RemoteOpenAIEngine
 from xurcroh.runtime.stage import DenseStageEngine
 from xurcroh.runtime.stream import ManagedStream
 from xurcroh.runtime.vlm import LocalVisionLanguageEngine
+from xurcroh.signatures import HybridSigningKey
 from xurcroh.types import (
     ChatChoice,
     ChatChunkChoice,
@@ -100,6 +101,7 @@ class RuntimeService:
         self._public_log = public_log_client(cluster.security)
         self._logged_manifests: set[str] = set()
         self._traces = TraceStore(cluster.security.trace_history, public_log=self._public_log)
+        self._trace_origin: dict[str, str] = {"mode": "local"}
         self._model_facts: dict[str, dict[str, Any]] = {}
         self._message_armour: MessageArmour | None = None
         if cluster.security.prompt_armour:
@@ -340,6 +342,40 @@ class RuntimeService:
             security_mode=self.cluster.security.mode,
         )
 
+    def configure_traces(
+        self,
+        *,
+        mode: str,
+        assurance: str | None = None,
+        signing_key: HybridSigningKey | None = None,
+    ) -> None:
+        """Say where this client runs, before it records any trace.
+
+        ``local`` means the requester runs this client. ``hosted`` means an operator
+        runs it for the requester, and ``assurance`` must then say on what basis the
+        requester can rely on the trace. A fixed ``signing_key`` lets requesters pin
+        the trace key across restarts.
+        """
+
+        if mode not in {"local", "hosted"}:
+            raise ConfigurationError("trace mode must be local or hosted")
+        if (mode == "hosted") != (assurance is not None):
+            raise ConfigurationError("a hosted client must state its assurance; a local one none")
+        if self._traces.recorded:
+            raise ConfigurationError("trace settings cannot change after a trace was recorded")
+        self._trace_origin = (
+            {"mode": mode}
+            if assurance is None
+            else {
+                "mode": mode,
+                "assurance": assurance,
+            }
+        )
+        if signing_key is not None:
+            self._traces = TraceStore(
+                self.cluster.security.trace_history, signing_key, public_log=self._public_log
+            )
+
     def trace(self, task_id: str) -> dict[str, Any]:
         return self._traces.get(task_id)
 
@@ -442,7 +478,7 @@ class RuntimeService:
         self._traces.record(
             {
                 "task_id": execution.request_id,
-                "mode": "local",
+                **self._trace_origin,
                 "created_at": started_at,
                 "completed_at": time.time(),
                 "client": {"version": __version__},
@@ -495,7 +531,7 @@ class RuntimeService:
         self._traces.record(
             {
                 "task_id": task_id,
-                "mode": "local",
+                **self._trace_origin,
                 "created_at": started_at,
                 "completed_at": time.time(),
                 "client": {"version": __version__},

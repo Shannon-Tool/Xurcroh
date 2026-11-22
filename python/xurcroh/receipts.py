@@ -231,6 +231,8 @@ def describe_trace(document: Mapping[str, Any]) -> list[str]:
     """Render the facts of a verified trace as plain lines for a person to read."""
 
     lines = [f"task: {document.get('task_id')}", f"mode: {document.get('mode')}"]
+    if document.get("assurance") is not None:
+        lines.append(f"assurance: {document['assurance']}")
     for section in ("model", "security", "transport"):
         for name, value in sorted(dict(document.get(section, {})).items()):
             if name == "worker_checkpoints" and value is not None:
@@ -282,6 +284,10 @@ class TraceStore:
     @property
     def public(self) -> bool:
         return self._public_log is not None
+
+    @property
+    def recorded(self) -> bool:
+        return self._log.size > 0
 
     def proof(self, task_id: str) -> dict[str, Any]:
         """Inclusion proof for a held trace against a signed tree head.
