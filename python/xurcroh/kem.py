@@ -7,6 +7,9 @@ library. Recovering a sealed message requires breaking both key exchanges.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hpke
 from cryptography.hazmat.primitives.asymmetric.mlkem import MLKEM768PrivateKey, MLKEM768PublicKey
@@ -86,3 +89,32 @@ def open_sealed(key: HybridKemKey, info: bytes, sealed: bytes) -> bytes:
         return _SUITE.decrypt(sealed, key._private, info)
     except (InvalidTag, ValueError) as error:
         raise KemError("sealed message does not open") from error
+
+
+def write_kem_key(path: Path) -> HybridKemKey:
+    """Create a new key file readable only by its owner; refuse to overwrite one."""
+
+    key = HybridKemKey.generate()
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as handle:
+        handle.write(key.to_bytes())
+    return key
+
+
+def main(argv: list[str] | None = None) -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=f"Create a {ALGORITHM} key (recipient or onion), or print its public key"
+    )
+    parser.add_argument("key", type=Path, help="private key file")
+    parser.add_argument("--generate", action="store_true", help="create the key file")
+    args = parser.parse_args(argv)
+    key = (
+        write_kem_key(args.key) if args.generate else HybridKemKey.from_bytes(args.key.read_bytes())
+    )
+    print(key.public_key.hex())
+
+
+if __name__ == "__main__":
+    main()

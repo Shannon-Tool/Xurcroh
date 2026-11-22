@@ -6,7 +6,9 @@ import threading
 from typing import Any
 
 from xurcroh.errors import ProtocolError
+from xurcroh.fortress.onion import unwrap_onion
 from xurcroh.fortress.transport import MutualTLSIdentity, RelayHop, RelayRoute
+from xurcroh.kem import HybridKemKey
 
 __all__ = ["ObliviousRelay", "RelayHop", "RelayRoute"]
 
@@ -28,7 +30,7 @@ class ObliviousRelay:
         if not allowed_workers:
             raise ValueError("oblivious relay requires an explicit worker allowlist")
         self._quic = xurcroh_quic
-        self._onion_private_key = onion_private_key
+        self._onion_key = HybridKemKey.from_bytes(onion_private_key)
         self._allowed_workers = allowed_workers
         self._upstream_identity = upstream_identity
         self.server = xurcroh_quic.TensorServer.bind_mutual(
@@ -88,7 +90,7 @@ class ObliviousRelay:
                     return
                 if kind != "tensor" or dtype != "u8":
                     raise ProtocolError("oblivious relay accepts only encrypted tensor frames")
-                next_hop, _, _, remaining = self._quic.unwrap_onion(self._onion_private_key, packet)
+                next_hop, remaining = unwrap_onion(self._onion_key, packet)
                 if upstream is None:
                     upstream = self._connect_upstream(next_hop)
                 upstream.send(

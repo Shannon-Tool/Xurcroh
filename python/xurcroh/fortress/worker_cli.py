@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 
 from xurcroh.fortress.worker import FortressRoleWorker
+from xurcroh.kem import PRIVATE_KEY_BYTES
 from xurcroh.memory_host import protect_process
 
 
@@ -58,7 +59,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--onion-key",
         type=Path,
-        help="raw 32-byte X25519 key; when set, only onion-wrapped relay traffic is accepted",
+        help="hybrid onion key created with python -m xurcroh.kem; when set, only "
+        "onion-wrapped relay traffic is accepted",
     )
     parser.add_argument(
         "--identity-key",
@@ -73,8 +75,8 @@ def main(argv: list[str] | None = None) -> None:
     try:
         protect_process(lock_memory=args.lock_memory)
         onion_key = None if args.onion_key is None else args.onion_key.read_bytes()
-        if onion_key is not None and len(onion_key) != 32:
-            raise ValueError("worker onion key must be exactly 32 bytes")
+        if onion_key is not None and len(onion_key) != PRIVATE_KEY_BYTES:
+            raise ValueError(f"worker onion key must be exactly {PRIVATE_KEY_BYTES} bytes")
         worker = FortressRoleWorker(
             load_role_artifacts(args.artifact_dir),
             args.recipient_key.read_bytes(),

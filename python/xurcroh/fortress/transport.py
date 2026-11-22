@@ -34,6 +34,7 @@ from xurcroh.fortress.checkpoint import (
 )
 from xurcroh.fortress.compiler import CompiledOperation
 from xurcroh.fortress.grid import RoleExecutionError, WeightShare
+from xurcroh.fortress.onion import seal_onion
 from xurcroh.fortress.session import ClientRoleSession, channel_binding
 from xurcroh.fortress.storage import DispersedShard, reconstruct_shard
 from xurcroh.kem import PUBLIC_KEY_BYTES as RECIPIENT_PUBLIC_BYTES
@@ -132,10 +133,13 @@ def relay_route_from_labels(
         if not isinstance(document, list) or not document:
             raise ValueError("relay_path must list at least one hop")
         hops = [RelayHop(str(hop["address"]), bytes.fromhex(hop["public_key"])) for hop in document]
-        if len(worker_key) != 32 or any(
-            len(hop.public_key) != 32 or not hop.address for hop in hops
+        if len(worker_key) != RECIPIENT_PUBLIC_BYTES or any(
+            len(hop.public_key) != RECIPIENT_PUBLIC_BYTES or not hop.address for hop in hops
         ):
-            raise ValueError("onion keys must be 32 bytes and hop addresses non-empty")
+            raise ValueError(
+                f"onion keys must be {RECIPIENT_PUBLIC_BYTES} bytes (X25519 with ML-KEM-768) "
+                "and hop addresses non-empty"
+            )
     except (KeyError, TypeError, ValueError) as error:
         raise ConfigurationError(
             f"worker {worker} has an invalid onion relay route: {error}"
@@ -634,12 +638,7 @@ class _RoleTransport:
 
         packet = pad_packet(inner, self._frame_bytes)
         if self.role.relay is not None:
-            packet = self._quic.seal_onion(
-                self.role.relay.onion_hops(),
-                secrets.token_bytes(32),
-                0,
-                packet,
-            )[0]
+            packet = seal_onion(self.role.relay.onion_hops(), packet)
         sent = len(
             self._quic.encode_frame(
                 request_hash, 0, sequence, "tensor", "u8", [len(packet)], packet

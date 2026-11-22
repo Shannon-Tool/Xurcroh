@@ -22,6 +22,7 @@ from xurcroh.fortress.checkpoint import (
     sign_checkpoint,
 )
 from xurcroh.fortress.native import canonical_field_words
+from xurcroh.fortress.onion import unwrap_onion
 from xurcroh.fortress.session import (
     HANDSHAKE_MAGIC,
     RoleSessionStore,
@@ -85,7 +86,9 @@ class FortressRoleWorker:
             raise ValueError("rotation interval must be positive")
         self._rotation_interval = rotation_interval
         self._quic = xurcroh_quic
-        self._onion_private_key = onion_private_key
+        self._onion_key = (
+            None if onion_private_key is None else kem.HybridKemKey.from_bytes(onion_private_key)
+        )
         serialized = {"operation": artifacts} if isinstance(artifacts, bytes) else artifacts
         if not serialized:
             raise ValueError("Fortress role worker requires at least one operation")
@@ -302,10 +305,8 @@ class FortressRoleWorker:
                         connection.close()
                         return
                     continue
-                if kind == "tensor" and self._onion_private_key is not None:
-                    next_hop, _, _, packet = self._quic.unwrap_onion(
-                        self._onion_private_key, packet
-                    )
+                if kind == "tensor" and self._onion_key is not None:
+                    next_hop, packet = unwrap_onion(self._onion_key, packet)
                     if next_hop:
                         raise ProtocolError("worker received an onion layer for another hop")
                     shape = [len(packet)]
@@ -318,9 +319,7 @@ class FortressRoleWorker:
                     raise ProtocolError("Fortress role expects a fixed-size encrypted frame")
                 packet = unpad_packet(packet, self._frame_bytes)
                 if packet.startswith(HANDSHAKE_MAGIC):
-                    binding = channel_binding(
-                        connection, relayed=self._onion_private_key is not None
-                    )
+                    binding = channel_binding(connection, relayed=self._onion_key is not None)
                     session_id, reply = self.sessions.accept(packet, binding)
                     with self._lock:
                         self._active_sessions.add(session_id)

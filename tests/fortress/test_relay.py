@@ -4,13 +4,6 @@ from dataclasses import replace
 
 import pytest
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import (
-    Encoding,
-    NoEncryption,
-    PrivateFormat,
-    PublicFormat,
-)
 from tests.fortress.conftest import MutualTLSIdentities
 
 from xurcroh.errors import ProtocolError
@@ -39,8 +32,8 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
         private_key=mtls_identities["client_key"],
         pinned_ca=mtls_identities["ca"],
     )
-    relay_private = X25519PrivateKey.generate()
-    relay_public = relay_private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    relay_private = HybridKemKey.generate()
+    relay_public = relay_private.public_key
     workers: list[FortressRoleWorker] = []
     routes: list[RelayRoute] = []
     roles: list[RoleEndpoint] = []
@@ -48,7 +41,7 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
         for weight_index in range(2):
             signing_key = HybridSigningKey.generate()
             recipient = HybridKemKey.generate()
-            onion_private = X25519PrivateKey.generate()
+            onion_private = HybridKemKey.generate()
             artifact = encode_role_artifact(
                 operation,
                 weight_index,
@@ -60,9 +53,7 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
                 certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],
-                onion_private_key=onion_private.private_bytes(
-                    Encoding.Raw, PrivateFormat.Raw, NoEncryption()
-                ),
+                onion_private_key=onion_private.to_bytes(),
                 allow_unattested=True,
                 identity_key=signing_key.to_bytes(),
             )
@@ -72,9 +63,7 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
                 relay_address="",
                 worker_address=worker.address,
                 relay_public_key=relay_public,
-                worker_public_key=onion_private.public_key().public_bytes(
-                    Encoding.Raw, PublicFormat.Raw
-                ),
+                worker_public_key=onion_private.public_key,
             )
             routes.append(route)
             roles.append(
@@ -90,7 +79,7 @@ def test_oblivious_relay_forwards_four_exact_role_calls(
                 )
             )
     relay = ObliviousRelay(
-        relay_private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+        relay_private.to_bytes(),
         certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
         private_key=mtls_identities["server_key"],
         client_ca=mtls_identities["ca"],
@@ -126,11 +115,11 @@ def test_three_relay_chain_hides_worker_from_entry_and_client_from_exit(
 ) -> None:
     from xurcroh.fortress.transport import RelayHop
 
-    def raw_private(key: X25519PrivateKey) -> bytes:
-        return key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+    def raw_private(key: HybridKemKey) -> bytes:
+        return key.to_bytes()
 
-    def raw_public(key: X25519PrivateKey) -> bytes:
-        return key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    def raw_public(key: HybridKemKey) -> bytes:
+        return key.public_key
 
     operation = compile_operation(
         torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
@@ -146,10 +135,10 @@ def test_three_relay_chain_hides_worker_from_entry_and_client_from_exit(
         "client_ca": mtls_identities["ca"],
     }
     workers: list[FortressRoleWorker] = []
-    worker_keys: list[tuple[X25519PrivateKey, X25519PrivateKey]] = []
+    worker_keys: list[tuple[HybridKemKey, HybridKemKey]] = []
     for _activation_index in range(2):
         for weight_index in range(2):
-            recipient, onion = HybridKemKey.generate(), X25519PrivateKey.generate()
+            recipient, onion = HybridKemKey.generate(), HybridKemKey.generate()
             worker = FortressRoleWorker(
                 encode_role_artifact(operation, weight_index, recipient.public_key),
                 recipient.to_bytes(),
@@ -160,7 +149,7 @@ def test_three_relay_chain_hides_worker_from_entry_and_client_from_exit(
             worker.start()
             workers.append(worker)
             worker_keys.append((recipient, onion))
-    relay_keys = [X25519PrivateKey.generate() for _ in range(3)]
+    relay_keys = [HybridKemKey.generate() for _ in range(3)]
     exit_relay = ObliviousRelay(
         raw_private(relay_keys[2]),
         upstream_identity=identity,
@@ -226,27 +215,27 @@ def test_relay_route_is_built_from_worker_labels() -> None:
     from xurcroh.errors import ConfigurationError
     from xurcroh.fortress.transport import relay_route_from_labels
 
-    hops = '[{"address":"10.0.0.1:9000","public_key":"' + "11" * 32 + '"},'
-    hops += '{"address":"10.0.0.2:9000","public_key":"' + "22" * 32 + '"}]'
-    labels = {"onion_public": "33" * 32, "relay_path": hops}
+    hops = '[{"address":"10.0.0.1:9000","public_key":"' + "11" * 1216 + '"},'
+    hops += '{"address":"10.0.0.2:9000","public_key":"' + "22" * 1216 + '"}]'
+    labels = {"onion_public": "33" * 1216, "relay_path": hops}
 
     route = relay_route_from_labels(labels, "10.0.0.9:9444", worker="w")
 
     assert route is not None
     assert route.onion_hops() == [
-        (bytes.fromhex("11" * 32), "quic://10.0.0.2:9000"),
-        (bytes.fromhex("22" * 32), "quic://10.0.0.9:9444"),
-        (bytes.fromhex("33" * 32), ""),
+        (bytes.fromhex("11" * 1216), "quic://10.0.0.2:9000"),
+        (bytes.fromhex("22" * 1216), "quic://10.0.0.9:9444"),
+        (bytes.fromhex("33" * 1216), ""),
     ]
     assert route.relay_address == "10.0.0.1:9000"
     assert relay_route_from_labels({}, "10.0.0.9:9444", worker="w") is None
     for broken in (
-        {"onion_public": "33" * 32},
+        {"onion_public": "33" * 1216},
         {"relay_path": hops},
-        {"onion_public": "33" * 32, "relay_path": "[]"},
-        {"onion_public": "33" * 31, "relay_path": hops},
-        {"onion_public": "33" * 32, "relay_path": '[{"address":"x"}]'},
-        {"onion_public": "33" * 32, "relay_path": "not json"},
+        {"onion_public": "33" * 1216, "relay_path": "[]"},
+        {"onion_public": "33" * 1215, "relay_path": hops},
+        {"onion_public": "33" * 1216, "relay_path": '[{"address":"x"}]'},
+        {"onion_public": "33" * 1216, "relay_path": "not json"},
     ):
         with pytest.raises(ConfigurationError, match="relay"):
             relay_route_from_labels(broken, "10.0.0.9:9444", worker="w")
@@ -260,11 +249,11 @@ def test_public_sdk_generates_through_a_two_relay_onion_path(
     from Xurcroh import Xurcroh
     from xurcroh.fortress.model_compiler import compile_fortress_checkpoint
 
-    def raw_private(key: X25519PrivateKey) -> bytes:
-        return key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+    def raw_private(key: HybridKemKey) -> bytes:
+        return key.to_bytes()
 
-    def raw_public(key: X25519PrivateKey) -> bytes:
-        return key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    def raw_public(key: HybridKemKey) -> bytes:
+        return key.public_key
 
     compiled = compile_fortress_checkpoint(tiny_llama_path, seed=731, share_count=2)
     identity = MutualTLSIdentity(
@@ -283,7 +272,7 @@ def test_public_sdk_generates_through_a_two_relay_onion_path(
     cluster: list[dict[str, object]] = []
     for activation_index in range(2):
         for weight_index in range(2):
-            recipient, onion = HybridKemKey.generate(), X25519PrivateKey.generate()
+            recipient, onion = HybridKemKey.generate(), HybridKemKey.generate()
             worker = FortressRoleWorker(
                 {
                     name: encode_role_artifact(operation, weight_index, recipient.public_key)
@@ -313,7 +302,7 @@ def test_public_sdk_generates_through_a_two_relay_onion_path(
                     },
                 }
             )
-    keys = [X25519PrivateKey.generate(), X25519PrivateKey.generate()]
+    keys = [HybridKemKey.generate(), HybridKemKey.generate()]
     exit_relay = ObliviousRelay(
         raw_private(keys[1]),
         upstream_identity=identity,
