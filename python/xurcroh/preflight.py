@@ -75,6 +75,7 @@ def ensure_checkpoint(name: str, definition: ModelDefinition) -> Path:
         raise ConfigurationError(
             f"cannot download model {name!r} from {definition.path!r}: {error}"
         ) from error
+    definition.repository = definition.path
     definition.path = str(resolved)
     definition.revision = revision
     return resolved

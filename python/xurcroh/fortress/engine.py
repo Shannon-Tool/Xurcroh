@@ -727,6 +727,9 @@ class FortressEngine:
                 "activation_bits": None if compiled is None else compiled.activation_bits,
                 "operations": len(self._clients) if compiled is None else len(compiled.operations),
                 "reap_keep_fraction": self.definition.reap_keep_fraction,
+                "role_artifacts": {
+                    worker.name: worker.labels.get("artifact_digest") for worker in remote
+                },
             },
             "transport": {
                 "link": "QUIC, TLS 1.3, mutual certificates" if remote else "in-process",

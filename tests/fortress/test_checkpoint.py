@@ -258,3 +258,34 @@ def test_checkpoint_name_cannot_be_used_for_an_operation(
             client_ca=mtls_identities["ca"],
             allow_unattested=True,
         )
+
+
+def test_trace_verification_rejects_a_checkpoint_for_other_artifacts_than_the_manifest() -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from xurcroh.fortress.checkpoint import open_checkpoint, sign_checkpoint
+    from xurcroh.receipts import TraceError, model_manifest_digest, sign_trace, verify_trace
+
+    key = HybridSigningKey.generate()
+    transcript = SessionTranscript("session")
+    item = open_checkpoint(
+        sign_checkpoint(key, transcript, artifacts="a" * 64, weight_index=0, nonce=bytes(32)),
+        worker="w",
+        identity_public=key.public_key,
+        transcript=transcript,
+        weight_index=0,
+        nonce=bytes(32),
+        expected_artifacts=None,
+    )
+
+    def trace(expected: str) -> dict:
+        model: dict = {"role_artifacts": {"w": expected}}
+        model["manifest_sha256"] = model_manifest_digest(model)
+        return sign_trace(
+            {"task_id": "t", "model": model, "transport": {"worker_checkpoints": [item]}},
+            Ed25519PrivateKey.generate(),
+        )
+
+    assert verify_trace(trace("a" * 64))["worker_checkpoints"] == 1
+    with pytest.raises(TraceError, match="artifacts"):
+        verify_trace(trace("b" * 64))

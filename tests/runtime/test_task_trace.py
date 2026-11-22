@@ -197,3 +197,25 @@ def test_trace_hash_is_anchored_in_an_append_only_log(tiny_model_path: Path) -> 
         verify_trace_proof(traces[0], proofs[1], log_key=log_key)
     with pytest.raises(TraceError, match="log"):
         verify_trace_proof(traces[0], proofs[0], log_key=bytes(32))
+
+
+def test_trace_binds_the_model_to_one_manifest_digest(tiny_model_path: Path) -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from xurcroh.receipts import model_manifest_digest, sign_trace
+
+    with client_for(tiny_model_path) as client:
+        response = client.chat.completions.create(model="tiny", messages=MESSAGES, max_tokens=1)
+        trace = client.tasks.trace(response.execution.request_id)
+
+    model = trace["model"]
+    assert model["repository"] is None  # a local checkpoint has no repository name
+    assert model["manifest_sha256"] == model_manifest_digest(model)
+    for name in ("revision", "source_digest", "source_format", "share_count", "weight_bits"):
+        assert model_manifest_digest({**model, name: "changed"}) != model["manifest_sha256"], name
+    # Even a trace re-signed by someone else cannot pair the digest with other model facts.
+    forged = sign_trace(
+        {**trace, "model": {**model, "source_format": "gguf"}}, Ed25519PrivateKey.generate()
+    )
+    with pytest.raises(TraceError, match="manifest"):
+        verify_trace(forged)

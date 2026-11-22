@@ -25,7 +25,14 @@ from xurcroh.fortress.prompt_armour import ArmouredMessages, MessageArmour, Prom
 from xurcroh.memory_host import protect_process
 from xurcroh.preflight import CheckpointPreflight, preflight_checkpoint
 from xurcroh.provisioning import provision_cluster_sync
-from xurcroh.receipts import SAMPLER, TraceStore, canonical_media, canonical_messages, commit
+from xurcroh.receipts import (
+    SAMPLER,
+    TraceStore,
+    canonical_media,
+    canonical_messages,
+    commit,
+    model_manifest_digest,
+)
 from xurcroh.requests import CompletionRequest, ImageGenerationRequest, VideoGenerationRequest
 from xurcroh.runtime.diffusion import LocalDiffusionEngine
 from xurcroh.runtime.dit_stage import CompiledDiTStageEngine
@@ -332,6 +339,7 @@ class RuntimeService:
             definition = self.models.get(name)
             facts = {
                 "name": name,
+                "repository": definition.repository,
                 "revision": definition.revision,
                 "engine": engine.engine_name,
                 "identity": "checked by this client against the source checkpoint",
@@ -362,6 +370,11 @@ class RuntimeService:
             with self._lock:
                 self._model_facts[name] = facts
         return facts
+
+    def _model_section(self, name: str, engine: Any, split: dict[str, Any]) -> dict[str, Any]:
+        model = {**self._facts(name, engine), **split.get("sharing", {})}
+        model["manifest_sha256"] = model_manifest_digest(model)
+        return model
 
     def _security_facts(self) -> dict[str, Any]:
         security = self.cluster.security
@@ -413,7 +426,7 @@ class RuntimeService:
                     "items": len(response.data),
                     "duration_ms": execution.duration_ms,
                 },
-                "model": {**self._facts(request.model, engine), **split.get("sharing", {})},
+                "model": self._model_section(request.model, engine, split),
                 "security": self._security_facts(),
                 "transport": {
                     "workers": execution.worker_ids,
@@ -462,7 +475,7 @@ class RuntimeService:
                     "completion_tokens": summary.completion_tokens,
                     "duration_ms": summary.duration_ms,
                 },
-                "model": {**self._facts(request.model, engine), **split.get("sharing", {})},
+                "model": self._model_section(request.model, engine, split),
                 "security": self._security_facts(),
                 "transport": {
                     "workers": getattr(engine, "worker_ids", [engine.worker_id]),
