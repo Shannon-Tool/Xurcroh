@@ -60,6 +60,11 @@ def main(argv: list[str] | None = None) -> None:
         type=Path,
         help="raw 32-byte X25519 key; when set, only onion-wrapped relay traffic is accepted",
     )
+    parser.add_argument(
+        "--identity-key",
+        type=Path,
+        help="hybrid signing key; when set, the worker signs session checkpoints on request",
+    )
     parser.add_argument("--exit-status-file", type=Path)
     parser.add_argument("--ready-file", type=Path)
     parser.add_argument("--pid-file", type=Path)
@@ -80,6 +85,7 @@ def main(argv: list[str] | None = None) -> None:
             device=args.device,
             allow_unattested=args.allow_unattested,
             onion_private_key=onion_key,
+            identity_key=None if args.identity_key is None else args.identity_key.read_bytes(),
         )
         stopped = threading.Event()
 

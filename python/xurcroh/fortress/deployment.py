@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import shlex
@@ -26,6 +27,7 @@ from cryptography.hazmat.primitives.serialization import (
 
 from xurcroh.config import ClusterConfig, GPUConfig, ModelDefinition, WorkerConfig
 from xurcroh.errors import ClusterUnavailableError, ConfigurationError
+from xurcroh.fortress.checkpoint import artifact_set_digest_from_hashes
 from xurcroh.fortress.compiler import CompiledOperation
 from xurcroh.fortress.media_adapter import MediaArchitectureAdapter
 from xurcroh.fortress.media_components import (
@@ -48,6 +50,7 @@ from xurcroh.fortress.tls import generate_mutual_tls
 from xurcroh.fortress.transport import encode_role_artifact
 from xurcroh.fortress.worker_cli import artifact_file_name
 from xurcroh.preflight import detect_modality, ensure_checkpoint, preflight_checkpoint
+from xurcroh.signatures import HybridSigningKey
 
 REMOTE_ROOT = "/tmp"  # noqa: S108
 GIT = shutil.which("git")
@@ -200,6 +203,8 @@ class RoleDeployment:
     weight_index: int
     recipient_public: str
     recipient_key: Path
+    identity_public: str
+    identity_key: Path
     package: Path
     service_name: str
     port_number: int
@@ -227,6 +232,7 @@ class FortressDeployment:
         self._deployment_id = uuid.uuid4().hex
         self._remote_root = f"{REMOTE_ROOT}/xurcroh-fortress-{self._deployment_id}"
         self._roles: list[RoleDeployment] = []
+        self._artifact_hashes: dict[str, dict[str, str]] = {}
         self._workers: dict[str, list[WorkerConfig]] = {}
         self._placements: dict[str, PlacementMap] = {}
         self._role_estimates: dict[str, int] = {}
@@ -379,6 +385,9 @@ class FortressDeployment:
                     key_path,
                     private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
                 )
+                identity = HybridSigningKey.generate()
+                identity_path = model_root / f"identity-{index}.key"
+                self._write_secret(identity_path, identity.to_bytes())
                 model_roles.append(
                     RoleDeployment(
                         model=name,
@@ -388,6 +397,8 @@ class FortressDeployment:
                         weight_index=first_assignment.weight_share,
                         recipient_public=public.hex(),
                         recipient_key=key_path,
+                        identity_public=identity.public_key.hex(),
+                        identity_key=identity_path,
                         package=model_root / f"role-{index}",
                         service_name=f"model-{model_index}-{worker.name}",
                         port_number=0,
@@ -413,6 +424,9 @@ class FortressDeployment:
                     )
                     self._write_secret(
                         role.package / f"{artifact_file_name(operation_name)}.json", encoded
+                    )
+                    self._artifact_hashes.setdefault(role.service_name, {})[operation_name] = (
+                        hashlib.sha256(encoded).hexdigest()
                     )
 
             if definition.modality in {"image", "video"}:
@@ -494,6 +508,8 @@ class FortressDeployment:
             role.worker, [role.package], str(role_root / "artifacts"), recursive=True
         )
         self._executor.upload(role.worker, [role.recipient_key], str(role_root / "recipient.key"))
+        # Kept on the role's host so a restarted worker signs with the same identity.
+        self._executor.upload(role.worker, [role.identity_key], str(role_root / "identity.key"))
         tls = self._workspace / "tls"
         self._executor.upload(
             role.worker,
@@ -502,9 +518,11 @@ class FortressDeployment:
         )
         self._executor.run(
             role.worker,
-            f"chmod 600 {remote}/recipient.key {remote}/tls/{shlex.quote(role.service_name)}.key",
+            f"chmod 600 {remote}/recipient.key {remote}/identity.key "
+            f"{remote}/tls/{shlex.quote(role.service_name)}.key",
         )
         role.recipient_key.unlink()
+        role.identity_key.unlink()
 
     def _start_role(self, role: RoleDeployment) -> None:
         assert self._executor is not None
@@ -528,6 +546,7 @@ class FortressDeployment:
             "LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:"
             f"/usr/local/cuda/lib64 {python} -m xurcroh.fortress.worker_cli "
             f"--artifact-dir {remote}/artifacts --recipient-key {remote}/recipient.key "
+            f"--identity-key {remote}/identity.key "
             f"--certificate {remote}/tls/{service}.crt --private-key {remote}/tls/{service}.key "
             f"--ca {remote}/tls/ca.crt --host 0.0.0.0 --port {role.port} --device {device} "
             + ("--allow-unattested " if self.cluster.security.mode != "tee" else "")
@@ -587,6 +606,10 @@ class FortressDeployment:
                 "activation_index": str(role.activation_index),
                 "weight_index": str(role.weight_index),
                 "recipient_public": role.recipient_public,
+                "identity_public": role.identity_public,
+                "artifact_digest": artifact_set_digest_from_hashes(
+                    self._artifact_hashes.get(role.service_name, {})
+                ),
                 "client_certificate_path": str(tls / "client.crt"),
                 "client_key_path": str(tls / "client.key"),
                 "ca_path": str(tls / "ca.crt"),

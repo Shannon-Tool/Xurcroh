@@ -69,6 +69,7 @@ def test_worker_close_uses_one_global_connection_deadline(
     worker._lock = threading.Lock()
     worker._requests = {}
     worker._session_completed = {}
+    worker._transcripts = {}
     worker._active_sessions = set()
     worker.sessions = Sessions()
     worker._cuda_weights = {}
@@ -120,3 +121,36 @@ def test_worker_cli_requires_onion_wrapped_traffic_when_given_an_onion_key(
     (tmp_path / "onion").write_bytes(b"short")
     with pytest.raises(ValueError, match="32 bytes"):
         worker_cli.main([*arguments, "--onion-key", str(tmp_path / "onion")])
+
+
+def test_worker_cli_passes_the_identity_key_to_the_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xurcroh.fortress import worker_cli
+    from xurcroh.signatures import HybridSigningKey
+
+    captured: dict[str, object] = {}
+
+    def fake_worker(*_arguments: object, **options: object) -> None:
+        captured.update(options)
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(worker_cli, "FortressRoleWorker", fake_worker)
+    monkeypatch.setattr(worker_cli, "protect_process", lambda *, lock_memory=False: None)
+    monkeypatch.setattr(worker_cli, "load_role_artifacts", lambda _directory: {"op": b"x"})
+    for name in ("recipient", "certificate", "key", "ca"):
+        (tmp_path / name).write_bytes(name.encode())
+    identity = HybridSigningKey.generate().to_bytes()
+    (tmp_path / "identity").write_bytes(identity)
+    arguments = ["--artifact-dir", str(tmp_path), "--recipient-key", str(tmp_path / "recipient")]
+    arguments += ["--certificate", str(tmp_path / "certificate"), "--ca", str(tmp_path / "ca")]
+    arguments += ["--private-key", str(tmp_path / "key")]
+
+    with pytest.raises(RuntimeError, match="stop"):
+        worker_cli.main([*arguments, "--identity-key", str(tmp_path / "identity")])
+    assert captured["identity_key"] == identity
+
+    captured.clear()
+    with pytest.raises(RuntimeError, match="stop"):
+        worker_cli.main(arguments)
+    assert captured["identity_key"] is None
