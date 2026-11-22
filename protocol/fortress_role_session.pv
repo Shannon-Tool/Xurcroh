@@ -1,0 +1,110 @@
+(* Fortress role session: forward-secret, signed establishment over a public channel.
+
+   Models python/xurcroh/fortress/session.py. The whole exchange is visible to and
+   controlled by the attacker; there is no private establishment channel.
+
+   Modelled: the client's secret sealed to the worker's static KEM key, the
+   worker's secret sealed to the client's ephemeral KEM key, the worker identity
+   signature over the transcript, key derivation from both secrets and the
+   transcript, and disclosure of the worker's static KEM key after the session.
+
+   Client authentication is modelled as a client signature over the opening of
+   the exchange. It stands for the client certificate of the mutually
+   authenticated TLS connection together with the TLS channel binding, which is
+   what a direct route provides. Without it the worker answers any party that
+   completes a handshake, and the secrecy of the worker's responses does not hold;
+   the first version of this model, which omitted it, showed exactly that. On a
+   relayed route the worker authenticates the exit relay, not the client, so this
+   model does not cover relayed routes.
+
+   Outside this symbolic model: the computational security of the hybrid
+   X25519/ML-KEM-768 KEM and of HPKE, TLS itself, the per-frame replay window and
+   nonce handling, the key ratchet, compromise of an identity key or of an
+   ephemeral key, and side channels. *)
+
+type secretkey.
+type publickey.
+type signingkey.
+type verifykey.
+type contribution.
+type key.
+
+fun pk(secretkey): publickey.
+fun seal(contribution, publickey, bitstring): bitstring.
+reduc forall s: contribution, sk: secretkey, info: bitstring;
+  unseal(seal(s, pk(sk), info), sk, info) = s.
+
+fun vk(signingkey): verifykey.
+fun sign(bitstring, signingkey): bitstring.
+reduc forall m: bitstring, sk: signingkey;
+  verify(sign(m, sk), m, vk(sk)) = true.
+
+fun h(bitstring): bitstring.
+fun kdf(contribution, contribution, bitstring): key.
+fun aead_seal(bitstring, key): bitstring.
+reduc forall payload: bitstring, k: key;
+  aead_open(aead_seal(payload, k), k) = payload.
+
+event ClientAccepted(bitstring, key).
+event WorkerEstablished(bitstring, key).
+
+free c: channel.
+free worker_static: secretkey [private].
+free worker_identity: signingkey [private].
+free client_identity: signingkey [private].
+free artifacts: bitstring.
+free activation_secret, response_secret: bitstring [private].
+
+(* Secrecy holds in every phase, including after the static key is disclosed in
+   phase 1. That is the forward-secrecy claim. *)
+query attacker(activation_secret).
+query attacker(response_secret).
+(* The client accepts keys only if the pinned worker produced them, once each. *)
+query sid: bitstring, k: key;
+  inj-event(ClientAccepted(sid, k)) ==> inj-event(WorkerEstablished(sid, k)).
+
+let client(worker_public: publickey, worker_verify: verifykey, identity: signingkey) =
+  new sid: bitstring;
+  new ephemeral: secretkey;
+  new client_secret: contribution;
+  let opening = h((sid, worker_public, pk(ephemeral))) in
+  let sealed_client = seal(client_secret, worker_public, opening) in
+  out(c, (sid, pk(ephemeral), sealed_client, sign(h((opening, sealed_client)), identity)));
+  in(c, (sealed_worker: bitstring, signature: bitstring));
+  let middle = h((opening, sealed_client)) in
+  let worker_secret = unseal(sealed_worker, ephemeral, middle) in
+  let transcript = h((middle, sealed_worker, artifacts)) in
+  if verify(signature, transcript, worker_verify) = true then
+  let session_key = kdf(client_secret, worker_secret, transcript) in
+  event ClientAccepted(sid, session_key);
+  out(c, aead_seal(activation_secret, session_key));
+  in(c, response: bitstring);
+  let received = aead_open(response, session_key) in
+  0.
+
+let worker(static: secretkey, identity: signingkey, client_verify: verifykey) =
+  in(c, (sid: bitstring, ephemeral_public: publickey, sealed_client: bitstring,
+         client_signature: bitstring));
+  let opening = h((sid, pk(static), ephemeral_public)) in
+  if verify(client_signature, h((opening, sealed_client)), client_verify) = true then
+  let client_secret = unseal(sealed_client, static, opening) in
+  new worker_secret: contribution;
+  let middle = h((opening, sealed_client)) in
+  let sealed_worker = seal(worker_secret, ephemeral_public, middle) in
+  let transcript = h((middle, sealed_worker, artifacts)) in
+  let session_key = kdf(client_secret, worker_secret, transcript) in
+  event WorkerEstablished(sid, session_key);
+  out(c, (sealed_worker, sign(transcript, identity)));
+  in(c, request: bitstring);
+  let received = aead_open(request, session_key) in
+  out(c, aead_seal(response_secret, session_key)).
+
+process
+  out(c, pk(worker_static));
+  out(c, vk(worker_identity));
+  out(c, vk(client_identity));
+  (
+    (!client(pk(worker_static), vk(worker_identity), client_identity))
+    | (!worker(worker_static, worker_identity, vk(client_identity)))
+    | (phase 1; out(c, worker_static))
+  )
