@@ -20,8 +20,6 @@ if str(Path(__file__).resolve().parents[2]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import yaml
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from scripts.gpu.deploy_two_node import download, options, scp, ssh
 
 from xurcroh.config import GPUConfig, ModelDefinition, WorkerConfig
@@ -40,6 +38,7 @@ from xurcroh.fortress.model_compiler import (
     discover_fortress_operations,
     load_reap_saliency,
 )
+from xurcroh.kem import HybridKemKey, KemError
 from xurcroh.preflight import preflight_checkpoint
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -55,13 +54,8 @@ if SSH_KEYSCAN is None:
 def recipient_private_key(path: Path, expected_public_hex: str) -> bytes:
     private = path.read_bytes()
     try:
-        public = (
-            X25519PrivateKey.from_private_bytes(private)
-            .public_key()
-            .public_bytes(Encoding.Raw, PublicFormat.Raw)
-            .hex()
-        )
-    except ValueError as error:
+        public = HybridKemKey.from_bytes(private).public_key.hex()
+    except (KemError, ValueError) as error:
         raise ValueError(f"recipient key {path} is invalid") from error
     if public != expected_public_hex:
         raise ValueError(f"recipient key {path} does not match the manifest")
@@ -126,6 +120,8 @@ def start_command(remote_root: str, name: str, device: str = "cpu") -> str:
         f"LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/cuda/lib64 "
         f".venv-cuda/bin/python -m xurcroh.fortress.worker_cli "
         f"--artifact-dir {root}/role-artifacts --recipient-key {root}/recipient.key "
+        # A role signs session checkpoints when its identity key was uploaded.
+        f"$(test -f {root}/identity.key && echo --identity-key {root}/identity.key) "
         f"--certificate {root}/tls/{shlex.quote(name)}.crt "
         f"--private-key {root}/tls/{shlex.quote(name)}.key --ca {root}/tls/ca.crt "
         f"--host 0.0.0.0 --port 9444 --device {shlex.quote(device)} "
@@ -275,6 +271,10 @@ def prepare_worker(
     scp(worker, [package], remote_root, recursive=True)
     ssh(worker, f"mv {root}/{shlex.quote(package.name)} {root}/role-artifacts")
     scp(worker, [recipient_key], f"{remote_root}/recipient.key")
+    identity_key = recipient_key.with_name(f"{recipient_key.stem}.identity.key")
+    if identity_key.is_file():
+        scp(worker, [identity_key], f"{remote_root}/identity.key")
+        ssh(worker, f"chmod 600 {root}/identity.key")
     scp(
         worker,
         [tls / "ca.crt", tls / f"{worker['name']}.crt", tls / f"{worker['name']}.key"],
@@ -534,6 +534,7 @@ def deploy(manifest_path: Path, output: Path, *, skip_bootstrap: bool = False) -
         certificate_path=output / "tls" / "client.crt",
         key_path=output / "tls" / "client.key",
         ca_path=output / "tls" / "ca.crt",
+        role_packages=role_root,
     )
     if raw.get("datagram_tunnel") is True:
         start_datagram_tunnels(

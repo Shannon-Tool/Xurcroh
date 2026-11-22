@@ -10,6 +10,7 @@ from pathlib import Path
 from xurcroh.config import ModelDefinition, WorkerConfig
 from xurcroh.errors import ConfigurationError
 from xurcroh.formats import ModelSupportReport, open_checkpoint
+from xurcroh.kem import PUBLIC_KEY_BYTES as RECIPIENT_PUBLIC_BYTES
 
 MIB = 1024**2
 
@@ -232,8 +233,11 @@ def preflight_checkpoint(
         for worker in workers:
             try:
                 recipient = worker.labels["recipient_public"]
-                if len(bytes.fromhex(recipient)) != 32:
-                    raise ValueError("recipient key must contain 32 bytes")
+                if len(bytes.fromhex(recipient)) != RECIPIENT_PUBLIC_BYTES:
+                    raise ValueError(
+                        f"recipient key must contain {RECIPIENT_PUBLIC_BYTES} bytes "
+                        "(X25519 with ML-KEM-768)"
+                    )
                 assigned = {
                     name.strip() for name in worker.labels.get("operations", "*").split(",")
                 }

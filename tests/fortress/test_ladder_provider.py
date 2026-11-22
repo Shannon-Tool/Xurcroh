@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from tests.fortress.test_ladder import manifest_mapping
 
 from xurcroh.fortress.ladder import LadderRung
@@ -11,7 +9,9 @@ from xurcroh.fortress.ladder_provider import (
     destroy_ladder_instances,
     materialize_ladder_manifest,
 )
+from xurcroh.kem import HybridKemKey
 from xurcroh.providers.vast import StateStore
+from xurcroh.signatures import load_signing_key
 
 
 def test_provisioned_hosts_generate_valid_role_manifest(tmp_path: Path) -> None:
@@ -73,10 +73,14 @@ def test_provisioned_hosts_generate_valid_role_manifest(tmp_path: Path) -> None:
             "key_path": f"/keys/worker-{index}",
         }
         private_path = tmp_path / "recipient-keys" / f"{worker.name}.key"
-        private = X25519PrivateKey.from_private_bytes(private_path.read_bytes())
-        public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+        private = HybridKemKey.from_bytes(private_path.read_bytes())
+        public = private.public_key.hex()
         assert public == worker.recipient_public
         assert private_path.stat().st_mode & 0o777 == 0o600
+        # Each role also gets a signing identity; only its public half is in the manifest.
+        identity_path = tmp_path / "recipient-keys" / f"{worker.name}.identity.key"
+        assert load_signing_key(identity_path).public_key.hex() == worker.identity_public
+        assert identity_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_ladder_teardown_reports_actual_cost_and_destruction(tmp_path: Path) -> None:

@@ -5,13 +5,12 @@ import os
 from pathlib import Path
 from typing import Any
 
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-
 from xurcroh.errors import ProviderError
 from xurcroh.fortress.ladder import LadderRung
+from xurcroh.kem import HybridKemKey
 from xurcroh.providers.registry import ProviderRegistry
 from xurcroh.providers.vast import BudgetGuard, BudgetPolicy, StateStore, VastClient
+from xurcroh.signatures import write_signing_key
 
 
 def materialize_ladder_manifest(
@@ -39,13 +38,14 @@ def materialize_ladder_manifest(
             **records.get(record_key, {}),
             **instance,
         }
-        private = X25519PrivateKey.generate()
-        public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        private = HybridKemKey.generate()
+        public = private.public_key
         name = f"role-{index // share_count}-{index % share_count}"
         key_path = key_directory / f"{name}.key"
         descriptor = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "wb") as handle:
-            handle.write(private.private_bytes_raw())
+            handle.write(private.to_bytes())
+        identity = write_signing_key(key_directory / f"{name}.identity.key")
         placements.append(
             {
                 "name": name,
@@ -63,6 +63,7 @@ def materialize_ladder_manifest(
                 "activation_index": index // share_count,
                 "weight_index": index % share_count,
                 "recipient_public": public.hex(),
+                "identity_public": identity.public_key.hex(),
             }
         )
     document = {

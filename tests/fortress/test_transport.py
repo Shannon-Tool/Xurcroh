@@ -5,13 +5,6 @@ import time
 
 import pytest
 import torch
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import (
-    Encoding,
-    NoEncryption,
-    PrivateFormat,
-    PublicFormat,
-)
 from tests.fortress.conftest import MutualTLSIdentities
 
 from xurcroh.errors import AttestationError, ProtocolError
@@ -27,17 +20,21 @@ from xurcroh.fortress.transport import (
     encode_role_artifact,
 )
 from xurcroh.fortress.worker import FortressRoleWorker
+from xurcroh.kem import PUBLIC_KEY_BYTES as RECIPIENT_PUBLIC_BYTES
+from xurcroh.kem import HybridKemKey
 
 
 def test_role_artifact_reconstructs_only_its_own_weight_share() -> None:
     operation = compile_operation(
         torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
     )
-    encoded = encode_role_artifact(operation, weight_index=1, recipient_public=bytes(range(32)))
+    encoded = encode_role_artifact(
+        operation, weight_index=1, recipient_public=bytes(RECIPIENT_PUBLIC_BYTES)
+    )
     artifact = decode_role_artifact(encoded, allow_unattested=True)
     assert artifact.weight_index == 1
     assert torch.equal(artifact.matrix, operation.shares[1].matrix)
-    assert artifact.recipient_public == bytes(range(32))
+    assert artifact.recipient_public == bytes(RECIPIENT_PUBLIC_BYTES)
     document = json.loads(encoded)
     assert document["format"] == "xurcroh-fortress-role-v1"
     assert "challenge" not in document
@@ -52,14 +49,18 @@ def test_seeded_role_artifact_expands_without_storing_the_weight_matrix() -> Non
         seed=bytes(range(32)),
         challenge_seed=19,
     )
-    encoded = encode_role_artifact(operation, weight_index=0, recipient_public=bytes(range(32)))
+    encoded = encode_role_artifact(
+        operation, weight_index=0, recipient_public=bytes(RECIPIENT_PUBLIC_BYTES)
+    )
     document = json.loads(encoded)
     assert document["format"] == "xurcroh-fortress-role-v2"
     assert "storage" not in document
     artifact = decode_role_artifact(encoded, allow_unattested=True)
     assert torch.equal(artifact.matrix, operation.shares[0].matrix)
     final = json.loads(
-        encode_role_artifact(operation, weight_index=2, recipient_public=bytes(range(32)))
+        encode_role_artifact(
+            operation, weight_index=2, recipient_public=bytes(RECIPIENT_PUBLIC_BYTES)
+        )
     )
     assert final["format"] == "xurcroh-fortress-role-v1"
     assert "storage" in final
@@ -69,7 +70,9 @@ def test_decode_role_artifact_fails_closed_without_attestation() -> None:
     operation = compile_operation(
         torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
     )
-    encoded = encode_role_artifact(operation, weight_index=0, recipient_public=bytes(range(32)))
+    encoded = encode_role_artifact(
+        operation, weight_index=0, recipient_public=bytes(RECIPIENT_PUBLIC_BYTES)
+    )
     with pytest.raises(ProtocolError, match="attestation"):
         decode_role_artifact(encoded)
 
@@ -78,7 +81,9 @@ def test_decode_role_artifact_enforces_attestation_callback() -> None:
     operation = compile_operation(
         torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
     )
-    encoded = encode_role_artifact(operation, weight_index=0, recipient_public=bytes(range(32)))
+    encoded = encode_role_artifact(
+        operation, weight_index=0, recipient_public=bytes(RECIPIENT_PUBLIC_BYTES)
+    )
     verified: list[int] = []
     artifact = decode_role_artifact(encoded, attest=lambda index: verified.append(index) is None)
     assert verified
@@ -91,7 +96,9 @@ def test_decode_role_artifact_allow_unattested_opt_in_refused_with_policy() -> N
     operation = compile_operation(
         torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
     )
-    encoded = encode_role_artifact(operation, weight_index=0, recipient_public=bytes(range(32)))
+    encoded = encode_role_artifact(
+        operation, weight_index=0, recipient_public=bytes(RECIPIENT_PUBLIC_BYTES)
+    )
     artifact = decode_role_artifact(encoded, allow_unattested=True)
     assert artifact.weight_index == 0
     with pytest.raises(ProtocolError, match="allow_unattested"):
@@ -133,11 +140,9 @@ def test_direct_grid_recovers_after_role_connection_loss(
 
     def start(record) -> None:
         if "recipient_key" not in record:
-            private = X25519PrivateKey.generate()
-            record["recipient_key"] = private.private_bytes(
-                Encoding.Raw, PrivateFormat.Raw, NoEncryption()
-            )
-            record["public"] = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+            private = HybridKemKey.generate()
+            record["recipient_key"] = private.to_bytes()
+            record["public"] = private.public_key
         artifact = encode_role_artifact(operation, record["weight_index"], record["public"])
         worker = FortressRoleWorker(
             {"recovery": artifact},
@@ -201,12 +206,12 @@ def test_real_grid_transport_is_exact_and_isolates_duplicate_request_ids(
     roles: list[RoleEndpoint] = []
     for activation_index in range(2):
         for weight_index in range(2):
-            private = X25519PrivateKey.generate()
-            public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+            private = HybridKemKey.generate()
+            public = private.public_key
             artifact = encode_role_artifact(operation, weight_index, public)
             worker = FortressRoleWorker(
                 artifact,
-                private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                private.to_bytes(),
                 certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                 private_key=mtls_identities["server_key"],
                 client_ca=mtls_identities["ca"],
@@ -293,11 +298,11 @@ def test_three_by_three_grid_executes_exactly(
     try:
         for activation_index in range(3):
             for weight_index in range(3):
-                private = X25519PrivateKey.generate()
-                public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+                private = HybridKemKey.generate()
+                public = private.public_key
                 worker = FortressRoleWorker(
                     encode_role_artifact(operation, weight_index, public),
-                    private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                    private.to_bytes(),
                     certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                     private_key=mtls_identities["server_key"],
                     client_ca=mtls_identities["ca"],
@@ -411,11 +416,11 @@ def test_integrity_failure_quarantines_the_role_client(
     try:
         for activation_index in range(2):
             for weight_index in range(2):
-                private = X25519PrivateKey.generate()
-                public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+                private = HybridKemKey.generate()
+                public = private.public_key
                 worker = FortressRoleWorker(
                     encode_role_artifact(operation, weight_index, public),
-                    private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                    private.to_bytes(),
                     certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                     private_key=mtls_identities["server_key"],
                     client_ca=mtls_identities["ca"],
@@ -609,8 +614,8 @@ def test_role_session_capacity_scales_with_assigned_operations(
     operation = compile_operation(
         torch.tensor([[1, 2], [3, 4]], dtype=torch.int64), threshold=2, slice_count=3
     )
-    private = X25519PrivateKey.generate()
-    public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    private = HybridKemKey.generate()
+    public = private.public_key
     artifact = encode_role_artifact(operation, 0, public)
     arguments = {
         "certificates": (mtls_identities["server_certificate"], mtls_identities["ca"]),
@@ -618,7 +623,7 @@ def test_role_session_capacity_scales_with_assigned_operations(
         "client_ca": mtls_identities["ca"],
         "allow_unattested": True,
     }
-    key = private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+    key = private.to_bytes()
     artifacts = {f"operation-{index}": artifact for index in range(70)}
     worker = FortressRoleWorker(artifacts, key, **arguments)
     try:

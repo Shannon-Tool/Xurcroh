@@ -12,6 +12,8 @@ import xurcroh_quic
 from tests.fortress.conftest import MutualTLSIdentities
 from tests.integration.test_ssh_executor import ssh_testbed
 
+from xurcroh.kem import HybridKemKey
+
 
 def _host_memory_gb() -> float:
     try:
@@ -218,13 +220,6 @@ def test_single_ssh_datagram_tunnel_executes_and_cleans_up(
 def test_four_role_datagram_grid_returns_exact_product(
     mtls_identities: MutualTLSIdentities,
 ) -> None:
-    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-    from cryptography.hazmat.primitives.serialization import (
-        Encoding,
-        NoEncryption,
-        PrivateFormat,
-        PublicFormat,
-    )
 
     from xurcroh.fortress.arithmetic import PRIME_MODULUS, split_secret
     from xurcroh.fortress.compiler import compile_operation
@@ -253,11 +248,11 @@ def test_four_role_datagram_grid_returns_exact_product(
         try:
             for activation in range(2):
                 for weight in range(2):
-                    recipient = X25519PrivateKey.generate()
-                    public = recipient.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+                    recipient = HybridKemKey.generate()
+                    public = recipient.public_key
                     worker = FortressRoleWorker(
                         encode_role_artifact(operation, weight, public),
-                        recipient.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()),
+                        recipient.to_bytes(),
                         certificates=(mtls_identities["server_certificate"], mtls_identities["ca"]),
                         private_key=mtls_identities["server_key"],
                         client_ca=mtls_identities["ca"],

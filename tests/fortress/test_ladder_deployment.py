@@ -77,7 +77,7 @@ def placed_rung(checkpoint: Path):
                 "cpu_vendor": provider.cpu_vendor,
                 "activation_index": index % 2,
                 "weight_index": (index // 2) % 2,
-                "recipient_public": f"{index + 1:02x}" * 32,
+                "recipient_public": f"{index + 1:02x}" * 1216,
             }
         )
     placement = place_operations(
@@ -184,7 +184,7 @@ def test_deployment_generates_and_serializes_placement(tiny_llama_path: Path) ->
                 "cpu_vendor": "amd" if index % 2 else "intel",
                 "activation_index": index % 2,
                 "weight_index": (index // 2) % 2,
-                "recipient_public": f"{index + 1:02x}" * 32,
+                "recipient_public": f"{index + 1:02x}" * 1216,
             }
         )
     document["workers"] = workers
@@ -215,3 +215,40 @@ def test_ladder_sdk_configuration_uses_real_roles_and_client_identity(tmp_path: 
     assert first["endpoint"] == f"quic://{rung.workers[0].endpoint}"
     assert first["labels"]["activation_index"] == "0"
     assert first["labels"]["client_key_path"] == str(tmp_path / "client.key")
+
+
+def test_ladder_sdk_configuration_pins_worker_identity_and_artifacts(
+    tiny_llama_path: Path, tmp_path: Path
+) -> None:
+    from dataclasses import replace
+
+    from xurcroh.fortress.checkpoint import artifact_set_digest
+    from xurcroh.signatures import HybridSigningKey
+
+    rung, _ = placed_rung(tiny_llama_path)
+    identities = [HybridSigningKey.generate().public_key.hex() for _ in rung.workers]
+    rung = replace(
+        rung,
+        workers=tuple(
+            replace(worker, identity_public=identity)
+            for worker, identity in zip(rung.workers, identities, strict=True)
+        ),
+    )
+    compiled = compile_fortress_checkpoint(tiny_llama_path, seed=731)
+    packages = write_role_packages(compiled, rung, tmp_path / "roles")
+    options = {
+        "checkpoint_path": tmp_path / "model",
+        "fortress_seed": 731,
+        "certificate_path": tmp_path / "client.crt",
+        "key_path": tmp_path / "client.key",
+        "ca_path": tmp_path / "ca.crt",
+    }
+
+    pinned = sdk_configuration(rung, role_packages=tmp_path / "roles", **options)
+    for worker, entry, identity in zip(rung.workers, pinned["cluster"], identities, strict=True):
+        assert entry["labels"]["identity_public"] == identity
+        assert entry["labels"]["artifact_digest"] == artifact_set_digest(
+            load_role_artifacts(packages[worker.name])
+        )
+    unpinned = sdk_configuration(rung, **options)
+    assert all("artifact_digest" not in entry["labels"] for entry in unpinned["cluster"])

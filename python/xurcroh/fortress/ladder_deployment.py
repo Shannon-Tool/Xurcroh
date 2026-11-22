@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from xurcroh.errors import ConfigurationError
+from xurcroh.fortress.checkpoint import artifact_set_digest
 from xurcroh.fortress.compiler import CompiledOperation
 from xurcroh.fortress.ladder import LadderRung
 from xurcroh.fortress.model_compiler import FortressCheckpoint
@@ -20,7 +21,7 @@ from xurcroh.fortress.placement import (
     place_operations,
 )
 from xurcroh.fortress.transport import encode_role_artifact
-from xurcroh.fortress.worker_cli import artifact_file_name
+from xurcroh.fortress.worker_cli import artifact_file_name, load_role_artifacts
 
 
 def place_rung_operations(
@@ -122,7 +123,14 @@ def sdk_configuration(
     certificate_path: str | Path,
     key_path: str | Path,
     ca_path: str | Path,
+    role_packages: str | Path | None = None,
 ) -> dict[str, Any]:
+    """Build the client configuration for a rung.
+
+    ``role_packages`` is the directory ``write_role_packages`` filled. When given,
+    the client pins the digest of each worker's artifacts as written there.
+    """
+
     placed = any(worker.operation_roles for worker in rung.workers)
     if not placed and len(rung.workers) != rung.share_count**2:
         raise ConfigurationError("an unplaced worker pool cannot configure the SDK")
@@ -136,6 +144,11 @@ def sdk_configuration(
             "client_key_path": str(key_path),
             "ca_path": str(ca_path),
         }
+        if worker.identity_public is not None:
+            labels["identity_public"] = worker.identity_public
+        package = None if role_packages is None else Path(role_packages) / worker.name
+        if package is not None and package.is_dir():
+            labels["artifact_digest"] = artifact_set_digest(load_role_artifacts(package))
         if placed:
             labels["operations"] = ",".join(sorted(worker.operation_roles))
             labels["operation_roles"] = json.dumps(

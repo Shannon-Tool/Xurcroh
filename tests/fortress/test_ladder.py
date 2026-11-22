@@ -27,7 +27,7 @@ def manifest_mapping(rung: str = "L0") -> dict:
             "cpu_vendor": "amd" if (activation + weight) % 2 else "intel",
             "activation_index": activation,
             "weight_index": weight,
-            "recipient_public": f"{activation * 2 + weight:02x}" * 32,
+            "recipient_public": f"{activation * 2 + weight:02x}" * 1216,
         }
         for activation in range(2)
         for weight in range(2)

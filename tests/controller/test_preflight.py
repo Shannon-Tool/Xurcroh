@@ -121,7 +121,7 @@ def test_remote_fortress_preflight_accepts_operation_specific_grids(
                     labels={
                         "activation_index": str(activation),
                         "weight_index": str(weight),
-                        "recipient_public": (bytes([len(workers) + 1]) * 32).hex(),
+                        "recipient_public": (bytes([len(workers) + 1]) * 1216).hex(),
                         "operations": operation,
                         "client_certificate_path": str(tmp_path / "client.crt"),
                         "client_key_path": str(tmp_path / "client.key"),

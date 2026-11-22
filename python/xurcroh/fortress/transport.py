@@ -34,8 +34,9 @@ from xurcroh.fortress.checkpoint import (
 )
 from xurcroh.fortress.compiler import CompiledOperation
 from xurcroh.fortress.grid import RoleExecutionError, WeightShare
+from xurcroh.fortress.session import ClientRoleSession, channel_binding
 from xurcroh.fortress.storage import DispersedShard, reconstruct_shard
-from xurcroh.runtime.stage_sessions import ClientStageSession
+from xurcroh.kem import PUBLIC_KEY_BYTES as RECIPIENT_PUBLIC_BYTES
 
 _execution_health: ContextVar[tuple[threading.Event, float] | None] = ContextVar(
     "xurcroh_execution_health", default=None
@@ -208,8 +209,8 @@ def encode_role_artifact(
 ) -> bytes:
     if weight_index not in operation.shares:
         raise ValueError("weight share is not present in the compiled operation")
-    if len(recipient_public) != 32:
-        raise ValueError("recipient public key must contain 32 bytes")
+    if len(recipient_public) != RECIPIENT_PUBLIC_BYTES:
+        raise ValueError(f"recipient public key must contain {RECIPIENT_PUBLIC_BYTES} bytes")
     share = operation.shares[weight_index]
     document = {
         "format": "xurcroh-fortress-role-v1",
@@ -279,7 +280,11 @@ def decode_role_artifact(
         recipient_public = _decode_bytes(document["recipient_public"])
     except (KeyError, TypeError, ValueError, AttributeError) as error:
         raise ProtocolError("role artifact fields are invalid") from error
-    if len(shape) != 2 or any(value <= 0 for value in shape) or len(recipient_public) != 32:
+    if (
+        len(shape) != 2
+        or any(value <= 0 for value in shape)
+        or len(recipient_public) != RECIPIENT_PUBLIC_BYTES
+    ):
         raise ProtocolError("role artifact dimensions or recipient are invalid")
     if document["format"] == "xurcroh-fortress-role-v2":
         from xurcroh.fortress.arithmetic import _seeded_uniform
@@ -357,6 +362,16 @@ def native_compiled_weight_share(weight: WeightShare) -> Any:
     )
 
 
+def _new_role_session(role: RoleEndpoint, link: Any) -> ClientRoleSession:
+    return ClientRoleSession(
+        role.weight_index,
+        role.recipient_public,
+        binding=channel_binding(link, relayed=role.relay is not None),
+        identity_public=role.identity_public,
+        artifact_digest=role.artifact_digest,
+    )
+
+
 class _SharedRoleConnection:
     def __init__(
         self,
@@ -369,8 +384,8 @@ class _SharedRoleConnection:
         self.recover_callback = recover
         self.generation = role.generation
         self.client: Any = None
-        self.session = ClientStageSession(role.weight_index, role.recipient_public)
-        self.transcript = SessionTranscript(self.session.session_id)
+        self.session: ClientRoleSession
+        self.transcript: SessionTranscript
         self.completed = 0
         self.used = False
         self.call_lock = threading.Lock()
@@ -389,6 +404,12 @@ class _SharedRoleConnection:
             list(self.identity.certificates),
             self.identity.private_key,
         )
+        # A session is tied to the connection it was established on, so a new
+        # connection always starts a new session; the handshake runs on first use.
+        self.session = _new_role_session(self.role, self.client)
+        self.transcript = SessionTranscript(self.session.session_id)
+        self.completed = 0
+        self.used = False
 
     def recover(self) -> None:
         try:
@@ -398,17 +419,13 @@ class _SharedRoleConnection:
                 raise
             self.generation = self.recover_callback(self.role.provider_id, self.generation)
             self.connect()
-        self.session = ClientStageSession(self.role.weight_index, self.role.recipient_public)
-        self.transcript = SessionTranscript(self.session.session_id)
-        self.completed = 0
-        self.used = False
 
     def close(self) -> None:
         with self.call_lock:
             if self.client is None:
                 return
             try:
-                if self.used:
+                if self.used and self.session.established:
                     session_id = bytes.fromhex(self.session.session_id)
                     self.client.send(session_id, 0, 0, "cancel", "", [], self.session.token_bytes)
                     response_id, _, _, kind, _, _, _ = self.client.receive()
@@ -441,19 +458,15 @@ class _RoleTransport:
         self._operation_name = operation_name.encode("ascii")
         if not self._operation_name or len(self._operation_name) > 1024:
             raise ValueError("operation name must contain 1-1024 ASCII bytes")
-        self._session = (
-            connection.session
-            if connection is not None
-            else ClientStageSession(role.weight_index, role.recipient_public)
-        )
-        self._transcript = SessionTranscript(self._session.session_id)
         self._identity = identity
         self._connection = connection
         self.client: Any = None
-        self._connect()
-        self._used = False
-        self._rotation_interval = rotation_interval
+        self._session: ClientRoleSession
+        self._transcript: SessionTranscript
         self._completed = 0
+        self._used = False
+        self._connect()
+        self._rotation_interval = rotation_interval
         self._frame_bytes = frame_bytes
         self._call_lock = threading.Lock()
         self._execution_lock = connection.call_lock if connection is not None else self._call_lock
@@ -462,7 +475,7 @@ class _RoleTransport:
         self.observations: list[tuple[float, bool]] = []
 
     @property
-    def session(self) -> ClientStageSession:
+    def session(self) -> ClientRoleSession:
         return self._connection.session if self._connection is not None else self._session
 
     @property
@@ -471,7 +484,6 @@ class _RoleTransport:
 
     def _connect(self) -> None:
         if self._connection is not None:
-            self._connection.connect()
             self.client = self._connection.client
             return
         identity = self._identity
@@ -485,6 +497,10 @@ class _RoleTransport:
             list(identity.certificates),
             identity.private_key,
         )
+        self._session = _new_role_session(self.role, self.client)
+        self._transcript = SessionTranscript(self._session.session_id)
+        self._completed = 0
+        self._used = False
 
     def execute(
         self,
@@ -512,12 +528,6 @@ class _RoleTransport:
                     self.client = self._connection.client
                 else:
                     self._connect()
-                    self._session = ClientStageSession(
-                        self.role.weight_index, self.role.recipient_public
-                    )
-                    self._transcript = SessionTranscript(self._session.session_id)
-                    self._completed = 0
-                    self._used = False
                 result = self._execute(activation, request_id, sequence, activation_seed)
         self.observations.append((time.perf_counter() - started, cover))
         return result
@@ -594,11 +604,35 @@ class _RoleTransport:
     def _round_trip(
         self, request_id: str, sequence: int, operation_payload: bytes
     ) -> tuple[bytes, int, int]:
+        session = self.session
+        if not session.established:
+            # One round trip, in the same fixed-size frames as every other call.
+            handshake_id = hashlib.sha256(f"handshake:{session.session_id}".encode()).digest()[:16]
+            reply, _, _ = self._exchange(handshake_id, 0, session.hello())
+            session.finish(reply)
         request_hash = hashlib.sha256(request_id.encode()).digest()[:16]
-        sealed = self.session.sender.seal(
-            request_id, "u8", [len(operation_payload)], operation_payload
+        sealed = session.sender.seal(request_id, "u8", [len(operation_payload)], operation_payload)
+        sealed_response, sent, received = self._exchange(
+            request_hash, sequence, session.data_packet(sealed)
         )
-        packet = pad_packet(self.session.wire_packet(sealed), self._frame_bytes)
+        result_dtype, result_shape, payload = session.receiver.open_tensor(sealed_response)
+        if result_dtype != "u8" or result_shape != [len(payload)]:
+            raise ProtocolError("role result must be a byte vector")
+        self.transcript.update(sealed, sealed_response)
+        if self._connection is not None:
+            self._connection.completed += 1
+            completed = self._connection.completed
+        else:
+            self._completed += 1
+            completed = self._completed
+        if completed % self._rotation_interval == 0:
+            session.rotate(completed // self._rotation_interval)
+        return bytes(payload), sent, received
+
+    def _exchange(self, request_hash: bytes, sequence: int, inner: bytes) -> tuple[bytes, int, int]:
+        """Send one fixed-size frame and return the unpadded reply with byte counts."""
+
+        packet = pad_packet(inner, self._frame_bytes)
         if self.role.relay is not None:
             packet = self._quic.seal_onion(
                 self.role.relay.onion_hops(),
@@ -625,27 +659,14 @@ class _RoleTransport:
         if shape != [self._frame_bytes] or len(response) != self._frame_bytes:
             raise ProtocolError("role response tensor descriptor is invalid")
         self._frame_sizes.add(len(response))
-        sealed_response = unpad_packet(response, self._frame_bytes)
-        result_dtype, result_shape, payload = self.session.receiver.open_tensor(sealed_response)
-        if result_dtype != "u8" or result_shape != [len(payload)]:
-            raise ProtocolError("role result must be a byte vector")
-        self.transcript.update(sealed, sealed_response)
-        if self._connection is not None:
-            self._connection.completed += 1
-            completed = self._connection.completed
-        else:
-            self._completed += 1
-            completed = self._completed
-        if completed % self._rotation_interval == 0:
-            self.session.rotate(completed // self._rotation_interval)
-        return bytes(payload), sent, received
+        return unpad_packet(response, self._frame_bytes), sent, received
 
     def close(self) -> None:
         if self._connection is not None:
             return
         with self._execution_lock:
             try:
-                if self._used:
+                if self._used and self.session.established:
                     session_id = bytes.fromhex(self.session.session_id)
                     self.client.send(session_id, 0, 0, "cancel", "", [], self.session.token_bytes)
                     response_id, _, _, kind, _, _, _ = self.client.receive()
