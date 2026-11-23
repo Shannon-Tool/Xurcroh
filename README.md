@@ -2,7 +2,7 @@
 
 Xurcroh is a distributed inference platform for dense and Mixture-of-Experts language models, vision-language models, image diffusion, and video generation. The Fortress architecture combines exact integer secret sharing, client-owned nonlinear computation, encrypted shards, a Rust QUIC data plane, memory lifecycle controls, and hardware attestation for the older stage engines (Fortress role workers do not yet run attested). Existing algebraic/vLLM paths are transition and numerical-reference components, not the Fortress production engine.
 
-Every completed request produces a signed task trace that can be checked with `xurcroh verify` or in a browser on the manual's Verify page; see `docs/task-trace.md` and, for what may be claimed, `docs/claims.md` and `docs/marketing-claims.md`.
+Every completed request produces a signed task trace that can be checked with `xurcroh verify` or in a browser on the manual's Verify page; see `docs/task-trace.md` and `docs/claims.md`.
 
 > **Security status:** designed for defence in depth; claims under evaluation. Fortress implementation and production evidence are incomplete. Orthogonal transformations are computational obfuscation, not homomorphic encryption or a cryptographic non-reversibility proof. See `docs/requirements-matrix.yaml` and `docs/validation-report.md`.
 

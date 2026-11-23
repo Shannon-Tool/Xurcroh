@@ -2,16 +2,15 @@
 
 Status: designed for defence in depth; claims under evaluation.
 
-This page is the source for product and marketing wording. A claim may be used only in the form
-given here, and only while its "Check it yourself" column works. Local tests show an implementation
-behaves as described on one machine. They are not hardware validation, an external audit, or a
-guarantee. The roadmap's external evidence gates (independent attestation, second-party
-reproducible build, external audit, public comparison, bounty period) are not complete, so no
-superlative such as "most secure" may be used.
+This page lists the security properties the system provides today, the evidence for each, and how
+a reader can check it. Local tests show an implementation behaves as described on one machine. They
+are not hardware validation, an external audit, or a guarantee. The roadmap's external evidence
+gates (independent attestation, second-party reproducible build, external audit, public comparison,
+bounty period) are not complete.
 
-## Claims that can be made now
+## Properties provided today
 
-| Wording | What it rests on | Check it yourself | Condition that must be stated |
+| Property | What it rests on | Check it yourself | Condition |
 |---|---|---|---|
 | "No single worker sees your prompt, the model weights, or the output." | Weights and activations are additively secret-shared over a prime field; each role worker holds one weight share and receives one activation share | `tests/fortress/test_f0.py`, `tests/security/test_worker_compromise.py` | Holds only if workers holding complementary shares do not collude |
 | "Post-quantum key exchange at every layer between you and a worker (hybrid X25519 + ML-KEM-768)." "No encryption of prompts, activations or model shares relies on a classical key exchange alone." | TLS key exchange (rustls `prefer-post-quantum`), the role session handshake and the onion layers each combine X25519 with ML-KEM-768; the older stage and media sessions and shard key sealing use the same suite; signatures combine Ed25519 with ML-DSA-65 | `cargo test -p xurcroh-transport --test quic`, `tests/fortress/test_role_session.py`, `tests/fortress/test_onion.py`; each task trace reports the group its worker links negotiated and the session suite | "Hybrid": security rests on either the classical or the post-quantum scheme holding. TLS certificates are classical, which affects live impersonation only. Known-answer vectors are checked for ML-KEM-768 key generation, decapsulation (including ciphertexts altered in transit) and rejection of invalid encapsulation keys, and for ML-DSA-65 key generation and verification (`tests/security/test_pq_known_answers.py`, NIST ACVP and Project Wycheproof vectors). Encapsulation and signing have no known-answer test because the library draws their randomness itself; they are covered by round-trip tests. HTTPS to the controller, gateway and public log uses whatever group the TLS library negotiates |
@@ -40,9 +39,9 @@ A further true statement worth using: the secret sharing itself does not rely on
 problem that a quantum computer is expected to solve. That applies to uniformly random shares under
 non-collusion. Seed-expanded shares, which are the default for activations, are computational.
 
-## Claims that must not be made yet
+## Not provided yet
 
-| Wording to avoid | Why | What would make it true |
+| Not provided | Why | What would make it true |
 |---|---|---|
 | "Post-quantum secure" or "quantum-proof", unqualified | The schemes are hybrid and unaudited here; TLS certificates are classical, and HTTPS links outside the Rust transport do not assert a post-quantum group | An external cryptographic review, post-quantum certificates, and an asserted post-quantum group on every HTTPS link |
 | "Perfect forward secrecy", unqualified | Shown by tests and a symbolic model, not a computational proof; key erasure in Python is best effort | A computational analysis and key handling moved fully into memory-safe zeroizing code |
@@ -53,10 +52,10 @@ non-collusion. Seed-expanded shares, which are the default for activations, are 
 | "Publicly logged" | The log service and witness exist as code, but nobody operates a public log or an independent witness | A log run at a published address and witnessed by a party other than its operator |
 | "Zero-knowledge", "homomorphic encryption" | Neither technique is used | Not planned |
 | "Military-grade", "unbreakable", "most secure" | Not measurable, and the external evidence gates are open | External audit, comparison and bounty gates in the roadmap |
-| "Formally verified" | Two symbolic ProVerif models of the session handshake exist (direct and relayed routes, static-key and ratchet-key disclosure). They do not cover the implementation, identity-key or ephemeral-key compromise, replay handling, or the cryptography itself. Say "the session handshake has a machine-checked symbolic model" | A model covering key compromise and replay, and a review linking the model to the code |
+| "Formally verified" | Two symbolic ProVerif models of the session handshake exist (direct and relayed routes, static-key and ratchet-key disclosure). They do not cover the implementation, identity-key or ephemeral-key compromise, replay handling, or the cryptography itself. | A model covering key compromise and replay, and a review linking the model to the code |
 
-## Performance wording
+## Performance
 
 Each model layer is a network round trip to four workers, and the client checks every result. This
-is much slower than ordinary inference. No speed claim may be made until hardware rungs publish
+is much slower than ordinary inference. No speed figures are published until hardware rungs produce
 measured numbers.
