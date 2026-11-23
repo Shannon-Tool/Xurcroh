@@ -1,6 +1,6 @@
 # Multi-GPU and Hardware Validation
 
-The following programs define the hardware acceptance procedure. Scoped RTX 4090 results, unsuccessful checks, and remaining gaps are recorded in `docs/validation-report.md`; executable tests alone are not hardware evidence.
+The following programs define the hardware acceptance procedure. Executable tests alone are not hardware evidence.
 
 ## Native build and forensics
 

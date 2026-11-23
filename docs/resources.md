@@ -1,6 +1,6 @@
 # GPU Topology and Resource Planning
 
-These are analytical provisioning estimates, not reservations, price quotes, or hardware validation results. The TEE provider expansion did not contact a cloud provider or spend money; earlier scoped Vast.ai results are recorded separately in `docs/validation-report.md`. Select a provider only after checking current availability, checkpoint licenses, independent-operator requirements, network price, and attestation support. Suitable marketplace/provider categories include RunPod, Lambda, Vast.ai, and self-managed GPU hosts; none is endorsed or benchmarked here.
+These are analytical provisioning estimates, not reservations, price quotes, or hardware validation results. The TEE provider expansion did not contact a cloud provider or spend money. Select a provider only after checking current availability, checkpoint licenses, independent-operator requirements, network price, and attestation support. Suitable marketplace/provider categories include RunPod, Lambda, Vast.ai, and self-managed GPU hosts; none is endorsed or benchmarked here.
 
 ## TEE provider selection
 

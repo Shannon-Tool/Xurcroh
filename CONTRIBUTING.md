@@ -1,6 +1,6 @@
 # Contributing
 
-Work on a short-lived feature branch or isolated worktree. Read `docs/requirements-matrix.yaml` and `docs/architecture/decisions.md` before changing scope. Fortress supersedes earlier performance-first production assumptions; existing vLLM/SGLang paths are numerical references unless a task explicitly retains them.
+Work on a short-lived feature branch or isolated worktree. Read `docs/architecture/decisions.md` before changing scope. Fortress supersedes earlier performance-first production assumptions; existing vLLM/SGLang paths are numerical references unless a task explicitly retains them.
 
 For each change:
 

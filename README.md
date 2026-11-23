@@ -4,7 +4,7 @@ Xurcroh is a distributed inference platform for dense and Mixture-of-Experts lan
 
 Every completed request produces a signed task trace that can be checked with `xurcroh verify` or in a browser on the manual's Verify page; see `docs/task-trace.md` and `docs/claims.md`.
 
-> **Security status:** designed for defence in depth; claims under evaluation. Fortress implementation and production evidence are incomplete. Orthogonal transformations are computational obfuscation, not homomorphic encryption or a cryptographic non-reversibility proof. See `docs/requirements-matrix.yaml` and `docs/validation-report.md`.
+> **Security status:** designed for defence in depth; claims under evaluation. Fortress implementation and production evidence are incomplete. Orthogonal transformations are computational obfuscation, not homomorphic encryption or a cryptographic non-reversibility proof.
 
 ## Public Python API
 
@@ -24,7 +24,7 @@ print(response.choices[0].message.content)
 client.close()
 ```
 
-Synchronous, asynchronous, streaming, multimodal, advanced cluster, and security configuration are documented in `docs/sdk.md`. GGUF, EXL2/GPTQ, and EXL3 checkpoints use the same Fortress API with automatic format detection and explicit semantic adapters; unknown graph semantics fail closed. A requested model must resolve to a real execution adapter; Xurcroh never returns generated-looking canned responses. Deployment and repeatable JSON benchmarks are documented in `docs/deployment.md` and `docs/benchmarking.md`; the funded GPU validation procedure is in `docs/gpu-agent-handoff.md`.
+Synchronous, asynchronous, streaming, multimodal, advanced cluster, and security configuration are documented in `docs/sdk.md`. GGUF, EXL2/GPTQ, and EXL3 checkpoints use the same Fortress API with automatic format detection and explicit semantic adapters; unknown graph semantics fail closed. A requested model must resolve to a real execution adapter; Xurcroh never returns generated-looking canned responses. Deployment and repeatable JSON benchmarks are documented in `docs/deployment.md` and `docs/benchmarking.md`.
 
 ## Protected multi-host quickstart
 
@@ -74,7 +74,7 @@ A runnable CLI version is available at `examples/managed_gemma.py`; supply each 
 .venv/bin/pytest
 ```
 
-Requirement and implementation evidence live under `docs/requirements-matrix.yaml`. The interactive research manual source is under `apps/web-manual/` and is independent of the production runtime. GPU topology estimates and outstanding hardware risks are in `docs/resources.md`. Actual validation evidence and remaining acceptance work are in `docs/validation-report.md`.
+The interactive research manual source is under `apps/web-manual/` and is independent of the production runtime. GPU topology estimates and outstanding hardware risks are in `docs/resources.md`.
 
 ## Security
 
