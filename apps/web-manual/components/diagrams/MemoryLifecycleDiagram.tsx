@@ -1,6 +1,9 @@
 "use client";
 
-import { Arrow, Box, Diagram, Note, type DiagramStep } from "@/components/diagrams/primitives";
+import { memoryData } from "@/lib/show/diagram-data";
+import { Arrow, Box, Diagram, Note, type DiagramLive, type DiagramStep } from "@/components/diagrams/primitives";
+
+const LIVE: DiagramLive = { inputLabel: "Your four secret bytes (hex)", defaultInput: "de ad be ef", compute: memoryData };
 
 const STAGES = [
   ["Allocate", "buffer handed out"],
@@ -30,6 +33,7 @@ export function MemoryLifecycleDiagram({ caption }: { caption: string }) {
       height={270}
       caption={caption}
       steps={STEPS}
+      live={LIVE}
     >
       {(arrowId) => (
         <>

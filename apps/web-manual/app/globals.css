@@ -228,6 +228,21 @@ input[type="checkbox"] { width: 1rem; height: 1rem; }
 .dg-item.dg-dim .dg-flow { display: none; }
 @keyframes dg-flow { to { stroke-dashoffset: -18; } }
 @keyframes dg-march { to { stroke-dashoffset: -11; } }
+.dg-opens { cursor: pointer; }
+.dg-item.dg-picked .dg-box { stroke: var(--accent); stroke-width: 3; }
+.dg-packet rect { fill: var(--accent); stroke: var(--surface); stroke-width: 1.5; }
+.dg-packet text { fill: var(--surface); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 700; }
+.dg-value { display: block; margin-top: 0.2rem; color: var(--accent); font-weight: 600; }
+.dg-live { display: grid; gap: 0.5rem; padding-top: 0.6rem; border-top: 1px dashed var(--border); }
+.dg-live label { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 0.88rem; font-weight: 600; }
+.dg-live input { width: min(280px, 70vw); }
+.dg-live-title { color: var(--muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.dg-live .playback button { font-size: 0.78rem; padding: 0.22rem 0.6rem; border-radius: 999px; }
+.dg-live .playback button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.dg-inspect { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.4rem 1rem; margin: 0; }
+.dg-inspect dt { color: var(--muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
+.dg-inspect dd { margin: 0.1rem 0 0; font-size: 0.86rem; line-height: 1.45; word-break: break-word; }
+@media (max-width: 760px) { .dg-inspect { grid-template-columns: 1fr; } }
 .dg-walk { display: grid; gap: 0.5rem; margin-top: 0.6rem; padding: 0.7rem 0.8rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-alt); }
 .dg-walk .playback button { font-size: 0.82rem; padding: 0.3rem 0.6rem; }
 .dg-step { margin: 0; min-height: 3.2em; font-size: 0.92rem; }

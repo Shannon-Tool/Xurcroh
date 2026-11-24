@@ -1,6 +1,9 @@
 "use client";
 
-import { Arrow, Box, Diagram, Note, Zone, type DiagramStep } from "@/components/diagrams/primitives";
+import { architectureData } from "@/lib/show/diagram-data";
+import { Arrow, Box, Diagram, Note, Zone, type DiagramLive, type DiagramStep } from "@/components/diagrams/primitives";
+
+const LIVE: DiagramLive = { inputLabel: "Your message", defaultInput: "hi there", compute: architectureData };
 
 const WORKERS = [
   { id: "w00", x: 462, y: 250, role: "(0,0)" },
@@ -29,6 +32,7 @@ export function ArchitectureDiagram({ caption }: { caption: string }) {
       height={520}
       caption={caption}
       steps={STEPS}
+      live={LIVE}
     >
       {(arrowId) => (
         <>

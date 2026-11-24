@@ -1,6 +1,9 @@
 "use client";
 
-import { Arrow, Box, Diagram, Note, Zone, type DiagramStep } from "@/components/diagrams/primitives";
+import { runtimeData } from "@/lib/show/diagram-data";
+import { Arrow, Box, Diagram, Note, Zone, type DiagramLive, type DiagramStep } from "@/components/diagrams/primitives";
+
+const LIVE: DiagramLive = { inputLabel: "Your message", defaultInput: "hi there", compute: runtimeData };
 
 const STEPS: DiagramStep[] = [
   { title: "Prompt", text: "The prompt is tokenised and embedded on the client. Nothing has left the device yet.", show: ["prompt"] },
@@ -21,6 +24,7 @@ export function RuntimeFlowDiagram({ caption }: { caption: string }) {
       height={330}
       caption={caption}
       steps={STEPS}
+      live={LIVE}
     >
       {(arrowId) => (
         <>

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useId, useMemo, useState } from "react";
+import type { DiagramData } from "@/lib/show/diagram-data";
 
 export type Tone = "plain" | "accent" | "warn" | "good";
 
@@ -11,14 +12,35 @@ export interface DiagramStep {
   show: string[];
 }
 
+/** Makes a diagram carry the reader's own input: real values travel along it and every part can be opened. */
+export interface DiagramLive {
+  inputLabel: string;
+  defaultInput: string;
+  maxLength?: number;
+  compute(input: string): DiagramData;
+}
+
 interface DiagramState {
   /** Ids lit by the current walk-through step, or null when the whole picture is shown. */
   lit: Set<string> | null;
   hover: string | null;
   setHover: (id: string | null) => void;
+  /** The value on the move at the current step, when the diagram is live. */
+  packet: string | null;
+  /** Motion is unwanted: the value is shown standing still. */
+  still: boolean;
+  /** Parts that can be opened, the one that is open, and how to open one. */
+  parts: Set<string>;
+  picked: string | null;
+  pick: (id: string) => void;
 }
 
-const DiagramContext = createContext<DiagramState>({ lit: null, hover: null, setHover: () => undefined });
+const DiagramContext = createContext<DiagramState>({ lit: null, hover: null, setHover: () => undefined, packet: null, still: true, parts: new Set(), picked: null, pick: () => undefined });
+
+function pathStart(d: string): [number, number] {
+  const match = /M\s*(-?[\d.]+)[\s,]+(-?[\d.]+)/.exec(d);
+  return match ? [Number(match[1]), Number(match[2])] : [0, 0];
+}
 
 function stateClass(state: DiagramState, isOn: (target: Set<string> | string) => boolean): string {
   if (state.lit) return isOn(state.lit) ? " dg-on" : " dg-dim";
@@ -32,13 +54,14 @@ const STEP_MS = 2600;
  * Frame shared by every chapter diagram: scalable, themed through CSS tokens, described for screen
  * readers. With `steps` it also offers a walk-through that lights one stage at a time.
  */
-export function Diagram({ title, description, width, height, caption, steps = [], children }: {
+export function Diagram({ title, description, width, height, caption, steps = [], live, children }: {
   title: string;
   description: string;
   width: number;
   height: number;
   caption: string;
   steps?: DiagramStep[];
+  live?: DiagramLive;
   children: (arrowId: string) => React.ReactNode;
 }) {
   const id = useId().replace(/[^A-Za-z0-9_-]/g, "");
@@ -46,6 +69,15 @@ export function Diagram({ title, description, width, height, caption, steps = []
   const [step, setStep] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
+  const [input, setInput] = useState(live?.defaultInput ?? "");
+  const [picked, setPicked] = useState<string | null>(null);
+  const [still, setStill] = useState(true);
+  const compute = live?.compute;
+  const data = useMemo(() => (compute ? compute(input) : null), [compute, input]);
+
+  useEffect(() => {
+    setStill(typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }, []);
 
   useEffect(() => {
     if (!playing) return;
@@ -61,9 +93,19 @@ export function Diagram({ title, description, width, height, caption, steps = []
   }, [playing, step, steps.length]);
 
   const state = useMemo<DiagramState>(
-    () => ({ lit: step === null ? null : new Set(steps[step]?.show ?? []), hover, setHover }),
-    [steps, step, hover],
+    () => ({
+      lit: step === null ? null : new Set(steps[step]?.show ?? []),
+      hover,
+      setHover,
+      packet: data && step !== null ? data.values[step] ?? null : null,
+      still,
+      parts: new Set(data?.parts.map((part) => part.id) ?? []),
+      picked,
+      pick: (id: string) => setPicked((now) => (now === id ? null : id)),
+    }),
+    [steps, step, hover, data, still, picked],
   );
+  const open = data?.parts.find((part) => part.id === picked) ?? null;
 
   const current = step === null ? null : steps[step];
   const move = (delta: number) => {
@@ -96,9 +138,27 @@ export function Diagram({ title, description, width, height, caption, steps = []
           </div>
           <p className="dg-step" aria-live="polite">
             {current
-              ? <><strong>{step! + 1} of {steps.length} · {current.title}.</strong> {current.text}</>
+              ? <><strong>{step! + 1} of {steps.length} · {current.title}.</strong> {current.text}{data && data.values[step!] ? <> <span className="dg-value">With your input: <code>{data.values[step!]}</code></span></> : null}</>
               : <>Walk through the {steps.length} steps with Play or Next, or point at a box to see what it connects to.</>}
           </p>
+          {live && data ? (
+            <div className="dg-live">
+              <label>{live.inputLabel} <input value={input} maxLength={live.maxLength ?? 24} onChange={(event) => setInput(event.target.value)} /></label>
+              <div className="playback" role="group" aria-label="Look inside a part">
+                <span className="dg-live-title">Look inside:</span>
+                {data.parts.map((part) => (
+                  <button key={part.id} aria-pressed={part.id === picked} onClick={() => state.pick(part.id)}>{part.name}</button>
+                ))}
+              </div>
+              {open ? (
+                <dl className="dg-inspect" aria-live="polite">
+                  <div><dt>{open.name} holds</dt><dd>{open.holds}</dd></div>
+                  <div><dt>It sees</dt><dd>{open.sees}</dd></div>
+                  <div><dt>It cannot see</dt><dd>{open.cannot}</dd></div>
+                </dl>
+              ) : <p className="small">Type your own input, step through, and open any part to see what it holds with that input. The numbers are computed in your browser.</p>}
+            </div>
+          ) : null}
         </div>
       ) : null}
       <figcaption className="figure-caption">{caption}</figcaption>
@@ -120,8 +180,14 @@ export function Box({ id, x, y, width, height, lines, tone = "plain" }: { id?: s
   const lineHeight = 17;
   const first = y + height / 2 - ((lines.length - 1) * lineHeight) / 2 + 5;
   const status = stateClass(state, (target) => id !== undefined && (typeof target === "string" ? target === id : target.has(id)));
+  const opens = id !== undefined && state.parts.has(id);
   return (
-    <g className={`dg-item${status}`} onMouseEnter={id ? () => state.setHover(id) : undefined} onMouseLeave={id ? () => state.setHover(null) : undefined}>
+    <g
+      className={`dg-item${status}${opens ? " dg-opens" : ""}${id !== undefined && state.picked === id ? " dg-picked" : ""}`}
+      onMouseEnter={id ? () => state.setHover(id) : undefined}
+      onMouseLeave={id ? () => state.setHover(null) : undefined}
+      onClick={opens ? () => state.pick(id) : undefined}
+    >
       <rect x={x} y={y} width={width} height={height} rx="8" className={`dg-box dg-${tone}`} />
       {lines.map((line, index) => (
         <text key={line} x={x + width / 2} y={first + index * lineHeight} textAnchor="middle" className={index === 0 ? "dg-text dg-strong" : "dg-text dg-sub"}>{line}</text>
@@ -146,10 +212,21 @@ export function Arrow({ id, from, to, d, arrowId, label, labelX, labelY, tone = 
 }) {
   const state = useContext(DiagramContext);
   const status = stateClass(state, (target) => (typeof target === "string" ? target === from || target === to : id !== undefined && target.has(id)));
+  // The value on the move rides the arrows of the current step.
+  const packet = state.packet !== null && id !== undefined && state.lit?.has(id) === true ? state.packet : null;
+  const badge = packet && packet.length > 18 ? `${packet.slice(0, 17)}…` : packet ?? "";
+  const start = pathStart(d);
   return (
     <g className={`dg-item${status}`}>
       <path d={d} className={`dg-line dg-${tone}${dashed && !both ? " dg-march" : ""}`} strokeDasharray={dashed ? "6 5" : undefined} markerEnd={`url(#${arrowId})`} markerStart={both ? `url(#${arrowId})` : undefined} />
       {!dashed && !both ? <path d={d} className="dg-flow" /> : null}
+      {packet ? (
+        <g className="dg-packet" transform={state.still ? `translate(${start[0]} ${start[1]})` : undefined}>
+          {state.still ? null : <animateMotion dur="2.6s" repeatCount="indefinite" path={d} />}
+          <rect x={-(14 + badge.length * 6.6) / 2} y={-11} width={14 + badge.length * 6.6} height={22} rx={11} />
+          <text y={4} textAnchor="middle">{badge}</text>
+        </g>
+      ) : null}
       {label && labelX !== undefined && labelY !== undefined ? <text x={labelX} y={labelY} textAnchor="middle" className="dg-label">{label}</text> : null}
     </g>
   );
