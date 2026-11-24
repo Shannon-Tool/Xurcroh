@@ -6,8 +6,11 @@ import { Scene3DView } from "@/components/Scene3DView";
 import { StageBox } from "@/components/StageBox";
 import type { Scene3D } from "@/lib/scene/types";
 
-/** Inside this context a lab shows only its three panels: used where a lab is quoted on another page. */
-export const LabEmbedContext = createContext(false);
+/**
+ * How a lab is shown when it is quoted on another page: "cards" for its three panels only, "stage" for its
+ * live stage and notes without the heading and the exact numbers. `false` is the full lab.
+ */
+export const LabEmbedContext = createContext<false | "cards" | "stage">(false);
 
 const EMPTY_SCENE: Scene3D = { caption: "", nodes: [], links: [] };
 
@@ -49,6 +52,9 @@ export function LabShell({ id, title, plainTitle, caption, onExport, scene, stor
   const [show3d, setShow3d] = useState(true);
   const embedded = useContext(LabEmbedContext);
 
+  if (embedded === "stage") {
+    return story ? <div className="lab-embed" id={id}><LabStage title={plainTitle ?? title} scene={scene ?? EMPTY_SCENE} story={story} /><LiveNotes story={story} /></div> : null;
+  }
   if (embedded) return story ? <div className="lab-embed" role="group" aria-label={plainTitle ?? title}><LiveIO story={story} /></div> : null;
 
   return (

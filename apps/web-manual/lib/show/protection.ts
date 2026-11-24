@@ -32,6 +32,14 @@ export const PROTECTION_LAYERS: ProtectionLayer[] = [
     chapter: "18-deployment", lab: "placement",
   },
   {
+    id: "enclave", name: "Enclave", claim: "The machine's operator cannot look in",
+    threat: "The company that runs a worker's machine could read its memory while it computes.",
+    mechanism: "Every worker must run inside a hardware enclave (TEE) and show a signed report of the software it runs before it is sent anything.",
+    relies: "The processor and its maker. An enclave is one more layer, not proof.",
+    limit: "Enclaves have been broken by physical attacks, and attestation of workers has not yet been validated on real hardware.",
+    chapter: "18-deployment",
+  },
+  {
     id: "check", name: "Check", claim: "Wrong answers are caught",
     threat: "A worker could send back a wrong or doctored answer.",
     mechanism: "Your device tests every answer against a random challenge before it uses it. A failed test throws the step away.",
@@ -40,10 +48,10 @@ export const PROTECTION_LAYERS: ProtectionLayer[] = [
     chapter: "17-security-evaluation", lab: "freivalds",
   },
   {
-    id: "seal", name: "Seal the route", claim: "The network sees only sealed bytes",
+    id: "seal", name: "Seal and route", claim: "The network sees only sealed bytes",
     threat: "Someone watching the network, or a relay on the way, could read or trace what you send.",
-    mechanism: "Everything travels in layers of encryption. A relay can open only its own layer and learns only the next stop.",
-    relies: "Relays not sharing what they see with each other, and standard encryption.",
+    mechanism: "Everything travels in layers of encryption through Tor. A relay can open only its own layer and learns only the next stop.",
+    relies: "Relays not sharing what they see with each other, and standard encryption. The Tor carrier has run on the real network.",
     limit: "It does not hide timing or how much is sent, and relays that work together can link a route.",
     chapter: "08-secure-transport", lab: "onion",
   },

@@ -325,6 +325,13 @@ input[type="checkbox"] { width: 1rem; height: 1rem; }
   .liveio-arrow::after { right: -4px; top: auto; bottom: -3px; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--accent); border-bottom: 0; }
   .liveio-facts { grid-template-columns: 1fr; }
 }
+/* ---- gallery of every animation, and schematics folded under live stages */
+.gallery-item { margin-top: 2.2rem; scroll-margin-top: 112px; }
+.article .gallery-item h2 { margin-bottom: 0.3rem; }
+.article .gallery-meta, .gallery-meta { max-width: none; margin: 0 0 0.6rem; color: var(--muted); font-size: 0.84rem; }
+.schematic { margin: 1rem 0; }
+.schematic > summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; font-weight: 600; }
+.article .stage .stage-panel p { font-size: 0.8rem; line-height: 1.4; margin: 0; }
 /* ---- protection tour */
 .tour-layers { margin: 0.8rem 0; }
 .tour-layer { border-radius: 999px; font-size: 0.86rem; padding: 0.32rem 0.75rem; }

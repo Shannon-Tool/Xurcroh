@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { axe } from "jest-axe";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/components/Scene3DView", () => ({ Scene3DView: ({ scene }: { scene: { caption: string } }) => <div data-testid="view">{scene.caption}</div> }));
+vi.mock("@/components/Scene3DView", () => ({ Scene3DView: ({ scene, overlay }: { scene: { caption: string }; overlay?: React.ReactNode }) => <div data-testid="view"><span data-testid="scene">{scene.caption}</span>{overlay}</div> }));
 
 import ProtectionPage from "@/app/protection/page";
 import { ProtectionTour } from "@/components/ProtectionTour";
@@ -22,7 +22,7 @@ afterEach(() => {
 
 describe("protection layers", () => {
   it("names a threat, a mechanism, an assumption and a limit for every layer, and points at a real chapter", () => {
-    expect(PROTECTION_LAYERS.map((layer) => layer.name)).toEqual(["Split", "Separate", "Check", "Seal the route", "Wipe", "Prove"]);
+    expect(PROTECTION_LAYERS.map((layer) => layer.name)).toEqual(["Split", "Separate", "Enclave", "Check", "Seal and route", "Wipe", "Prove"]);
     for (const layer of PROTECTION_LAYERS) {
       for (const text of [layer.claim, layer.threat, layer.mechanism, layer.relies, layer.limit]) expect(text.length).toBeGreaterThan(15);
       expect(sections.some((section) => section.slug === layer.chapter)).toBe(true);
@@ -30,6 +30,11 @@ describe("protection layers", () => {
       expect(`${layer.claim} ${layer.mechanism}`).not.toMatch(/\b(guarantee|unbreakable|impossible|100%|perfectly safe)\b/i);
     }
     expect(PROTECTION_LIMITS.join(" ")).toMatch(/under evaluation/);
+    // The enclave layer says what it rests on and that it has not been validated on hardware.
+    const enclave = PROTECTION_LAYERS.find((layer) => layer.id === "enclave")!;
+    expect(enclave.relies).toMatch(/one more layer, not proof/);
+    expect(enclave.limit).toMatch(/not yet been validated on real hardware/);
+    expect(PROTECTION_LAYERS.find((layer) => layer.id === "seal")!.mechanism).toMatch(/through Tor/);
   });
 
   it("draws your data with one guard post per layer and moves the intruder to face the chosen one", () => {
@@ -37,7 +42,7 @@ describe("protection layers", () => {
     for (let layer = 0; layer < PROTECTION_LAYERS.length; layer += 1) {
       const scene = protectionScene({ layer });
       const posts = scene.nodes.filter((node) => node.id.startsWith("layer-"));
-      expect(posts).toHaveLength(6);
+      expect(posts).toHaveLength(7);
       expect(posts.filter((node) => node.active).map((node) => node.id)).toEqual([`layer-${PROTECTION_LAYERS[layer]!.id}`]);
       expect(posts.filter((node) => node.tone === "good")).toHaveLength(layer);
       expect(posts.map((node) => node.label)).toEqual(PROTECTION_LAYERS.map((entry, index) => `${index + 1}. ${entry.name}`));
@@ -50,9 +55,9 @@ describe("protection layers", () => {
       expect(scene.links[0]).toMatchObject({ from: "intruder", to: post.id, tone: "warn" });
       const ids = scene.nodes.map((node) => node.id);
       for (const link of scene.links) expect(ids).toEqual(expect.arrayContaining([link.from, link.to]));
-      expect(scene.caption).toContain(`Layer ${layer + 1} of 6`);
+      expect(scene.caption).toContain(`Layer ${layer + 1} of 7`);
     }
-    expect(places.size).toBe(6);
+    expect(places.size).toBe(7);
   });
 });
 
@@ -78,13 +83,15 @@ describe("protection tour", () => {
 
   it("lets the reader pick any layer, each with its own demonstration or the trace page", () => {
     render(<ProtectionTour />);
-    const expected = ["Splitting your question so no worker can read it", "Deciding who gets which piece", "Catching a wrong answer", "Hiding the route your question takes", "Wiping your question from memory afterwards"];
+    const expected = ["Splitting your question so no worker can read it", "Deciding who gets which piece", undefined, "Catching a wrong answer", "Hiding the route your question takes", "Wiping your question from memory afterwards", undefined];
     PROTECTION_LAYERS.forEach((layer, index) => {
       fireEvent.click(screen.getByRole("button", { name: layer.name }));
       expect(screen.getByRole("button", { name: layer.name })).toHaveAttribute("aria-pressed", "true");
-      expect(screen.getByTestId("view")).toHaveTextContent(`Layer ${index + 1} of 6 · ${layer.name}`);
+      expect(screen.getByTestId("scene")).toHaveTextContent(`Layer ${index + 1} of 7 · ${layer.name}`);
+      expect(document.querySelector(".ribbon-form[aria-current=step] .ribbon-label")).toHaveTextContent(layer.name);
+      expect(document.querySelector(".stage-caption")).toHaveTextContent(layer.mechanism);
       if (layer.lab) expect(document.querySelector(".lab-embed")).toHaveAccessibleName(expected[index]);
-      else expect(screen.getByRole("link", { name: "trace verification page" })).toHaveAttribute("href", "/verify");
+      else expect(document.querySelector(".lab-embed")).toBeNull();
       expect(screen.getByRole("link", { name: /^chapter \d\d,/ })).toHaveAttribute("href", `/${layer.chapter}`);
     });
   });
@@ -93,18 +100,18 @@ describe("protection tour", () => {
     vi.useFakeTimers();
     const { unmount } = render(<ProtectionTour autoPlay />);
     act(() => { vi.advanceTimersByTime(20_000); });
-    expect(screen.getByTestId("view")).toHaveTextContent("Layer 1 of 6");
+    expect(screen.getByTestId("scene")).toHaveTextContent("Layer 1 of 7");
     fireEvent.click(screen.getByRole("button", { name: "Play the tour" }));
     act(() => { vi.advanceTimersByTime(9000); });
-    expect(screen.getByTestId("view")).toHaveTextContent("Layer 2 of 6");
+    expect(screen.getByTestId("scene")).toHaveTextContent("Layer 2 of 7");
     fireEvent.click(screen.getByRole("button", { name: "Wipe" }));
     act(() => { vi.advanceTimersByTime(20_000); });
-    expect(screen.getByTestId("view")).toHaveTextContent("Layer 5 of 6");
+    expect(screen.getByTestId("scene")).toHaveTextContent("Layer 6 of 7");
     unmount();
     setReducedMotion(false);
     render(<ProtectionTour autoPlay />);
     act(() => { vi.advanceTimersByTime(9000); });
-    expect(screen.getByTestId("view")).toHaveTextContent("Layer 2 of 6");
+    expect(screen.getByTestId("scene")).toHaveTextContent("Layer 2 of 7");
   });
 
   it("states what it does not protect against, on an accessible page", async () => {

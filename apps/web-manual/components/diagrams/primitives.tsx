@@ -53,7 +53,7 @@ const STEP_MS = 2600;
  * Frame shared by every chapter diagram: scalable, themed through CSS tokens, described for screen
  * readers. With `steps` it also offers a walk-through that lights one stage at a time.
  */
-export function Diagram({ title, description, width, height, caption, steps = [], live, children }: {
+export function Diagram({ title, description, width, height, caption, steps = [], live, folded = false, children }: {
   title: string;
   description: string;
   width: number;
@@ -61,6 +61,8 @@ export function Diagram({ title, description, width, height, caption, steps = []
   caption: string;
   steps?: DiagramStep[];
   live?: DiagramLive;
+  /** Tucks the drawing away under a "Schematic" heading, for chapters that lead with a live stage. */
+  folded?: boolean;
   children: (arrowId: string) => React.ReactNode;
 }) {
   const id = useId().replace(/[^A-Za-z0-9_-]/g, "");
@@ -112,7 +114,7 @@ export function Diagram({ title, description, width, height, caption, steps = []
     setStep((value) => Math.max(0, Math.min(steps.length - 1, (value ?? -1) + delta)));
   };
 
-  return (
+  const figure = (
     <figure className="figure">
       <svg className="dg" viewBox={`0 0 ${width} ${height}`} role="img" aria-labelledby={`dg-t-${id}`} aria-describedby={`dg-d-${id}`}>
         <title id={`dg-t-${id}`}>{title}</title>
@@ -163,6 +165,13 @@ export function Diagram({ title, description, width, height, caption, steps = []
       ) : null}
       <figcaption className="figure-caption">{caption}</figcaption>
     </figure>
+  );
+  if (!folded) return figure;
+  return (
+    <details className="schematic">
+      <summary>Schematic drawing, step by step</summary>
+      {figure}
+    </details>
   );
 }
 

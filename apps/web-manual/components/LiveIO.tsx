@@ -66,7 +66,7 @@ export function useLabPanels(story: LiveStory): { input: ReactNode; seen: ReactN
   const seenLine = (story.screenSeen ?? "").split("\n")[0] ?? "";
   const forms: FlowForm[] = [
     { id: "question", label: "Your question", value: question.length > 22 ? `${question.slice(0, 21)}…` : question, tone: "good" },
-    ...TRIP.map((stop): FlowForm => ({ id: stop.id, label: stop.id === story.stage ? `${stop.name} · this lab` : stop.name, value: stop.id === story.stage ? seenLine || "…" : "·", tone: stop.id === story.stage ? "accent" : "plain" })),
+    ...TRIP.map((stop): FlowForm => ({ id: stop.id, label: stop.name, value: stop.id === story.stage ? seenLine || "…" : "·", tone: stop.id === story.stage ? "accent" : "plain" })),
     { id: "answer", label: "Answer", value: !released ? "none released" : kind === "picture" ? "the picture" : `${journey.tokens.slice(0, 3).join("").trim()}…`, tone: released ? "good" : "warn" },
   ];
   return {

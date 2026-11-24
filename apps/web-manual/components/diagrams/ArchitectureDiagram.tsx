@@ -33,6 +33,7 @@ export function ArchitectureDiagram({ caption }: { caption: string }) {
       caption={caption}
       steps={STEPS}
       live={LIVE}
+      folded
     >
       {(arrowId) => (
         <>

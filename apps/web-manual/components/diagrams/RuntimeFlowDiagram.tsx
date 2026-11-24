@@ -25,6 +25,7 @@ export function RuntimeFlowDiagram({ caption }: { caption: string }) {
       caption={caption}
       steps={STEPS}
       live={LIVE}
+      folded
     >
       {(arrowId) => (
         <>

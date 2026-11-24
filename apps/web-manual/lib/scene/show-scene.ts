@@ -213,7 +213,7 @@ export function showScene(input: ShowSceneInput): Scene3D {
   };
 }
 
-const WIDE: Direction = { theta: 0.06, phi: 1.02, zoom: 0.8, focusId: null, sway: 0.14 };
+const WIDE: Direction = { theta: 0.06, phi: 0.9, zoom: 0.62, focusId: null, sway: 0.14 };
 
 /** Where the camera goes for each beat while the reader is not steering it. */
 export function showCamera(beat: Beat, tamperRole: number | null, rejectKind?: Attack | null): Direction {

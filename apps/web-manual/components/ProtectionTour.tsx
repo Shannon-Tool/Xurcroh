@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Evidence } from "@/components/Evidence";
 import { LabEmbedContext } from "@/components/LabShell";
-import { Scene3DView } from "@/components/Scene3DView";
+import { StageBox } from "@/components/StageBox";
 import { FreivaldsLab } from "@/components/labs/FreivaldsLab";
 import { MemoryLab } from "@/components/labs/MemoryLab";
 import { OnionLab } from "@/components/labs/OnionLab";
@@ -72,7 +72,28 @@ export function ProtectionTour({ autoPlay = false }: { autoPlay?: boolean }) {
         ))}
       </div>
 
-      <Scene3DView scene={scene} variant="hero" autoRotate={false} />
+      <StageBox
+        label="The layers of protection, one at a time"
+        scene={scene}
+        autoRotate={false}
+        left={(
+          <div className="stage-panel stage-in">
+            <p className="stage-label">Layer {index + 1} of {PROTECTION_LAYERS.length}</p>
+            <p><strong>{layer.name}.</strong> {layer.claim}.</p>
+          </div>
+        )}
+        right={(
+          <div className="stage-panel stage-seen">
+            <p className="stage-label">What it stops</p>
+            <p>{layer.threat}</p>
+          </div>
+        )}
+        caption={layer.mechanism}
+        why={`It relies on: ${layer.relies.charAt(0).toLowerCase()}${layer.relies.slice(1)}`}
+        forms={PROTECTION_LAYERS.map((entry) => ({ id: entry.id, label: entry.name, value: entry.claim, tone: entry.id === layer.id ? "accent" as const : "plain" as const }))}
+        current={[layer.id]}
+        ribbonLabel="The layers of protection"
+      />
 
       <section className="tour-panel" aria-live="polite" aria-labelledby={`tour-${layer.id}`}>
         <h3 id={`tour-${layer.id}`}>{index + 1}. {layer.name}: {layer.claim.toLowerCase()}</h3>
@@ -90,9 +111,11 @@ export function ProtectionTour({ autoPlay = false }: { autoPlay?: boolean }) {
         ) : null}
         {layer.lab ? (
           <>
-            <p className="tour-try">See it work on your own input. This is the live part of the <Link href={`/laboratory#${layer.lab}`}>laboratory</Link>:</p>
-            <LabEmbedContext.Provider value={true}>{LABS[layer.lab]()}</LabEmbedContext.Provider>
+            <p className="tour-try">See it work for the question you choose. This is the live part of the <Link href={`/laboratory#${layer.lab}`}>laboratory</Link>:</p>
+            <LabEmbedContext.Provider value="cards">{LABS[layer.lab]()}</LabEmbedContext.Provider>
           </>
+        ) : layer.id === "enclave" ? (
+          <p className="tour-try">Watch it in the <Link href="/show">live demonstration</Link>: press “Swap a worker’s software” and the worker’s signed report is refused. The enclaves there are simulated; the signature check is real.</p>
         ) : (
           <p className="tour-try">Check a real trace yourself on the <Link href="/verify">trace verification page</Link>. It runs in your browser and sends nothing anywhere.</p>
         )}

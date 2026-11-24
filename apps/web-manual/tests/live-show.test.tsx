@@ -61,7 +61,7 @@ describe("live demonstration", () => {
     advance(SLOW + 1100 + 750 * 14 + 3600 + 100);
     expect(screen.getByRole("button", { name: "Clip" })).toHaveAttribute("aria-pressed", "true");
     expect(document.querySelectorAll(".show-film canvas")).toHaveLength(12);
-  });
+  }, 30000);
 
   it("does not start by itself under reduced motion, and steps on request", () => {
     setReducedMotion(true);

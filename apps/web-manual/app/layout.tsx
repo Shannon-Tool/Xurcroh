@@ -27,6 +27,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <nav>
               <Link href="/show" className="nav-link"><span className="nav-number">▶</span><span>Live demonstration</span></Link>
               <Link href="/protection" className="nav-link"><span className="nav-number">◈</span><span>How it is protected</span></Link>
+              <Link href="/gallery" className="nav-link"><span className="nav-number">▦</span><span>All animations</span></Link>
               <Link href="/laboratory" className="nav-link"><span className="nav-number">↳</span><span>Mounted laboratory</span></Link>
               <Link href="/verify" className="nav-link"><span className="nav-number">✓</span><span>Verify a task trace</span></Link>
               {sections.map((section, index) => (

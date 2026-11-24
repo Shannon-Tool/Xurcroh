@@ -53,8 +53,8 @@ describe("lab shell with a story", () => {
     expect(document.querySelector(".liveio-answer")).toHaveTextContent(`The model's answer ${journeyOf("text-shares").answer}`);
     expect(document.querySelector(".liveio-result")).toHaveTextContent("19, 43");
     // The ribbon along the bottom of the stage is the trip, with this lab's stop marked.
-    expect([...document.querySelectorAll(".ribbon-label")].map((item) => item.textContent)).toEqual(["Your question", "Prepare", "Split · this lab", "Place", "Send", "Compute", "Check", "Wipe", "Answer"]);
-    expect([...document.querySelectorAll(".ribbon-form[aria-current=step] .ribbon-label")].map((item) => item.textContent)).toEqual(["Your question", "Split · this lab", "Answer"]);
+    expect([...document.querySelectorAll(".ribbon-label")].map((item) => item.textContent)).toEqual(["Your question", "Prepare", "Split", "Place", "Send", "Compute", "Check", "Wipe", "Answer"]);
+    expect([...document.querySelectorAll(".ribbon-form[aria-current=step] .ribbon-label")].map((item) => item.textContent)).toEqual(["Your question", "Split", "Answer"]);
     expect(screen.getByRole("group", { name: "Demo lab: live stage" })).toBeInTheDocument();
     expect(screen.getByTestId("view")).toHaveAttribute("data-variant", "show");
     expect(document.querySelector(".stage-side:not(.stage-right)")).toHaveTextContent("What goes in");

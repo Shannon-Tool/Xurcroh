@@ -8,11 +8,11 @@ The public `Xurcroh` package is a thin facade over `xurcroh` internals. It norma
 
 Python owns the SDK, model adapters, controller, and lifecycle. Rust owns binary framing, directional keys, replay protection, onion metadata, and QUIC. C++/CUDA owns zero-on-free, shared-memory scrubbing, uniform page touch, and ChaCha20 masking. The web manual owns only explanatory simulations.
 
-<ArchitectureDiagram caption="Figure 5.1: The client keeps plaintext, splits each activation into shares, and verifies what four independent role workers return. The controller is a directory that sees only ciphertext." />
-
-The same flow, live. Choose a question and watch it pass through the six steps in 3D to the model's answer; then switch “Whose eyes?” to see what a worker, two workers together, or the network would get. The questions and answers are prepared, the arithmetic on them is real, and all of it runs in your browser; it is not a live system.
+The whole flow, live. Choose a question and watch it get shuffled, split, sealed in three layers, routed through relays, computed inside enclaves, checked and put back together; then switch “Whose eyes?” to see what a worker, two workers together, a relay or the network would get. The questions and answers are prepared, the relays and enclaves are stand-ins, the arithmetic and encryption are real, and all of it runs in your browser.
 
 <LiveDemo />
+
+<ArchitectureDiagram caption="Figure 5.1: The client keeps plaintext, splits each activation into shares, and verifies what four independent role workers return. The controller is a directory that sees only ciphertext." />
 
 ## Runtime reliability
 
