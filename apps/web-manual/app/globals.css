@@ -209,17 +209,29 @@ input[type="checkbox"] { width: 1rem; height: 1rem; }
 .dg-line.dg-warn { stroke: var(--warning); }
 .dg-arrowhead { fill: var(--text); }
 .scene3d { margin: 0.75rem 0; }
-.scene3d-frame { position: relative; height: 340px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-alt); overflow: hidden; touch-action: pan-y; cursor: grab; }
+.scene3d-frame { position: relative; height: 460px; border: 1px solid var(--border); border-radius: 10px; background: linear-gradient(var(--surface-alt), var(--bg)); overflow: hidden; touch-action: pan-y; cursor: grab; box-shadow: var(--shadow); }
 .scene3d-frame:active { cursor: grabbing; }
-.lab-fullscreen .scene3d-frame { height: min(60vh, 620px); }
+.scene3d-hero .scene3d-frame { height: min(56vh, 520px); }
+.lab-fullscreen .scene3d-frame { height: min(68vh, 760px); }
 .scene3d-canvas { display: block; width: 100%; height: 100%; }
 .scene3d-canvas:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
-.scene3d-labels { position: absolute; inset: 0; pointer-events: none; }
-.scene3d-label { position: absolute; transform: translate(-50%, -100%); padding: 0.05rem 0.35rem; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-size: 0.72rem; white-space: nowrap; }
-.scene3d-label.active { border-color: var(--accent); font-weight: 700; }
-.scene3d-notice { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 1rem; text-align: center; color: var(--muted); font-size: 0.88rem; }
-.scene3d-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-top: 0.4rem; }
-.scene3d-caption { margin: 0; flex: 1 1 280px; }
+.scene3d-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.scene3d-label { position: absolute; left: 0; top: 0; padding: 0.08rem 0.5rem; border-radius: 999px; background: color-mix(in srgb, var(--surface) 86%, transparent); border: 1px solid var(--border); color: var(--text); font-size: 0.72rem; line-height: 1.5; white-space: nowrap; backdrop-filter: blur(4px); will-change: transform; }
+.scene3d-label.active { border-color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+.scene3d-tip { position: absolute; z-index: 2; display: grid; gap: 0.15rem; max-width: 240px; padding: 0.45rem 0.6rem; border: 1px solid var(--accent); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-size: 0.78rem; line-height: 1.4; pointer-events: none; }
+.scene3d-hint { position: absolute; left: 0.7rem; bottom: 0.5rem; margin: 0; color: var(--muted); font-size: 0.7rem; opacity: 0.85; pointer-events: none; }
+@media (hover: hover) { .hint-touch { display: none; } }
+@media (hover: none) { .hint-mouse { display: none; } }
+.scene3d-notice { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 0.6rem; margin: 0; padding: 1rem; text-align: center; color: var(--muted); font-size: 0.88rem; }
+.scene3d-notice p { margin: 0; }
+.scene3d-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 0.6rem; margin-top: 0.5rem; }
+.scene3d-text { flex: 1 1 300px; }
+.scene3d-caption { margin: 0; font-size: 0.9rem; }
+.scene3d-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; margin: 0.3rem 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 0.76rem; }
+.scene3d-legend li { display: inline-flex; align-items: center; gap: 0.35rem; }
+.scene3d-swatch { width: 0.7rem; height: 0.7rem; border-radius: 3px; display: inline-block; }
+.scene3d-bar .playback button { font-size: 0.8rem; padding: 0.3rem 0.55rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .small { font-size: 0.82rem; color: var(--muted); }
 
 @media (max-width: 900px) {
@@ -230,6 +242,9 @@ input[type="checkbox"] { width: 1rem; height: 1rem; }
   .main { padding: 1rem; }
   .article { padding: 1.2rem; }
   .lab-fullscreen { inset: 0.5rem; }
+}
+@media (max-width: 600px) {
+  .scene3d-frame, .scene3d-hero .scene3d-frame { height: 320px; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

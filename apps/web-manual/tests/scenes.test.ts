@@ -5,10 +5,12 @@ import { simulateMemory } from "@/lib/simulation/memory";
 import { routeMoe } from "@/lib/simulation/moe";
 import { simulatePipeline } from "@/lib/simulation/pipeline";
 import {
-  conjugationScene, diffusionScene, freivaldsScene, fwhtScene, memoryScene, moeScene, onionScene,
-  pipelineScene, placementScene, quantizedScene, shareGridScene,
+  ARCHITECTURE_PHASES, architectureScene, conjugationScene, diffusionScene, freivaldsScene, fwhtScene, memoryScene,
+  moeScene, onionScene, pipelineScene, placementScene, quantizedScene, shareGridScene,
 } from "@/lib/scene/builders";
 import type { Scene3D } from "@/lib/scene/types";
+
+const TONES = ["plain", "accent", "good", "warn", "muted"];
 
 function wellFormed(scene: Scene3D): void {
   const ids = scene.nodes.map((node) => node.id);
@@ -19,71 +21,103 @@ function wellFormed(scene: Scene3D): void {
   }
   const links = scene.links.map((link) => link.id);
   expect(new Set(links).size).toBe(links.length);
-  for (const packet of scene.packets) expect(links).toContain(packet.link);
   for (const node of scene.nodes) {
-    for (const value of [...node.position, ...node.size]) expect(Number.isFinite(value)).toBe(true);
+    for (const value of [...node.position, ...node.size, ...(node.tip ?? [])]) expect(Number.isFinite(value)).toBe(true);
+    if (node.kind === "arrow") expect(node.tip).toBeDefined();
+    expect(TONES).toContain(node.tone);
   }
+  for (const entry of scene.legend ?? []) expect(TONES).toContain(entry.tone);
   expect(scene.caption.length).toBeGreaterThan(10);
 }
 const active = (scene: Scene3D) => scene.nodes.filter((node) => node.active).map((node) => node.id);
+const find = (scene: Scene3D, id: string) => scene.nodes.find((node) => node.id === id);
+const flowing = (scene: Scene3D) => scene.links.filter((link) => link.flow).map((link) => link.id);
 
 describe("3D scene builders", () => {
-  it("share grid: the active worker follows the step and a tampered worker is marked", () => {
+  it("share grid: shares go out to the active worker, verified products come back, tampering cuts the stream", () => {
     const roles = executeShareGrid([[1, 2], [3, 4]], [5, 7], 0).roles;
     for (let step = 0; step < 4; step += 1) {
       const scene = shareGridScene({ roles, step, tampered: false });
       wellFormed(scene);
       expect(active(scene)).toEqual([`role-${step}`]);
-      expect(scene.packets).toHaveLength(1);
+      expect(scene.links.find((link) => link.id === `link-${step}`)!.flow).toBe("forward");
+      expect(scene.links.filter((link) => link.flow === "back")).toHaveLength(step);
+      expect(scene.nodes.filter((node) => node.kind === "ring")).toHaveLength(step);
     }
     const done = shareGridScene({ roles, step: 4, tampered: false });
     expect(active(done)).toEqual(["client"]);
-    expect(done.packets).toHaveLength(0);
-    const bad = shareGridScene({ roles, step: 0, tampered: true });
-    expect(bad.nodes.find((node) => node.id === "role-0")!.tone).toBe("warn");
-    expect(shareGridScene({ roles, step: 4, tampered: true }).caption).toMatch(/refuses/);
+    expect(find(done, "output")).toBeDefined();
+    const bad = shareGridScene({ roles, step: 2, tampered: true });
+    expect(find(bad, "role-0")!.tone).toBe("warn");
+    expect(find(bad, "seal-0")).toBeUndefined();
+    expect(bad.links.find((link) => link.id === "link-0")!.flow).toBeUndefined();
+    const refused = shareGridScene({ roles, step: 4, tampered: true });
+    expect(refused.caption).toMatch(/refuses/);
+    expect(find(refused, "output")).toBeUndefined();
+    expect(find(refused, "client")!.tone).toBe("warn");
   });
 
-  it("Freivalds: a wrong product is highlighted and the check turns to the warning tone", () => {
+  it("Freivalds: the beam is level when the check passes and tips when a product is wrong", () => {
     const good = freivaldsScene({ x: [5, 7], product: [19, 43], challenge: [11, 13], expected: [19, 43], valid: true });
     wellFormed(good);
-    expect(good.nodes.find((node) => node.id === "left")!.tone).toBe("good");
+    expect(find(good, "beam")!.tilt).toBe(0);
+    expect(find(good, "left")!.tone).toBe("good");
+    expect(find(good, "left")!.position[1]).toBe(find(good, "right")!.position[1]);
     const bad = freivaldsScene({ x: [5, 7], product: [20, 43], challenge: [11, 13], expected: [19, 43], valid: false });
-    expect(bad.nodes.find((node) => node.id === "p-0")!.tone).toBe("warn");
-    expect(bad.links[0]!.dashed).toBe(true);
+    wellFormed(bad);
+    expect(find(bad, "p-0")!.tone).toBe("warn");
+    expect(find(bad, "beam")!.tilt).not.toBe(0);
+    // The claimed side is heavier (20·11 > 19·11), so it hangs lower.
+    expect(find(bad, "right")!.position[1]).toBeLessThan(find(bad, "left")!.position[1]);
+    expect(find(bad, "right")!.detail).toMatch(/779/);
   });
 
-  it("quantized formats: one row of bars per stage and the current row is active", () => {
+  it("quantized formats: one platform of bars per stage, the current one lit and fed by the flow", () => {
     const stages = [{ title: "a", values: [1, -2, 3] }, { title: "b", values: [0, 0, 0] }];
     const scene = quantizedScene({ stages, step: 1 });
     wellFormed(scene);
-    expect(scene.nodes).toHaveLength(6);
+    expect(scene.nodes.filter((node) => node.id.startsWith("q-"))).toHaveLength(6);
+    expect(scene.nodes.filter((node) => node.kind === "slab")).toHaveLength(2);
     expect(active(scene)).toEqual(["q-1-0", "q-1-1", "q-1-2"]);
+    expect(flowing(scene)).toEqual(["flow-1"]);
+    expect(flowing(quantizedScene({ stages, step: 0 }))).toEqual([]);
   });
 
-  it("placement: sixteen blocks, none overlapping, and a reshuffle changes the picture", () => {
+  it("placement: sixteen blocks on distinct pads, grouped by jurisdiction, and a reshuffle moves them", () => {
     const first = placementScene({ roles: placeOperations(0) });
     wellFormed(first);
-    expect(first.nodes).toHaveLength(16);
-    expect(new Set(first.nodes.map((node) => `${node.position[0]}/${node.position[2]}`)).size).toBe(16);
-    expect(JSON.stringify(placementScene({ roles: placeOperations(1) }))).not.toBe(JSON.stringify(first));
+    const blocks = (scene: Scene3D) => scene.nodes.filter((node) => node.id.startsWith("place-"));
+    expect(blocks(first)).toHaveLength(16);
+    expect(new Set(blocks(first).map((node) => `${node.position[0]}/${node.position[2]}`)).size).toBe(16);
+    expect(first.nodes.filter((node) => node.kind === "slab")).toHaveLength(2);
+    expect(blocks(first).every((node) => node.tone !== "warn")).toBe(true);
+    const second = placementScene({ roles: placeOperations(1) });
+    expect(blocks(second).map((node) => node.id)).toEqual(blocks(first).map((node) => node.id));
+    expect(JSON.stringify(blocks(second).map((node) => node.position))).not.toBe(JSON.stringify(blocks(first).map((node) => node.position)));
   });
 
   it("conjugation: the input and the rotated input sit at the same distance from the origin", () => {
     const scene = conjugationScene({ x: [1, 2], rotatedInput: [2, 1], expected: [7, 10], transformedOutput: [10, 7], recovered: [7, 10], step: 1 });
     wellFormed(scene);
-    const distance = (id: string) => Math.hypot(...scene.nodes.find((node) => node.id === id)!.position.map((value, axis) => (axis === 1 ? value - 0.1 : value)));
+    const distance = (id: string) => Math.hypot(...find(scene, id)!.position.map((value, axis) => (axis === 1 ? value - 0.1 : value)));
     expect(distance("x")).toBeCloseTo(distance("rx"));
     expect(active(scene)).toContain("rx");
+    expect(find(scene, "arrow-rx")!.tip).toEqual(find(scene, "rx")!.position);
+    expect(flowing(scene)).toEqual(["rotate"]);
+    expect(flowing(conjugationScene({ x: [1, 2], rotatedInput: [2, 1], expected: [7, 10], transformedOutput: [10, 7], recovered: [7, 10], step: 3 }))).toEqual(["unrotate"]);
   });
 
   it("diffusion: one level per stage with tracks between them", () => {
     const points = [[0, 0], [1, 0], [0, 1], [1, 1]];
     const scene = diffusionScene({ stages: ["a", "b", "c", "d"].map((title) => ({ title, points })), step: 2 });
     wellFormed(scene);
-    expect(scene.nodes).toHaveLength(16);
+    expect(scene.nodes.filter((node) => node.id.startsWith("d-"))).toHaveLength(16);
+    expect(scene.nodes.filter((node) => node.kind === "slab")).toHaveLength(4);
     expect(scene.links).toHaveLength(12);
     expect(active(scene)).toHaveLength(4);
+    expect(flowing(scene)).toHaveLength(4);
+    expect(find(scene, "level-0")!.tone).toBe("good");
+    expect(find(scene, "level-1")!.tone).toBe("accent");
   });
 
   it("FWHT: butterflies join each entry to itself and its partner in the previous stage", () => {
@@ -93,52 +127,85 @@ describe("3D scene builders", () => {
     expect(scene.nodes).toHaveLength(stages.length * 8);
     expect(scene.links).toHaveLength(16);
     expect(scene.links.find((link) => link.id === "fx-0")!.from).toBe("f-1-2");
+    expect(flowing(scene)).toHaveLength(16);
     expect(fwhtScene({ stages, step: 0 }).links).toHaveLength(0);
     wellFormed(fwhtScene({ stages: [], step: 0 }));
   });
 
-  it("pipeline: the packet sits on the hop into the active worker, and returns to the client at the end", () => {
-    const events = simulatePipeline({ nodes: 3, latencyMs: 3, packetLoss: 0, requests: 1, failNode: 1 });
-    for (const event of events) {
-      const scene = pipelineScene({ nodes: 3, failNode: 1, event });
+  it("pipeline: every request has its own packet, which follows that request from stage to stage", () => {
+    const events = simulatePipeline({ nodes: 3, latencyMs: 3, packetLoss: 0, requests: 2, failNode: 1 });
+    events.forEach((event, index) => {
+      const scene = pipelineScene({ nodes: 3, failNode: 1, events, index });
       wellFormed(scene);
-      expect(scene.packets[0]!.link).toBe(event.stageIndex < 0 ? "return" : `hop-${event.stageIndex}`);
-      expect(active(scene)).toEqual([event.stageIndex < 0 ? "client" : `w-${event.stageIndex}`]);
-    }
-    expect(pipelineScene({ nodes: 3, failNode: 1, event: events[0]! }).nodes.find((node) => node.id === "w-1")!.tone).toBe("warn");
+      expect(scene.nodes.filter((node) => node.id.startsWith("req-"))).toHaveLength(2);
+      expect(active(scene)).toContain(event.stageIndex < 0 ? "client" : `w-${event.stageIndex}`);
+      expect(active(scene)).toContain(`req-${event.request}`);
+      if (event.stageIndex >= 0 && event.state !== "scrubbed") expect(find(scene, `req-${event.request}`)!.position[0]).toBe(find(scene, `w-${event.stageIndex}`)!.position[0]);
+    });
+    const start = pipelineScene({ nodes: 3, failNode: 1, events, index: 0 });
+    expect(find(start, "w-1")!.tone).toBe("warn");
+    expect(find(start, "req-1")!.opacity).toBeLessThan(1);
+    const recovering = events.findIndex((event) => event.state === "recovered");
+    expect(find(pipelineScene({ nodes: 3, failNode: 1, events, index: recovering }), `req-${events[recovering]!.request}`)!.tone).toBe("warn");
+    const end = pipelineScene({ nodes: 3, failNode: 1, events, index: events.length - 1 });
+    expect(find(end, "req-0")!.tone).toBe("good");
+    expect(find(end, "req-0")!.position[0]).toBe(find(end, "client")!.position[0]);
   });
 
-  it("onion: one layer comes off per hop, and tampering or collusion is visible", () => {
+  it("onion: one layer comes off per hop and stays behind, and tampering or collusion is visible", () => {
     const hops = ["worker-1", "worker-2", "client"];
-    const shells = (step: number) => onionScene({ hops, step, tampered: false, compromised: false, colluding: false }).nodes.filter((node) => node.kind === "shell").length;
-    expect([shells(0), shells(1), shells(2)]).toEqual([3, 2, 1]);
+    const at = (step: number) => onionScene({ hops, step, tampered: false, compromised: false, colluding: false });
+    const shells = (step: number) => at(step).nodes.filter((node) => node.kind === "shell").map((node) => node.id);
+    expect([shells(0), shells(1), shells(2)]).toEqual([["shell-0", "shell-1", "shell-2"], ["shell-1", "shell-2"], ["shell-2"]]);
+    expect(at(2).nodes.filter((node) => node.kind === "ring").map((node) => node.id)).toEqual(["peel-0", "peel-1"]);
+    expect(find(at(1), "payload")!.position[0]).toBe(find(at(1), "hop-1")!.position[0]);
     const scene = onionScene({ hops, step: 1, tampered: true, compromised: true, colluding: false });
     wellFormed(scene);
-    expect(scene.nodes.find((node) => node.id === "shell-0")!.tone).toBe("warn");
-    expect(scene.nodes.find((node) => node.id === "hop-1")!.tone).toBe("warn");
-    expect(scene.nodes.find((node) => node.id === "hop-0")!.tone).toBe("plain");
+    expect(find(scene, "shell-1")!.tone).toBe("warn");
+    expect(find(scene, "hop-1")!.tone).toBe("warn");
+    expect(find(scene, "hop-0")!.tone).toBe("plain");
     expect(onionScene({ hops, step: 0, tampered: false, compromised: false, colluding: true }).links.filter((link) => link.dashed)).toHaveLength(2);
+    wellFormed(onionScene({ hops: [], step: 0, tampered: false, compromised: false, colluding: false }));
   });
 
-  it("mixture of experts: dummy routes are dashed and disappear when protection is off", () => {
+  it("mixture of experts: dummy routes are dashed and still, and disappear when protection is off", () => {
     const hidden = [[1, 0], [0, 1], [1, 1], [2, 0], [0, 2], [2, 2]];
     const plan = routeMoe(hidden, [[1, 0], [0, 1], [1, 1], [2, 0.5]], 1, 4);
     const guarded = moeScene({ tokens: 6, plan, loads: plan.loads, protectedMode: true, step: 0 });
     wellFormed(guarded);
     expect(guarded.links).toHaveLength(16);
     expect(guarded.links.filter((link) => !link.dashed)).toHaveLength(6);
+    expect(flowing(guarded)).toHaveLength(6);
     const open = moeScene({ tokens: 6, plan, loads: [1, 1, 2, 2], protectedMode: false, step: 0 });
     expect(open.links).toHaveLength(6);
     expect(moeScene({ tokens: 6, plan: null, loads: [], protectedMode: true, step: 0 }).nodes).toHaveLength(0);
   });
 
-  it("memory: stale bytes after a skipped wipe are in the warning tone", () => {
+  it("memory: the same four cells drain to zero on a wipe, or stay behind in the warning tone", () => {
+    const cells = (scene: Scene3D) => scene.nodes.filter((node) => node.id.startsWith("cell-"));
+    const before = memoryScene({ steps: simulateMemory(true), index: 2 });
     const safe = memoryScene({ steps: simulateMemory(true), index: 5 });
     wellFormed(safe);
+    expect(cells(safe).map((node) => node.id)).toEqual(cells(before).map((node) => node.id));
+    expect(cells(safe)[0]!.size[1]).toBeLessThan(cells(before)[0]!.size[1]);
     expect(safe.nodes.filter((node) => node.tone === "warn")).toHaveLength(0);
+    expect(cells(safe).every((node) => node.tone === "good")).toBe(true);
     const unsafe = memoryScene({ steps: simulateMemory(false), index: 5 });
-    expect(unsafe.nodes.filter((node) => node.tone === "warn")).toHaveLength(8);
+    expect(cells(unsafe).every((node) => node.tone === "warn" && node.pulse)).toBe(true);
     expect(unsafe.caption).toMatch(/next owner can read/);
-    expect(active(unsafe)).toHaveLength(4);
+    expect(active(unsafe)).toContain("step-5");
+    expect(flowing(unsafe)).toEqual(["next-5"]);
+  });
+
+  it("architecture: each phase lights the right part of the system", () => {
+    ARCHITECTURE_PHASES.forEach((_, phase) => wellFormed(architectureScene({ phase })));
+    expect(find(architectureScene({ phase: 0 }), "share-0")).toBeDefined();
+    expect(architectureScene({ phase: 1 }).links.filter((link) => link.flow === "forward")).toHaveLength(4);
+    expect(active(architectureScene({ phase: 2 }))).toEqual(["worker-0", "worker-1", "worker-2", "worker-3"]);
+    expect(architectureScene({ phase: 3 }).links.filter((link) => link.flow === "back")).toHaveLength(4);
+    expect(architectureScene({ phase: 4 }).nodes.filter((node) => node.kind === "ring")).toHaveLength(4);
+    expect(find(architectureScene({ phase: 5 }), "result")).toBeDefined();
+    expect(find(architectureScene({ phase: 3 }), "result")).toBeUndefined();
+    expect(architectureScene({ phase: 99 }).caption).toMatch(/^6\. Combine/);
   });
 });

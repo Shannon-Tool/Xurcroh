@@ -16,7 +16,7 @@ export function PipelineLab() {
   const events = useMemo(() => simulatePipeline({ nodes, latencyMs: latency, packetLoss: loss, requests, failNode: fail && nodes > 1 ? 1 : null }), [nodes, latency, loss, requests, fail]);
   const playback = usePlayback(events.length - 1);
   const event = events[playback.index]!;
-  const scene = useMemo(() => pipelineScene({ nodes, failNode: fail && nodes > 1 ? 1 : null, event }), [nodes, fail, event]);
+  const scene = useMemo(() => pipelineScene({ nodes, failNode: fail && nodes > 1 ? 1 : null, events, index: playback.index }), [nodes, fail, events, playback.index]);
   return (
     <LabShell id="pipeline" scene={scene} title="Distributed inference pipeline" caption="Discrete-event simulation. Time and retransmission counts are synthetic controls, not hardware measurements. Every event changes with nodes, latency, loss, workload, or failure settings.">
       <div className="lab-controls">
