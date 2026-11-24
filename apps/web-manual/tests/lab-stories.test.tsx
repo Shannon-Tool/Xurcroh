@@ -117,10 +117,11 @@ describe("every lab as a live story", () => {
   it("pipeline: every request is answered, with or without a failed worker", () => {
     render(<PipelineLab />);
     expect(card("out")).toHaveTextContent("2 of 2 requests answered.");
-    expect(outcome()).toHaveTextContent(/^Worker 1 failed\. [1-9]\d* recoveries later, 2 of 2/);
-    fireEvent.click(attack());
     expect(outcome()).toHaveTextContent("No worker fails in this run.");
     expect(card("out")).toHaveTextContent("0 recoveries after a failure");
+    expect(attack()).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(attack());
+    expect(outcome()).toHaveTextContent(/^Worker 1 failed\. [1-9]\d* recoveries later, 2 of 2/);
     fireEvent.change(screen.getByLabelText("How many requests to send"), { target: { value: "4" } });
     expect(card("out")).toHaveTextContent("4 of 4 requests answered.");
   });

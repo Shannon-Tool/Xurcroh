@@ -13,7 +13,7 @@ export function PipelineLab() {
   const [latency, setLatency] = useState(3);
   const [loss, setLoss] = useState(0.1);
   const [requests, setRequests] = useState(2);
-  const [fail, setFail] = useState(true);
+  const [fail, setFail] = useState(false);
   const events = useMemo(() => simulatePipeline({ nodes, latencyMs: latency, packetLoss: loss, requests, failNode: fail && nodes > 1 ? 1 : null }), [nodes, latency, loss, requests, fail]);
   const playback = usePlayback(events.length - 1);
   const event = events[playback.index]!;
