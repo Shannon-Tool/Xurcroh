@@ -92,6 +92,7 @@ describe("directed camera", () => {
     expect(showCamera("stream", null).focusId).toBeNull();
     expect(showCamera("stream", null).sway).toBeGreaterThan(0);
     expect(showCamera("split", null).focusId).toBe("device");
-    expect(showCamera("compute", null).focusId).toBe("zone");
+    expect(showCamera("combine", null).focusId).toBe("device");
+    expect(showCamera("compute", null).theta).toBeGreaterThan(showCamera("send", null).theta);
   });
 });

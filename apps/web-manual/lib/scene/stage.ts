@@ -24,6 +24,8 @@ export interface StageView {
   dt: number;
   /** Node the camera should centre on, if the reader picked one. */
   focusId: string | null;
+  /** Pixels on the right of the view that panels cover; the scene is centred in what is left. */
+  inset?: number;
 }
 
 export interface StageResult {
@@ -261,6 +263,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
   let backdrop: THREE.Texture | null = null;
   let drawnWidth = 0;
   let drawnHeight = 0;
+  let drawnInset = 0;
   let framed = false;
   let floorY = 0;
   const center = new THREE.Vector3();
@@ -595,6 +598,13 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
       const width = Math.max(1, Math.round(view.width));
       const height = Math.max(1, Math.round(view.height));
       resize(width, height);
+      const inset = Math.max(0, Math.min(view.inset ?? 0, width * 0.6));
+      if (inset !== drawnInset || camera.view?.fullWidth !== width || camera.view?.fullHeight !== height) {
+        drawnInset = inset;
+        // Slide the picture left by half the covered strip, so the scene sits in the middle of the free area.
+        if (inset > 0) camera.setViewOffset(width, height, inset / 2, 0, width, height);
+        else camera.clearViewOffset();
+      }
       const smooth = blendFactor(view.dt, 9);
       let animating = !live.settled;
 
@@ -683,7 +693,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
       const wantLook = focused ? scratch.set(focused.position[0], focused.position[1], focused.position[2]).clone() : center.clone();
       if (lookAt.distanceTo(wantLook) > 0.01) animating = true;
       lookAt.lerp(wantLook, blendFactor(view.dt, 6));
-      const narrow = Math.max(1, 1.35 / camera.aspect);
+      const narrow = Math.max(1, 1.35 / ((width - inset) / height));
       const offset = orbitOffset(view.orbit, radius * narrow * (focused ? 0.7 : 1));
       camera.position.set(lookAt.x + offset[0], lookAt.y + offset[1], lookAt.z + offset[2]);
       camera.lookAt(lookAt);
@@ -731,7 +741,8 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
     },
     setScreen(id, source) {
       const current = screens.get(id);
-      if (current && current.image === source) {
+      // A texture keeps the size it was created with, so a resized canvas needs a new one.
+      if (current && current.image === source && current.userData.width === source.width && current.userData.height === source.height) {
         current.needsUpdate = true;
         return;
       }
@@ -741,6 +752,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
       texture.magFilter = THREE.NearestFilter;
       texture.minFilter = THREE.LinearFilter;
       texture.generateMipmaps = false;
+      texture.userData = { width: source.width, height: source.height };
       screens.set(id, texture);
     },
     dispose() {

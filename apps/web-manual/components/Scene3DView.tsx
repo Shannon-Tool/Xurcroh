@@ -61,7 +61,7 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab", direct,
   const stageRef = useRef<Stage | null>(null);
   const liveRef = useRef<LiveScene>(EMPTY_LIVE);
   const motionRef = useRef<OrbitMotion>(restingMotion(DEFAULT_ORBIT));
-  const sizeRef = useRef({ width: 640, height: 460 });
+  const sizeRef = useRef({ width: 640, height: 460, inset: 0 });
   const timeRef = useRef(0);
   const slowRef = useRef(false);
   const touchedRef = useRef(false);
@@ -202,6 +202,7 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab", direct,
         time: still ? 0 : timeRef.current,
         dt: still ? Infinity : elapsed,
         focusId: directed ? directed.focusId : focusRef.current,
+        inset: sizeRef.current.inset,
       });
       paintLabels(result.labels);
       if (!still && elapsed > 0 && !slowRef.current) {
@@ -269,7 +270,10 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab", direct,
     const measure = () => {
       // In the show the frame also holds panels, so the drawing area is the canvas itself.
       const box = ((variant === "show" ? frame.querySelector("canvas:not([hidden])") : null) ?? frame).getBoundingClientRect();
-      if (box.width > 0 && box.height > 0) sizeRef.current = { width: Math.round(box.width), height: Math.round(box.height) };
+      // A panel marked data-inset that floats over the right of the view pushes the scene's centre left.
+      const panel = frame.querySelector<HTMLElement>("[data-inset]");
+      const inset = panel && getComputedStyle(panel).position === "absolute" ? Math.round(box.right - panel.getBoundingClientRect().left) : 0;
+      if (box.width > 0 && box.height > 0) sizeRef.current = { width: Math.round(box.width), height: Math.round(box.height), inset: Math.max(0, inset) };
       requestRef.current();
     };
     measure();
@@ -443,7 +447,7 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab", direct,
       </div>
       <div className="scene3d-bar">
         <div className="scene3d-text">
-          <p className="scene3d-caption">{scene.caption}</p>
+          {variant === "show" ? null : <p className="scene3d-caption">{scene.caption}</p>}
           {scene.legend && scene.legend.length > 0 ? (
             <ul className="scene3d-legend" aria-label="Colours in the 3D view">
               {scene.legend.map((entry) => (

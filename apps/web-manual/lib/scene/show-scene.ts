@@ -49,29 +49,30 @@ export function showScene(input: ShowSceneInput): Scene3D {
   const sealed = beat === "verify" || beat === "combine" || beat === "stream" || beat === "done" || beat === "rejected";
   const nodes: SceneNode[] = [
     {
-      id: "device", kind: "box", position: [-4.6, 0.75, 0], size: [1.7, 1.5, 1.7], tone: "good", label: "Your device", flash: input.revealed,
+      id: "device", kind: "box", position: [-4.6, 0.75, 0], size: [1.7, 1.5, 1.7], tone: "good", flash: input.revealed,
       detail: "The only place where the input, both shares together, and the output exist in the clear.",
       active: beat === "split" || beat === "verify" || beat === "combine" || beat === "stream" || beat === "done",
     },
     {
-      id: "screen-device", kind: "screen", screen: "device", position: [-4.6, 3.05, 0], size: [3, 1.88, 0], tone: "good", flash: input.revealed,
+      id: "screen-device", kind: "screen", screen: "device", position: [-4.6, 3.3, 0], size: [3.6, 2.25, 0], tone: "good", flash: input.revealed, label: "Your device",
       detail: "The output as it forms. It is decoded from the four recombined products.",
     },
     { id: "controller", kind: "cylinder", position: [0, 0.35, -4.6], size: [1.7, 0.7, 1.7], tone: "plain", label: "Controller: sees ciphertext only", detail: "A signed directory of workers. It routes encrypted messages and cannot read them." },
-    { id: "zone", kind: "slab", position: [4.4, 0.04, 0], size: [5.6, 0.08, 5.6], tone: "accent", opacity: 0.16, label: "Four independent operators" },
+    { id: "zone", kind: "slab", position: [4.4, 0.04, 0], size: [6.6, 0.08, 6.6], tone: "accent", opacity: 0.16 },
   ];
   const links: SceneLink[] = [{ id: "lookup", from: "device", to: "controller", tone: "plain", dashed: true, arc: 0.6 }];
   for (let role = 0; role < 4; role += 1) {
     const id = `worker-${role}`;
-    const at: Vec3 = [3.1 + (role >> 1) * 2.6, 0.55, -1.3 + (role & 1) * 2.6];
+    const at: Vec3 = [2.9 + (role >> 1) * 3, 0.55, -1.5 + (role & 1) * 3];
     const bad = beat === "rejected" && input.tamperRole === role;
     nodes.push({
-      id, kind: "box", position: at, size: [1.2, 1.1, 1.2], tone: bad ? "warn" : "accent", label: bad ? `${workerName(role)}: failed the check` : workerName(role),
+      id, kind: "box", position: at, size: [1.2, 1.1, 1.2], tone: bad ? "warn" : "accent",
       detail: `Holds activation share ${role >> 1} and weight share ${role & 1}.`,
       active: beat === "compute" || bad, pulse: beat === "compute" || beat === "stream" || bad, flash: bad ? input.rejections : 0,
     });
     nodes.push({
-      id: `screen-${id}`, kind: "screen", screen: id, position: [at[0], 1.85, at[2]], size: [1.2, 0.75, 0], tone: bad ? "warn" : "accent",
+      id: `screen-${id}`, kind: "screen", screen: id, position: [at[0], 1.95, at[2]], size: [1.3, 0.81, 0], tone: bad ? "warn" : "accent", active: bad,
+      label: bad ? `${workerName(role)}: failed the check` : workerName(role),
       detail: `What ${workerName(role)} sees: its shares and its product, which are random numbers.`,
     });
     links.push({ id: `out-${role}`, from: "device", to: id, arc: 2.3 + role * 0.25, tone: "accent", active: sending, flow: sending ? "forward" : undefined });
@@ -94,19 +95,19 @@ export function showScene(input: ShowSceneInput): Scene3D {
   };
 }
 
-const WIDE: Direction = { theta: 0.5, phi: 1.1, zoom: 0.92, focusId: null, sway: 0.22 };
+const WIDE: Direction = { theta: 0.5, phi: 1.1, zoom: 0.66, focusId: null, sway: 0.22 };
 
 /** Where the camera goes for each beat while the reader is not steering it. */
 export function showCamera(beat: Beat, tamperRole: number | null): Direction {
   switch (beat) {
-    case "split": return { theta: 0.15, phi: 1.15, zoom: 0.95, focusId: "device", sway: 0 };
+    case "split": return { theta: 0.2, phi: 1.15, zoom: 1, focusId: "device", sway: 0 };
     case "send": return { ...WIDE, sway: 0 };
-    case "compute": return { theta: 0.95, phi: 1.05, zoom: 0.95, focusId: "zone", sway: 0 };
+    case "compute": return { ...WIDE, theta: 0.9, zoom: 0.6, sway: 0 };
     case "return": return { ...WIDE, theta: 0.4, sway: 0 };
-    case "verify": return { theta: 0.3, phi: 1.1, zoom: 1, focusId: "device", sway: 0 };
-    case "combine": return { theta: 0.12, phi: 1.2, zoom: 0.9, focusId: "screen-device", sway: 0 };
-    case "rejected": return { theta: 0.9, phi: 1.05, zoom: 0.9, focusId: `worker-${tamperRole ?? 0}`, sway: 0 };
-    case "done": return { theta: 0.15, phi: 1.2, zoom: 0.95, focusId: "screen-device", sway: 0.1 };
+    case "verify": return { ...WIDE, theta: 0.3, zoom: 0.62, sway: 0 };
+    case "combine": return { theta: 0.15, phi: 1.15, zoom: 1, focusId: "device", sway: 0 };
+    case "rejected": return { theta: 0.9, phi: 1.05, zoom: 1.1, focusId: `worker-${tamperRole ?? 0}`, sway: 0 };
+    case "done": return { ...WIDE, theta: 0.3, sway: 0.3 };
     case "stream": return WIDE;
   }
 }
