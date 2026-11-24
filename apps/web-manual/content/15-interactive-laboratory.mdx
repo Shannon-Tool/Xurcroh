@@ -4,9 +4,13 @@
 
 Every lab computes its displayed state from explicit inputs. Playback changes the current state, not a decorative timer. Step forward/backward, reset, parameters, and speed are functional controls. Reduced-motion preferences disable autoplay. Each lab also draws its current state as an animated 3D scene: it glides from one step to the next, and light travels along links in the direction the data moves. Rotate it by dragging or with the arrow keys, zoom with plus and minus or Ctrl and the scroll wheel, and point at an object to read what it is. The scene is built from the same state as the text and tables below it, which remain the exact view. Motion can be paused, and stays off under reduced-motion preferences; where WebGL is unavailable the lab says so and the text view still works.
 
+## How each lab is laid out
+
+Each lab starts with three cards. **What goes in** is yours to edit. **What the other party sees** is what a worker, a relay or the next user of the memory actually gets. **What comes out** is the result. Under them the lab says why that protects you, what it relies on, and where it stops, and where there is an attack to try, a button runs it. The same three values appear on screens inside the 3D view, and the exact numbers and controls follow underneath. The [protection tour](/protection) uses these cards to go through the design layer by layer.
+
 ## Live demonstration
 
-The [live demonstration](/show) puts the share grid on a stage. A prepared answer, a picture and a short clip are produced one step at a time, and every step is one matrix product computed on additive shares, checked with a Freivalds test and recombined in your browser, while a 3D view plays the same steps. The tiles beside it show the numbers each worker holds, and “Tamper with a worker” changes one number so that the check rejects the step. The models are toys: text comes from a lookup table that holds a prepared answer, and pictures come from a small hand-built linear decoder. No language or image model runs, the four workers are roles inside the page, and the pace measures nothing.
+The [live demonstration](/show) puts the share grid on a stage. A prepared answer, a picture and a short clip are produced one step at a time, and every step is one matrix product computed on additive shares, checked with a Freivalds test and recombined in your browser, while a 3D view plays the same steps. The tiles beside it show the numbers each worker holds, and “Tamper with a worker” changes one number so that the check rejects the step. The models are toys: text comes from a lookup table that holds a prepared answer, and pictures come from a small hand-built linear decoder. No language or image model runs, the four workers are roles inside the page, and the pace measures nothing. You can also type your own text or draw your own picture, and look through the eyes of one worker, two workers together, or someone watching the network.
 
 ## Laboratories
 
