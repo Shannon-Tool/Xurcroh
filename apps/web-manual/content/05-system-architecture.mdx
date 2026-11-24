@@ -10,6 +10,10 @@ Python owns the SDK, model adapters, controller, and lifecycle. Rust owns binary
 
 <ArchitectureDiagram caption="Figure 5.1: The client keeps plaintext, splits each activation into shares, and verifies what four independent role workers return. The controller is a directory that sees only ciphertext." />
 
+The same flow as a 3D scene. Step through it, or press Play; drag to look around and point at anything to see what it holds. It is an illustration of the design, not a live system.
+
+<ArchitectureExplorer />
+
 ## Runtime reliability
 
 Worker registration is signed and fresh. Topology construction checks model capability and TP/EP group constraints. Admission uses bounded per-model semaphores. Managed streams release resources even when abandoned before their first token. Alternates are tried before output; retry stops after partial output to avoid duplicates.

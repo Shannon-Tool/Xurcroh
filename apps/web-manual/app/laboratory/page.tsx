@@ -16,14 +16,32 @@ export const metadata: Metadata = {
   description: "Executable algebraic, distributed inference, placement, and security laboratories.",
 };
 
+/** In page order; each id is the `id` its lab passes to `LabShell`. */
+const LABS = [
+  { id: "share-grid", name: "Share grid" },
+  { id: "freivalds", name: "Freivalds check" },
+  { id: "quantized-formats", name: "Quantized formats" },
+  { id: "placement", name: "Placement" },
+  { id: "conjugation", name: "Conjugation" },
+  { id: "fwht", name: "FWHT" },
+  { id: "pipeline", name: "Pipeline" },
+  { id: "onion", name: "Onion routing" },
+  { id: "moe", name: "Mixture of experts" },
+  { id: "diffusion", name: "Diffusion" },
+  { id: "memory", name: "Memory" },
+] as const;
+
 export default function LaboratoryPage() {
   return (
     <article className="article">
       <header className="hero">
         <span className="evidence">Executable teaching models · not production inference</span>
         <h1>Interactive laboratory</h1>
-        <p>Every control changes real computational state. Fortress examples use exact BigInt arithmetic and explicitly separate simulation from measured production evidence.</p>
+        <p>Every control changes real computational state. Fortress examples use exact BigInt arithmetic and explicitly separate simulation from measured production evidence. Each laboratory draws its current state as an animated 3D scene; the text beneath it is the exact view.</p>
       </header>
+      <nav className="lab-nav" aria-label="Laboratories on this page">
+        {LABS.map((lab) => <a key={lab.id} href={`#${lab.id}`}>{lab.name}</a>)}
+      </nav>
       <ShareGridLab />
       <FreivaldsLab />
       <QuantizedFormatLab />
