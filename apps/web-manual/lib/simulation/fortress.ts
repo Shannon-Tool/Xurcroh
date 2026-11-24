@@ -29,7 +29,8 @@ export interface GridRole {
 }
 
 export function executeShareGrid(weight: number[][], activation: number[], epoch: number, tamper?: string) {
-  const weightShares = weight.map((row) => shares(row, epoch));
+  // Each row gets its own masks, so no two rows of a weight share look alike.
+  const weightShares = weight.map((row, rowIndex) => shares(row, epoch + rowIndex * 1009));
   const activationShares = shares(activation, epoch + 17);
   const roles: GridRole[] = [];
   for (let a = 0; a < 2; a += 1) {

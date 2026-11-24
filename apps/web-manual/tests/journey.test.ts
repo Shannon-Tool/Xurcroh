@@ -78,6 +78,8 @@ describe("the trip of one question", () => {
     const grid = executeShareGrid(journey.weightRows, journey.counts, 0);
     expect(grid.roles).toHaveLength(4);
     expect(grid.combined.map(Number)).toEqual(journey.scores);
+    // A worker's returned numbers differ from row to row; they do not repeat one value.
+    for (const role of grid.roles) expect(new Set(role.product.map(String)).size).toBe(role.product.length);
     expect(() => executeShareGrid(journey.weightRows, journey.counts, 0, "1:0")).toThrow(/role 1:0/);
     const challenge = [11, 13, 17, 19, 23, 29];
     expect(freivaldsCheck(journey.weightRows, journey.counts, journey.scores, challenge)).toBe(true);
