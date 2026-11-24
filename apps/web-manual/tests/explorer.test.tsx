@@ -3,11 +3,12 @@ import { axe } from "jest-axe";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/scene/stage", () => ({
-  createStage: () => ({ rendererName: "Test GPU", setPalette: () => undefined, setQuality: () => undefined, draw: () => ({ labels: [], animating: false }), pick: () => null, dispose: () => undefined }),
+  createStage: () => ({ rendererName: "Test GPU", setPalette: () => undefined, setQuality: () => undefined, draw: () => ({ labels: [], animating: false }), pick: () => null, setScreen: () => undefined, dispose: () => undefined }),
 }));
 
 import Home from "@/app/page";
 import LaboratoryPage from "@/app/laboratory/page";
+import ShowPage from "@/app/show/page";
 import { ArchitectureExplorer } from "@/components/ArchitectureExplorer";
 
 function setReducedMotion(reduced: boolean) {
@@ -17,11 +18,14 @@ const caption = (container: HTMLElement) => container.querySelector(".scene3d-ca
 
 beforeEach(() => {
   vi.stubGlobal("WebGLRenderingContext", class {});
+  // jsdom cannot draw on a canvas; the pages must not depend on it.
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => null);
   setReducedMotion(true);
 });
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("architecture explorer", () => {
@@ -56,13 +60,22 @@ describe("architecture explorer", () => {
 });
 
 describe("home page", () => {
-  it("opens with the design overview, says what it is, and stays accessible", async () => {
+  it("opens with the live demonstration, says what it is, and stays accessible", async () => {
     const { container } = render(<Home />);
-    expect(screen.getByRole("heading", { name: "The design in one picture" })).toBeInTheDocument();
-    expect(screen.getByText(/not a live system and shows no measurements/)).toBeInTheDocument();
-    expect(screen.getByText(/designed for defence\s+in depth with claims under evaluation/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Live demonstration" })).toBeInTheDocument();
+    expect(container.querySelector(".show-truth")).toHaveTextContent(/prepared toy models; the share arithmetic and its checks are real/);
+    expect(container.querySelector(".show-truth")).toHaveTextContent(/Designed for defence in depth; claims under evaluation/);
     expect(screen.getByRole("link", { name: "Open the laboratory" })).toHaveAttribute("href", "/laboratory");
+    expect(screen.getByRole("link", { name: "Demonstration on its own page" })).toHaveAttribute("href", "/show");
     await waitFor(() => expect(container.querySelector(".scene3d canvas")).not.toBeNull());
+    expect((await axe(container)).violations).toHaveLength(0);
+  }, 20000);
+
+  it("offers the demonstration on its own page with the facts open", async () => {
+    const { container } = render(<ShowPage />);
+    expect(screen.getByRole("heading", { level: 1, name: "Live demonstration" })).toBeInTheDocument();
+    expect(container.querySelector("details.show-details")).toHaveAttribute("open");
+    expect(screen.getByRole("heading", { level: 2, name: "Prepared" })).toBeInTheDocument();
     expect((await axe(container)).violations).toHaveLength(0);
   }, 20000);
 });

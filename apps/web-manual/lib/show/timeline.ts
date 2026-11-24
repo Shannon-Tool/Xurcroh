@@ -39,6 +39,7 @@ export interface ShowState {
 export type ShowAction =
   | { type: "tick"; units: number }
   | { type: "next"; units: number }
+  | { type: "autostart" }
   | { type: "play" }
   | { type: "pause" }
   | { type: "restart" }
@@ -58,6 +59,11 @@ export function currentBeat(state: ShowState, units: number): Beat {
   if (state.rejecting) return "rejected";
   if (state.revealed >= units) return "done";
   return beatsOf(state.unit)[state.beat] ?? "stream";
+}
+
+/** Which of the four roles is tampered with during the rejection on stage; it moves round between rejections. */
+export function tamperRoleOf(state: ShowState): number | null {
+  return state.rejecting ? (state.revealed + state.rejections) % 4 : null;
 }
 
 const SLOW_MS = 1100;
@@ -108,6 +114,8 @@ export function showReducer(state: ShowState, action: ShowAction): ShowState {
       const unit = state.revealed;
       return reveal({ ...paused, unit, beat: beatsOf(unit).length - 1 });
     }
+    case "autostart":
+      return { ...state, playing: true };
     case "play":
       return { ...state, playing: true, attract: false };
     case "pause":

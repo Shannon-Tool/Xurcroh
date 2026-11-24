@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ATTRACT_ORDER, SLOW_BEATS, beatMs, currentBeat, initialShow, showReducer, type ShowState } from "@/lib/show/timeline";
+import { ATTRACT_ORDER, SLOW_BEATS, beatMs, currentBeat, initialShow, showReducer, tamperRoleOf, type ShowState } from "@/lib/show/timeline";
 
 const UNITS = 5;
 
@@ -56,6 +56,11 @@ describe("show timeline", () => {
     }
   });
 
+  it("starts the tour without ending it", () => {
+    const waiting = initialShow("text-shares", { playing: false, attract: true });
+    expect(showReducer(waiting, { type: "autostart" })).toMatchObject({ playing: true, attract: true });
+  });
+
   it("steps one unit at a time when asked, without playing", () => {
     let state = initialShow("text-shares", { playing: false, attract: false });
     state = showReducer(state, { type: "next", units: UNITS });
@@ -79,9 +84,11 @@ describe("show timeline", () => {
     expect(state.rejections).toBe(1);
     expect(state.revealed).toBe(1);
     expect(currentBeat(state, UNITS)).toBe("rejected");
+    expect(tamperRoleOf(state)).toBe(2);
     expect(state.tamperArmed).toBe(false);
     state = tick(state);
     expect(state.rejecting).toBe(false);
+    expect(tamperRoleOf(state)).toBeNull();
     expect(state.revealed).toBe(2);
     expect(state.rejections).toBe(1);
   });
