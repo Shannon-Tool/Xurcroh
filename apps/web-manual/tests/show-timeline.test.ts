@@ -18,22 +18,23 @@ describe("show timeline", () => {
       if (index < SLOW_BEATS.length - 1) expect(state.revealed).toBe(0);
       state = tick(state);
     }
-    expect(seen).toEqual(["split", "send", "compute", "return", "verify", "combine"]);
+    expect(seen).toEqual(["split", "attest", "seal", "route", "compute", "return", "verify", "combine"]);
     // Entering "combine" revealed the first unit; the tick after it started the stream.
     expect(state.revealed).toBe(2);
     expect(currentBeat(state, UNITS)).toBe("stream");
   });
 
-  it("then reveals one unit per beat until it is done, and stops", () => {
+  it("then reveals one unit per beat until it is done, holds, and starts the same question again", () => {
     let state = tick(initialShow("text-shares", { playing: true, attract: false }), SLOW_BEATS.length - 1);
     expect(state.revealed).toBe(1);
     state = tick(state, UNITS - 1);
     expect(state.revealed).toBe(UNITS);
     expect(currentBeat(state, UNITS)).toBe("done");
     expect(state.playing).toBe(true);
+    const run = state.run;
     state = tick(state);
-    expect(state.playing).toBe(false);
-    expect(state.revealed).toBe(UNITS);
+    expect(state).toMatchObject({ modelId: "text-shares", playing: true, revealed: 0, slow: false, attract: false, run: run + 1 });
+    expect(currentBeat(state, UNITS)).toBe("stream");
   });
 
   it("moves on to the next model by itself only while nobody has touched it", () => {
@@ -78,19 +79,26 @@ describe("show timeline", () => {
   it("turns the next reveal into a rejection when a worker is tampered with, then recovers", () => {
     let state = tick(initialShow("text-shares", { playing: true, attract: false }), SLOW_BEATS.length - 1);
     state = showReducer(state, { type: "tamper" });
-    expect(state.tamperArmed).toBe(true);
+    expect(state.armed).toBe("result");
     state = tick(state);
     expect(state.rejecting).toBe(true);
     expect(state.rejections).toBe(1);
     expect(state.revealed).toBe(1);
     expect(currentBeat(state, UNITS)).toBe("rejected");
     expect(tamperRoleOf(state)).toBe(2);
-    expect(state.tamperArmed).toBe(false);
+    expect(state.armed).toBeNull();
+    expect(state.rejectKind).toBe("result");
     state = tick(state);
     expect(state.rejecting).toBe(false);
     expect(tamperRoleOf(state)).toBeNull();
     expect(state.revealed).toBe(2);
     expect(state.rejections).toBe(1);
+    expect(state.rejectKind).toBeNull();
+    for (const attack of ["software", "packet"] as const) {
+      const hit = tick(showReducer(state, { type: "tamper", attack }));
+      expect(hit).toMatchObject({ rejecting: true, rejectKind: attack, armed: null });
+      expect(currentBeat(hit, UNITS)).toBe("rejected");
+    }
   });
 
   it("restarts and switches models from a clean state", () => {

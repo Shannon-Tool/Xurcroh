@@ -114,3 +114,20 @@ export function paintCard(canvas: HTMLCanvasElement, title: string, text: string
   const pitch = Math.round(size * 1.25);
   lines.slice(0, Math.max(1, Math.floor(236 / pitch))).forEach((entry, index) => context.fillText(entry, 22, 76 + index * pitch, width - 44));
 }
+
+/** Sealed bytes as violet static: what a relay or a network observer has in front of it. */
+export function paintCipher(canvas: HTMLCanvasElement, bytes: ArrayLike<number> | null): void {
+  const width = 32;
+  const height = 20;
+  const context = resize(canvas, width, height);
+  if (!context) return;
+  const image = context.createImageData(width, height);
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    const value = bytes && bytes.length > 0 ? bytes[pixel % bytes.length]! & 255 : 0;
+    image.data[pixel * 4] = bytes ? 40 + value * 0.6 : 10;
+    image.data[pixel * 4 + 1] = bytes ? 20 + value * 0.35 : 16;
+    image.data[pixel * 4 + 2] = bytes ? 90 + value * 0.65 : 24;
+    image.data[pixel * 4 + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+}

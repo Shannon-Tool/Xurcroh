@@ -10,7 +10,7 @@ import {
 } from "@/lib/scene/builders";
 import type { Scene3D } from "@/lib/scene/types";
 
-const TONES = ["plain", "accent", "good", "warn", "muted"];
+const TONES = ["plain", "accent", "good", "warn", "muted", "cipher"];
 
 function wellFormed(scene: Scene3D): void {
   const ids = scene.nodes.map((node) => node.id);

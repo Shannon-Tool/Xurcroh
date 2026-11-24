@@ -1,4 +1,5 @@
-export type SceneTone = "plain" | "accent" | "good" | "warn" | "muted";
+/** "cipher" marks data that is encrypted: sealed packets, relays and the links they travel on. */
+export type SceneTone = "plain" | "accent" | "good" | "warn" | "muted" | "cipher";
 export type Vec3 = readonly [number, number, number];
 
 /**

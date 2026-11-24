@@ -6,9 +6,12 @@ import type { ShowKind } from "@/lib/simulation/show";
  * stream. This module only decides what is on stage when; it computes nothing itself.
  */
 
-export type Beat = "split" | "send" | "compute" | "return" | "verify" | "combine" | "stream" | "rejected" | "done";
+export type Beat = "split" | "attest" | "seal" | "route" | "compute" | "return" | "verify" | "combine" | "stream" | "rejected" | "done";
 
-export const SLOW_BEATS: Beat[] = ["split", "send", "compute", "return", "verify", "combine"];
+export const SLOW_BEATS: Beat[] = ["split", "attest", "seal", "route", "compute", "return", "verify", "combine"];
+
+/** What the reader can do to a step: change a worker's result, swap a worker's software, or alter a sealed packet. */
+export type Attack = "result" | "software" | "packet";
 const STREAM_BEATS: Beat[] = ["stream"];
 
 /** Order of the automatic tour that runs until the reader touches a control. */
@@ -26,8 +29,10 @@ export interface ShowState {
   rejections: number;
   /** A rejection is on stage; the retry follows. */
   rejecting: boolean;
-  /** The reader asked for the next step to be tampered with. */
-  tamperArmed: boolean;
+  /** The attack the reader asked for on the next step, if any. */
+  armed: Attack | null;
+  /** The attack behind the rejection on stage. */
+  rejectKind: Attack | null;
   playing: boolean;
   speed: 1 | 2;
   /** Still on the automatic tour. */
@@ -45,12 +50,12 @@ export type ShowAction =
   | { type: "play" }
   | { type: "pause" }
   | { type: "restart" }
-  | { type: "tamper" }
+  | { type: "tamper"; attack?: Attack }
   | { type: "speed"; speed: 1 | 2 }
   | { type: "select"; modelId: string; playing?: boolean; slow?: boolean };
 
 export function initialShow(modelId: string, options: { playing: boolean; attract: boolean; slow?: boolean }, run = 0): ShowState {
-  return { modelId, unit: 0, beat: 0, revealed: 0, rejections: 0, rejecting: false, tamperArmed: false, playing: options.playing, speed: 1, attract: options.attract, run, slow: options.slow ?? true };
+  return { modelId, unit: 0, beat: 0, revealed: 0, rejections: 0, rejecting: false, armed: null, rejectKind: null, playing: options.playing, speed: 1, attract: options.attract, run, slow: options.slow ?? true };
 }
 
 function beatsOf(unit: number, slow: boolean): Beat[] {
@@ -81,9 +86,9 @@ export function beatMs(state: ShowState, kind: ShowKind, units: number): number 
   return (beat === "stream" ? STREAM_MS[kind] : SLOW_MS) / state.speed;
 }
 
-/** The output of a unit appears as its last beat begins, unless the reader armed a tamper. */
+/** The output of a unit appears as its last beat begins, unless the reader armed an attack. */
 function reveal(state: ShowState): ShowState {
-  if (state.tamperArmed) return { ...state, tamperArmed: false, rejecting: true, rejections: state.rejections + 1 };
+  if (state.armed) return { ...state, armed: null, rejectKind: state.armed, rejecting: true, rejections: state.rejections + 1 };
   return { ...state, revealed: state.revealed + 1 };
 }
 
@@ -93,7 +98,7 @@ function enter(state: ShowState, unit: number, beat: number): ShowState {
 }
 
 function advance(state: ShowState): ShowState {
-  if (state.rejecting) return { ...state, rejecting: false, revealed: state.revealed + 1 };
+  if (state.rejecting) return { ...state, rejecting: false, rejectKind: null, revealed: state.revealed + 1 };
   if (state.beat < beatsOf(state.unit, state.slow).length - 1) return enter(state, state.unit, state.beat + 1);
   return enter(state, state.unit + 1, 0);
 }
@@ -102,7 +107,8 @@ export function showReducer(state: ShowState, action: ShowAction): ShowState {
   switch (action.type) {
     case "tick": {
       if (state.revealed >= action.units) {
-        if (!state.attract) return { ...state, playing: false };
+        // A finished run starts again by itself: the same question, without the slow first pass.
+        if (!state.attract) return { ...initialShow(state.modelId, { playing: true, attract: false, slow: false }, state.run + 1), speed: state.speed };
         const next = ATTRACT_ORDER[(ATTRACT_ORDER.indexOf(state.modelId) + 1) % ATTRACT_ORDER.length]!;
         return { ...initialShow(next, { playing: true, attract: true }, state.run + 1), speed: state.speed };
       }
@@ -125,7 +131,7 @@ export function showReducer(state: ShowState, action: ShowAction): ShowState {
     case "restart":
       return { ...initialShow(state.modelId, { playing: true, attract: false, slow: state.slow }, state.run + 1), speed: state.speed };
     case "tamper":
-      return { ...state, tamperArmed: true, attract: false };
+      return { ...state, armed: action.attack ?? "result", attract: false };
     case "speed":
       return { ...state, speed: action.speed, attract: false };
     case "select":

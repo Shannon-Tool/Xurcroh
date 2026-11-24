@@ -12,8 +12,8 @@ import type { Scene3D, SceneTone } from "@/lib/scene/types";
 
 type Status = "waiting" | "loading" | "ready" | "unsupported" | "lost";
 
-const FALLBACK = { plain: "#8a99a8", accent: "#075985", good: "#15803d", warn: "#9a3412", muted: "#c3ccd6", text: "#17212b", grid: "#ccd5de", top: "#edf1f5", bottom: "#f6f7f9" };
-const TONE_TOKENS: Record<SceneTone, string> = { plain: "--muted", accent: "--accent", good: "--good", warn: "--warning", muted: "--border" };
+const FALLBACK = { plain: "#8a99a8", accent: "#075985", good: "#15803d", warn: "#9a3412", muted: "#c3ccd6", cipher: "#7c3aed", text: "#17212b", grid: "#ccd5de", top: "#edf1f5", bottom: "#f6f7f9" };
+const TONE_TOKENS: Record<SceneTone, string> = { plain: "--muted", accent: "--accent", good: "--good", warn: "--warning", muted: "--border", cipher: "--cipher" };
 const NEXT_EFFECTS: Record<EffectsPreference, EffectsPreference> = { auto: "on", on: "off", off: "auto" };
 
 /** Colours come from the frame's own CSS tokens, so a view inside a dark band is dark in either theme. */
@@ -26,11 +26,12 @@ function readPalette(frame: Element | null): Palette {
     good: token("--good", FALLBACK.good),
     warn: token("--warning", FALLBACK.warn),
     muted: token("--border", FALLBACK.muted),
+    cipher: token("--cipher", FALLBACK.cipher),
     text: token("--text", FALLBACK.text),
     grid: token("--border", FALLBACK.grid),
     backdropTop: token("--surface-alt", FALLBACK.top),
     backdropBottom: token("--bg", FALLBACK.bottom),
-    dark: document.documentElement.dataset.theme === "dark" || frame?.closest(".theater") != null,
+    dark: document.documentElement.dataset.theme === "dark" || frame?.closest(".theater, .stage") != null,
   };
 }
 
@@ -61,7 +62,7 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab", direct,
   const stageRef = useRef<Stage | null>(null);
   const liveRef = useRef<LiveScene>(EMPTY_LIVE);
   const motionRef = useRef<OrbitMotion>(restingMotion(DEFAULT_ORBIT));
-  const sizeRef = useRef({ width: 640, height: 460, inset: 0 });
+  const sizeRef = useRef({ width: 640, height: 460, inset: 0, insetBottom: 0 });
   const timeRef = useRef(0);
   const slowRef = useRef(false);
   const touchedRef = useRef(false);
@@ -203,6 +204,7 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab", direct,
         dt: still ? Infinity : elapsed,
         focusId: directed ? directed.focusId : focusRef.current,
         inset: sizeRef.current.inset,
+        insetBottom: sizeRef.current.insetBottom,
       });
       paintLabels(result.labels);
       if (!still && elapsed > 0 && !slowRef.current) {
@@ -270,15 +272,20 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab", direct,
     const measure = () => {
       // In the show the frame also holds panels, so the drawing area is the canvas itself.
       const box = ((variant === "show" ? frame.querySelector("canvas:not([hidden])") : null) ?? frame).getBoundingClientRect();
-      // A panel marked data-inset that floats over the right of the view pushes the scene's centre left.
+      // Panels that float over the view push the scene's centre away from them: data-inset="left" or "right"
+      // for a side column, data-inset-bottom for a strip along the bottom.
+      const floats = (element: HTMLElement | null): element is HTMLElement => element !== null && getComputedStyle(element).position === "absolute";
       const panel = frame.querySelector<HTMLElement>("[data-inset]");
-      const inset = panel && getComputedStyle(panel).position === "absolute" ? Math.round(box.right - panel.getBoundingClientRect().left) : 0;
-      if (box.width > 0 && box.height > 0) sizeRef.current = { width: Math.round(box.width), height: Math.round(box.height), inset: Math.max(0, inset) };
+      const foot = frame.querySelector<HTMLElement>("[data-inset-bottom]");
+      const inset = !floats(panel) ? 0 : panel.dataset.inset === "left" ? -Math.round(panel.getBoundingClientRect().right - box.left) : Math.round(box.right - panel.getBoundingClientRect().left);
+      const insetBottom = floats(foot) ? Math.max(0, Math.round(box.bottom - foot.getBoundingClientRect().top)) : 0;
+      if (box.width > 0 && box.height > 0) sizeRef.current = { width: Math.round(box.width), height: Math.round(box.height), inset, insetBottom };
       requestRef.current();
     };
     measure();
     const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     resize?.observe(frame);
+    frame.querySelectorAll("[data-inset], [data-inset-bottom]").forEach((element) => resize?.observe(element));
     // Zooming needs Ctrl (or a trackpad pinch) so that an ordinary scroll still moves the page.
     const onWheel = (event: WheelEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;

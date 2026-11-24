@@ -24,8 +24,10 @@ export interface StageView {
   dt: number;
   /** Node the camera should centre on, if the reader picked one. */
   focusId: string | null;
-  /** Pixels on the right of the view that panels cover; the scene is centred in what is left. */
+  /** Pixels at the side that panels cover: positive on the right, negative on the left. The scene is centred in what is left. */
   inset?: number;
+  /** Pixels along the bottom that panels cover. */
+  insetBottom?: number;
 }
 
 export interface StageResult {
@@ -264,6 +266,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
   let drawnWidth = 0;
   let drawnHeight = 0;
   let drawnInset = 0;
+  let drawnInsetBottom = 0;
   let framed = false;
   let floorY = 0;
   const center = new THREE.Vector3();
@@ -598,11 +601,13 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
       const width = Math.max(1, Math.round(view.width));
       const height = Math.max(1, Math.round(view.height));
       resize(width, height);
-      const inset = Math.max(0, Math.min(view.inset ?? 0, width * 0.6));
-      if (inset !== drawnInset || camera.view?.fullWidth !== width || camera.view?.fullHeight !== height) {
+      const inset = Math.max(-width * 0.6, Math.min(view.inset ?? 0, width * 0.6));
+      const insetBottom = Math.max(0, Math.min(view.insetBottom ?? 0, height * 0.5));
+      if (inset !== drawnInset || insetBottom !== drawnInsetBottom || camera.view?.fullWidth !== width || camera.view?.fullHeight !== height) {
         drawnInset = inset;
-        // Slide the picture left by half the covered strip, so the scene sits in the middle of the free area.
-        if (inset > 0) camera.setViewOffset(width, height, inset / 2, 0, width, height);
+        drawnInsetBottom = insetBottom;
+        // Slide the picture by half of each covered strip, so the scene sits in the middle of the free area.
+        if (inset !== 0 || insetBottom !== 0) camera.setViewOffset(width, height, inset / 2, insetBottom / 2, width, height);
         else camera.clearViewOffset();
       }
       const smooth = blendFactor(view.dt, 9);
@@ -693,7 +698,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
       const wantLook = focused ? scratch.set(focused.position[0], focused.position[1], focused.position[2]).clone() : center.clone();
       if (lookAt.distanceTo(wantLook) > 0.01) animating = true;
       lookAt.lerp(wantLook, blendFactor(view.dt, 6));
-      const narrow = Math.max(1, 1.35 / ((width - inset) / height));
+      const narrow = Math.max(1, 1.35 / ((width - Math.abs(inset)) / Math.max(1, height - insetBottom)));
       const offset = orbitOffset(view.orbit, radius * narrow * (focused ? 0.7 : 1));
       camera.position.set(lookAt.x + offset[0], lookAt.y + offset[1], lookAt.z + offset[2]);
       camera.lookAt(lookAt);

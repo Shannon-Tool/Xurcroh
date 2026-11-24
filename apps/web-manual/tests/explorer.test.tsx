@@ -30,7 +30,7 @@ describe("home page", () => {
   it("opens with the live demonstration, says what it is, and stays accessible", async () => {
     const { container } = render(<Home />);
     expect(screen.getByRole("heading", { name: "Live demonstration" })).toBeInTheDocument();
-    expect(container.querySelector(".show-truth")).toHaveTextContent(/prepared toy models; the share arithmetic and its checks are real/);
+    expect(container.querySelector(".show-truth")).toHaveTextContent(/prepared toy models, and the relays and enclaves are stand-ins inside this page; the share arithmetic, the three layers of encryption and the signature checks are real/);
     expect(container.querySelector(".show-truth")).toHaveTextContent(/Designed for defence in depth; claims under evaluation/);
     expect(screen.getByRole("link", { name: "Open the laboratory" })).toHaveAttribute("href", "/laboratory");
     expect(screen.getByRole("link", { name: "Demonstration on its own page" })).toHaveAttribute("href", "/show");
@@ -42,7 +42,7 @@ describe("home page", () => {
     const { container } = render(<ShowPage />);
     expect(screen.getByRole("heading", { level: 1, name: "Live demonstration" })).toBeInTheDocument();
     expect(container.querySelector("details.show-details")).toHaveAttribute("open");
-    expect(screen.getByRole("heading", { level: 2, name: "Prepared" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Prepared or simulated" })).toBeInTheDocument();
     expect((await axe(container)).violations).toHaveLength(0);
   }, 20000);
 });
