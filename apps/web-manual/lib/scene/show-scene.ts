@@ -12,6 +12,8 @@ export interface ShowSceneInput {
   rejections: number;
   /** Role (2·activation share + weight share) whose product was tampered with, while a rejection is on stage. */
   tamperRole: number | null;
+  /** Everyday wording, or the terms the chapters use (the default). */
+  words?: "plain" | "technical";
 }
 
 const THING: Record<ShowKind, string> = { text: "token", picture: "step of the picture", clip: "frame of the clip" };
@@ -26,7 +28,38 @@ function progress(input: ShowSceneInput): string {
   return `Frame ${Math.ceil(input.revealed / 2)} of ${input.units / 2}`;
 }
 
+function plainCaption(input: ShowSceneInput): string {
+  const thing = THING[input.kind];
+  switch (input.beat) {
+    case "split": return `Step 1 of 6 · Split. Your device cuts its data for the first ${thing} into two random pieces.`;
+    case "send": return "Step 2 of 6 · Send. Each of the four workers gets one piece. It already holds one piece of the model.";
+    case "compute": return "Step 3 of 6 · Compute. Each worker multiplies the two pieces it holds. Its screen shows all it sees: noise.";
+    case "return": return "Step 4 of 6 · Return. The four answers travel back to your device.";
+    case "verify": return "Step 5 of 6 · Check. Your device tests every answer. A wrong one would be thrown out here.";
+    case "combine": return `Step 6 of 6 · Combine. The four checked answers add up to the first ${thing}, which appears only on your device.`;
+    case "stream": return `${progress(input)}. The same six steps repeat for every ${thing}.`;
+    case "rejected": return `${workerName(input.tamperRole ?? 0)} sent back a wrong answer. Your device caught it, threw the step away and asked again.`;
+    case "done": return `Complete. Every ${thing} was computed on pieces, checked, and put together on your device.`;
+  }
+}
+
+/** One line on why the step on stage matters for protection. */
+export function showWhy(beat: Beat): string {
+  switch (beat) {
+    case "split": return "One piece alone is random noise. It says nothing about your data.";
+    case "send": return "No worker ever receives both pieces.";
+    case "compute": return "The heavy work is done by machines that cannot read what they are working on.";
+    case "return": return "Each answer is only one of four parts, and useless on its own.";
+    case "verify": return "A worker that cheats or makes a mistake is caught before its answer is used.";
+    case "combine": return "The readable result exists in one place only: your device.";
+    case "stream": return "This holds while workers with different pieces do not pool them. “Whose eyes?” shows what each party gets.";
+    case "rejected": return "Every answer is checked, so a single wrong number cannot slip into the result.";
+    case "done": return "Now try your own text or drawing, or look through another party’s eyes.";
+  }
+}
+
 function caption(input: ShowSceneInput): string {
+  if (input.words === "plain") return plainCaption(input);
   const thing = THING[input.kind];
   switch (input.beat) {
     case "split": return `Split: your device splits its input for the first ${thing} into two random shares.`;

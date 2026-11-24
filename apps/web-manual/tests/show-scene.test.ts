@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ORBIT, followDirection } from "@/lib/scene/orbit";
-import { showCamera, showScene, type ShowSceneInput } from "@/lib/scene/show-scene";
+import { showCamera, showScene, showWhy, type ShowSceneInput } from "@/lib/scene/show-scene";
 import { EMPTY_LIVE, advanceScene } from "@/lib/scene/tween";
 import type { Beat } from "@/lib/show/timeline";
 
@@ -66,6 +66,18 @@ describe("show scene", () => {
     expect(showScene({ ...base, kind: "text", beat: "stream", revealed: 7 }).caption).toMatch(/Token 7 of 40/);
     expect(showScene({ ...base, kind: "picture", beat: "stream", revealed: 3, units: 14 }).caption).toMatch(/Step 3 of 14/);
     expect(showScene({ ...base, kind: "clip", beat: "stream", revealed: 5, units: 24 }).caption).toMatch(/Frame 3 of 12/);
+  });
+
+  it("offers everyday wording and a reason for every beat", () => {
+    for (const beat of BEATS) {
+      const plain = showScene({ ...base, beat, words: "plain", tamperRole: beat === "rejected" ? 1 : null }).caption;
+      expect(plain).not.toMatch(/share|product|Freivalds/i);
+      expect(plain.length).toBeGreaterThan(20);
+      expect(showWhy(beat).length).toBeGreaterThan(20);
+    }
+    expect(showScene({ ...base, beat: "split", words: "plain" }).caption).toMatch(/^Step 1 of 6 · Split\./);
+    expect(showScene({ ...base, beat: "verify", words: "plain" }).caption).toMatch(/^Step 5 of 6 · Check\./);
+    expect(showScene({ ...base, beat: "split" }).caption).toMatch(/shares/);
   });
 
   it("carries screens and flashes through the tween", () => {

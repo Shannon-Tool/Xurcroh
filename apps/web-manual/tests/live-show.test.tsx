@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { axe } from "jest-axe";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { wordsSetting } from "@/lib/scene/settings";
 import { LiveShow } from "@/components/LiveShow";
 import { getModel, seededRng, type TextModel } from "@/lib/simulation/show";
 
@@ -20,6 +21,7 @@ beforeEach(() => {
   // jsdom has no canvas drawing; the show must run without it. No WebGL either, so the 3D view says so.
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => null);
   setReducedMotion(false);
+  wordsSetting.set("plain");
   vi.useFakeTimers();
 });
 afterEach(() => {
@@ -32,13 +34,14 @@ describe("live demonstration", () => {
   it("starts by itself, plays the first token slowly and then streams the prepared answer from the share arithmetic", () => {
     render(<LiveShow autoPlay rng={seededRng(1)} />);
     expect(screen.getByText(first.prompt, { selector: ".show-prompt *" })).toBeInTheDocument();
-    expect(screen.getByText(/^Split:/)).toBeInTheDocument();
+    expect(screen.getByText(/^Step 1 of 6 · Split\./)).toBeInTheDocument();
+    expect(screen.getByText(/One piece alone is random noise/)).toBeInTheDocument();
     expect(answer()).toBe("");
     advance(SLOW - 50);
     expect(answer()).toBe("");
     advance(100);
     expect(answer()).toBe(first.tokens[0]);
-    expect(screen.getByText(/^Combine:/)).toBeInTheDocument();
+    expect(screen.getByText(/^Step 6 of 6 · Combine\./)).toBeInTheDocument();
     advance(1100 + 300 * 3);
     expect(answer()).toBe(first.tokens.slice(0, 5).join(""));
     expect(screen.getByText(/Token 5 of/)).toBeInTheDocument();
@@ -95,7 +98,7 @@ describe("live demonstration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Tamper with a worker" }));
     expect(screen.getByRole("button", { name: "Tamper with a worker" })).toBeDisabled();
     advance(1100);
-    expect(screen.getByText(/returned a product that fails the check/, { selector: ".show-caption" })).toBeInTheDocument();
+    expect(screen.getByText(/sent back a wrong answer\. Your device caught it/, { selector: ".show-caption p" })).toBeInTheDocument();
     expect(document.querySelector(".show-rejected")).toHaveTextContent(/Worker \(\d,\d\) failed the check/);
     expect(document.querySelectorAll(".show-tile.bad")).toHaveLength(1);
     expect(screen.getByTestId("rejected")).toHaveTextContent("1");
@@ -147,6 +150,87 @@ describe("live demonstration", () => {
     act(() => { document.dispatchEvent(new Event("visibilitychange")); });
     advance(300 + 50);
     expect(answer()).toBe(first.tokens.slice(0, 3).join(""));
+  });
+
+  it("works on the reader's own text: typed in, written backwards from the recombined pieces", () => {
+    render(<LiveShow autoPlay rng={seededRng(10)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Your text" }));
+    const input = screen.getByLabelText("Type something");
+    expect(input).toHaveValue("hello world");
+    fireEvent.change(input, { target: { value: "abc def" } });
+    expect(answer()).toBe("");
+    advance(300 * 3 + 50);
+    expect(answer()).toBe("fed");
+    advance(300 * 8);
+    expect(answer()).toBe("fed cba");
+    expect(screen.getByRole("status")).toHaveTextContent("Answer complete: fed cba");
+    expect(screen.getByTestId("checks")).toHaveTextContent("28");
+    expect(document.querySelector(".show-toy")).toHaveTextContent("writes your text backwards");
+  });
+
+  it("works on the reader's own drawing and offers ready-made ones", () => {
+    render(<LiveShow rng={seededRng(11)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Your drawing" }));
+    expect(screen.getByRole("img", { name: /^Drawing pad/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Your drawing" })).toHaveAttribute("aria-pressed", "true");
+    advance(750 * 4 + 50);
+    expect(screen.getByTestId("checks")).toHaveTextContent("16");
+    expect(screen.getByText(/^Complete\./)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Arrow" }));
+    expect(screen.getByTestId("checks")).toHaveTextContent("0");
+    advance(750 + 50);
+    expect(screen.getByTestId("checks")).toHaveTextContent(/^4$/);
+  });
+
+  it("shows what each other party gets: noise, noise, the real thing for matching pieces, ciphertext on the wire", async () => {
+    render(<LiveShow autoPlay rng={seededRng(12)} />);
+    advance(SLOW + 1100 + 300 * 2 + 50);
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    const shown = answer();
+    expect(shown.length).toBeGreaterThan(5);
+    fireEvent.click(screen.getByRole("button", { name: "One worker" }));
+    const data = () => document.querySelector(".show-eye-data")!.textContent!;
+    expect(data()).toMatch(/^([0-9a-f]{4} ?){20,}$/);
+    expect(document.querySelector(".show-answer")).toBeNull();
+    expect(document.querySelector(".show-eye-note")).toHaveTextContent("This is everything it has.");
+    const alone = data();
+    fireEvent.click(screen.getByRole("button", { name: "Two workers, same piece" }));
+    expect(data()).not.toBe(alone);
+    expect(document.querySelector(".show-eye-note")).toHaveTextContent("still have only noise");
+    fireEvent.click(screen.getByRole("button", { name: "Two workers, matching pieces" }));
+    expect(answer()).toBe(shown);
+    expect(document.querySelector(".show-output")).toHaveClass("warn");
+    expect(document.querySelector(".show-eye-note")).toHaveTextContent("This is where the design stops");
+    vi.useRealTimers();
+    fireEvent.click(screen.getByRole("button", { name: "The network" }));
+    await vi.waitFor(() => expect(document.querySelector(".show-eye-note")).toHaveTextContent(/sees [1-9]\d* encrypted bytes/));
+    expect(document.querySelector(".show-eye-data")!.textContent).toMatch(/^([0-9a-f]{2} ?){20,}$/);
+    fireEvent.click(screen.getByRole("button", { name: "You" }));
+    expect(answer()).toBe(shown);
+    expect(document.querySelector(".show-eye-note")).toBeNull();
+  });
+
+  it("switches between everyday and technical wording and remembers the choice", () => {
+    render(<LiveShow rng={seededRng(13)} />);
+    expect(screen.getByText(/^Step 1 of 6 · Split\./)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Words: plain" }));
+    expect(screen.getByText(/^Split: your device splits its input .* into two random shares\./)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Words: technical" })).toBeInTheDocument();
+    expect(wordsSetting.get()).toBe("technical");
+    expect(window.localStorage.getItem("xurcroh-words")).toBe("technical");
+  });
+
+  it("has a compact form for chapters that starts on the reader's own text", () => {
+    render(<LiveShow compact autoPlay rng={seededRng(14)} />);
+    expect(screen.queryByRole("heading", { name: "Live demonstration" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Live demonstration with your own text" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Type something")).toHaveValue("hello world");
+    expect(screen.queryByText("What is real here")).toBeNull();
+    expect(document.querySelector(".show-truth")).toHaveTextContent("Designed for defence in depth; claims under evaluation");
+    advance(SLOW + 50);
+    expect(answer()).toBe("d");
+    advance(1100 + 300 * 10);
+    expect(answer()).toBe("dlrow olleh");
   });
 
   it("says plainly what is real and what is prepared", () => {

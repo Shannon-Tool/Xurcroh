@@ -104,6 +104,18 @@ describe("show timeline", () => {
     expect(showReducer(showReducer(played, { type: "pause" }), { type: "select", modelId: "clip-sunrise", playing: false }).playing).toBe(false);
   });
 
+  it("skips the slow first unit for the reader's own input and reveals from the first beat", () => {
+    let state = showReducer(initialShow("text-shares", { playing: true, attract: true }), { type: "select", modelId: "own-text", slow: false });
+    expect(state).toMatchObject({ modelId: "own-text", slow: false, revealed: 0, attract: false });
+    expect(currentBeat(state, UNITS)).toBe("stream");
+    state = tick(state);
+    expect(state.revealed).toBe(1);
+    state = tick(state, UNITS - 1);
+    expect(state.revealed).toBe(UNITS);
+    expect(showReducer(state, { type: "restart" }).slow).toBe(false);
+    expect(showReducer(state, { type: "select", modelId: "picture-city" }).slow).toBe(true);
+  });
+
   it("paces slow steps, streams and the closing hold, and halves them at double speed", () => {
     const start = initialShow("text-shares", { playing: true, attract: false });
     expect(beatMs(start, "text", UNITS)).toBeGreaterThanOrEqual(900);

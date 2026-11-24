@@ -140,6 +140,8 @@ interface BaseModel {
   /** Number of matrix products the whole output takes. */
   units: number;
   input(unit: number): Int32Array;
+  /** What the toy model does, when the input is the reader's own. */
+  toy?: string;
 }
 
 export interface TextModel extends BaseModel {
@@ -161,6 +163,8 @@ export interface PixelModel extends BaseModel {
   scale: number;
   /** Distance, in ring units, between the largest possible intermediate value and wrap-around. */
   headroom: number;
+  /** True when each unit yields one part of the picture and the device adds the parts up. */
+  accumulate?: boolean;
 }
 
 export type ShowModel = TextModel | PixelModel;
@@ -447,6 +451,97 @@ function buildClip(): PixelModel {
   };
 }
 
+// ---- the reader's own input
+
+const OWN_TEXT_LIMIT = 40;
+
+/** A toy model for typed text: a permutation matrix that writes it backwards, one character per step. */
+export function ownTextModel(text: string): TextModel {
+  const chars = (text.length > 0 ? text : " ").slice(0, OWN_TEXT_LIMIT).split("");
+  const count = chars.length;
+  const codes = chars.map((char) => Math.min(char.charCodeAt(0), SHOW_PRIME - 1));
+  const data = new Int32Array(count * count);
+  for (let row = 0; row < count; row += 1) data[row * count + (count - 1 - row)] = 1;
+  const tokens = [...chars].reverse();
+  return {
+    id: "own-text",
+    kind: "text",
+    prompt: chars.join(""),
+    toy: "Toy model: it writes your text backwards.",
+    answer: tokens.join(""),
+    tokens,
+    vocabulary: [...new Set(chars)].sort(),
+    weight: { rows: count, cols: count, data },
+    units: count,
+    input(unit) {
+      // One character per step, in its own position; every other entry is zero.
+      const vector = new Int32Array(count);
+      vector[count - 1 - unit] = codes[count - 1 - unit]!;
+      return vector;
+    },
+    decodeToken(combined) {
+      let best = 0;
+      for (let row = 1; row < count; row += 1) if (combined[row]! > combined[best]!) best = row;
+      return String.fromCharCode(combined[best]!);
+    },
+  };
+}
+
+/** Size of the drawing pad, in pixels. */
+export const PAD = { width: 32, height: 20 };
+const PAD_STRIPS = 4;
+const PAD_SCALE = 4;
+const PAD_BASE = [16, 24, 40];
+const PAD_GAIN = [2, 3, 4];
+
+/**
+ * A toy model for a drawing (one ink value per pixel): it mirrors the drawing and raises its edges,
+ * which is a linear map plus a constant. The drawing goes in as four strips; the device adds the parts.
+ */
+export function ownDrawingModel(ink: ArrayLike<number>): PixelModel {
+  const { width, height } = PAD;
+  const pixels = width * height;
+  const rows = pixels * 3;
+  const cols = pixels + 1;
+  const data = new Int32Array(rows * cols);
+  const picture = new Uint8ClampedArray(rows);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const here = y * width + (width - 1 - x);
+      const behind = x >= 1 && y >= 1 ? (y - 1) * width + (width - x) : -1;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const row = (y * width + x) * 3 + channel;
+        const gain = PAD_GAIN[channel]!;
+        data[row * cols + here] = toRing(3 * gain);
+        if (behind >= 0) data[row * cols + behind] = toRing(-2 * gain);
+        data[row * cols + pixels] = PAD_BASE[channel]! * PAD_SCALE;
+        picture[row] = Math.round((PAD_BASE[channel]! * PAD_SCALE + gain * (3 * ink[here]! - 2 * (behind >= 0 ? ink[behind]! : 0))) / PAD_SCALE);
+      }
+    }
+  }
+  const stripRows = height / PAD_STRIPS;
+  return {
+    id: "own-drawing",
+    kind: "picture",
+    prompt: "Your drawing",
+    toy: "Toy model: it mirrors your drawing and raises its edges.",
+    width, height,
+    weight: { rows, cols, data },
+    units: PAD_STRIPS,
+    frames: [picture],
+    stepsPerFrame: PAD_STRIPS,
+    scale: PAD_SCALE,
+    headroom: HALF - PAD_SCALE * (PAD_BASE[2]! + 3 * 255),
+    accumulate: true,
+    input(unit) {
+      const vector = new Int32Array(cols);
+      for (let index = unit * stripRows * width; index < (unit + 1) * stripRows * width; index += 1) vector[index] = ink[index]!;
+      if (unit === 0) vector[pixels] = 1;
+      return vector;
+    },
+  };
+}
+
 const cache = new Map<string, ShowModel>();
 
 export function getModel(id: string): ShowModel {
@@ -528,4 +623,35 @@ export function runStep(session: ShowSession, unit: number, tamper?: number): Sh
   }
   const rejected = roles.some((role) => !role.valid);
   return { unit, activationShares, roles, rejected, combined: rejected ? null : combine(roles.map((role) => role.product)) };
+}
+
+// ---------------------------------------------------------------- what other parties could work out
+
+export interface PooledView {
+  /** Your input, if the two workers hold both pieces of it. */
+  input: Int32Array | null;
+  /** The output, if they also hold both pieces of the weights. */
+  output: Int32Array | null;
+  /** Their two products added together: the best they can do otherwise. */
+  sum: Int32Array;
+}
+
+/** What two workers learn if they pool everything they hold in one step. */
+export function pooledView(session: ShowSession, step: ShowStep, first: number, second: number): PooledView {
+  const a = step.roles[first]!;
+  const b = step.roles[second]!;
+  const sum = combine([a.product, b.product]);
+  if (a.activationShare === b.activationShare) return { input: null, output: null, sum };
+  const input = combine([step.activationShares[0], step.activationShares[1]]);
+  if (a.weightShare === b.weightShare) return { input, output: null, sum };
+  const weight: Matrix = { rows: session.model.weight.rows, cols: session.model.weight.cols, data: combine([session.weights[0].data, session.weights[1].data]) };
+  return { input, output: matVec(weight, input), sum };
+}
+
+/** A worker's numbers as they travel: encrypted with AES-GCM under a fresh key. Returns the ciphertext. */
+export async function sealForWire(values: Int32Array): Promise<Uint8Array> {
+  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt"]);
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const plain = new Uint8Array(new Uint16Array(values).buffer);
+  return new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, plain));
 }

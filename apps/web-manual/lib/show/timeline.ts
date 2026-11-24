@@ -34,6 +34,8 @@ export interface ShowState {
   attract: boolean;
   /** Counts fresh starts, so restarting the same model is a visible change. */
   run: number;
+  /** Whether the first unit is played slowly through all six steps. Off for the reader's own input. */
+  slow: boolean;
 }
 
 export type ShowAction =
@@ -45,20 +47,20 @@ export type ShowAction =
   | { type: "restart" }
   | { type: "tamper" }
   | { type: "speed"; speed: 1 | 2 }
-  | { type: "select"; modelId: string; playing?: boolean };
+  | { type: "select"; modelId: string; playing?: boolean; slow?: boolean };
 
-export function initialShow(modelId: string, options: { playing: boolean; attract: boolean }, run = 0): ShowState {
-  return { modelId, unit: 0, beat: 0, revealed: 0, rejections: 0, rejecting: false, tamperArmed: false, playing: options.playing, speed: 1, attract: options.attract, run };
+export function initialShow(modelId: string, options: { playing: boolean; attract: boolean; slow?: boolean }, run = 0): ShowState {
+  return { modelId, unit: 0, beat: 0, revealed: 0, rejections: 0, rejecting: false, tamperArmed: false, playing: options.playing, speed: 1, attract: options.attract, run, slow: options.slow ?? true };
 }
 
-function beatsOf(unit: number): Beat[] {
-  return unit === 0 ? SLOW_BEATS : STREAM_BEATS;
+function beatsOf(unit: number, slow: boolean): Beat[] {
+  return unit === 0 && slow ? SLOW_BEATS : STREAM_BEATS;
 }
 
 export function currentBeat(state: ShowState, units: number): Beat {
   if (state.rejecting) return "rejected";
   if (state.revealed >= units) return "done";
-  return beatsOf(state.unit)[state.beat] ?? "stream";
+  return beatsOf(state.unit, state.slow)[state.beat] ?? "stream";
 }
 
 /** Which of the four roles is tampered with during the rejection on stage; it moves round between rejections. */
@@ -87,12 +89,12 @@ function reveal(state: ShowState): ShowState {
 
 function enter(state: ShowState, unit: number, beat: number): ShowState {
   const placed = { ...state, unit, beat };
-  return beat === beatsOf(unit).length - 1 ? reveal(placed) : placed;
+  return beat === beatsOf(unit, state.slow).length - 1 ? reveal(placed) : placed;
 }
 
 function advance(state: ShowState): ShowState {
   if (state.rejecting) return { ...state, rejecting: false, revealed: state.revealed + 1 };
-  if (state.beat < beatsOf(state.unit).length - 1) return enter(state, state.unit, state.beat + 1);
+  if (state.beat < beatsOf(state.unit, state.slow).length - 1) return enter(state, state.unit, state.beat + 1);
   return enter(state, state.unit + 1, 0);
 }
 
@@ -112,7 +114,7 @@ export function showReducer(state: ShowState, action: ShowAction): ShowState {
       if (state.rejecting) return advance(paused);
       // Jump straight to the beat that shows the next unit's output.
       const unit = state.revealed;
-      return reveal({ ...paused, unit, beat: beatsOf(unit).length - 1 });
+      return reveal({ ...paused, unit, beat: beatsOf(unit, state.slow).length - 1 });
     }
     case "autostart":
       return { ...state, playing: true };
@@ -121,12 +123,12 @@ export function showReducer(state: ShowState, action: ShowAction): ShowState {
     case "pause":
       return { ...state, playing: false, attract: false };
     case "restart":
-      return { ...initialShow(state.modelId, { playing: true, attract: false }, state.run + 1), speed: state.speed };
+      return { ...initialShow(state.modelId, { playing: true, attract: false, slow: state.slow }, state.run + 1), speed: state.speed };
     case "tamper":
       return { ...state, tamperArmed: true, attract: false };
     case "speed":
       return { ...state, speed: action.speed, attract: false };
     case "select":
-      return { ...initialShow(action.modelId, { playing: action.playing ?? true, attract: false }, state.run + 1), speed: state.speed };
+      return { ...initialShow(action.modelId, { playing: action.playing ?? true, attract: false, slow: action.slow }, state.run + 1), speed: state.speed };
   }
 }

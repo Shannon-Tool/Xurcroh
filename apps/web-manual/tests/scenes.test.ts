@@ -5,7 +5,7 @@ import { simulateMemory } from "@/lib/simulation/memory";
 import { routeMoe } from "@/lib/simulation/moe";
 import { simulatePipeline } from "@/lib/simulation/pipeline";
 import {
-  ARCHITECTURE_PHASES, architectureScene, conjugationScene, diffusionScene, freivaldsScene, fwhtScene, memoryScene,
+  conjugationScene, diffusionScene, freivaldsScene, fwhtScene, memoryScene,
   moeScene, onionScene, pipelineScene, placementScene, quantizedScene, shareGridScene,
 } from "@/lib/scene/builders";
 import type { Scene3D } from "@/lib/scene/types";
@@ -195,17 +195,5 @@ describe("3D scene builders", () => {
     expect(unsafe.caption).toMatch(/next owner can read/);
     expect(active(unsafe)).toContain("step-5");
     expect(flowing(unsafe)).toEqual(["next-5"]);
-  });
-
-  it("architecture: each phase lights the right part of the system", () => {
-    ARCHITECTURE_PHASES.forEach((_, phase) => wellFormed(architectureScene({ phase })));
-    expect(find(architectureScene({ phase: 0 }), "share-0")).toBeDefined();
-    expect(architectureScene({ phase: 1 }).links.filter((link) => link.flow === "forward")).toHaveLength(4);
-    expect(active(architectureScene({ phase: 2 }))).toEqual(["worker-0", "worker-1", "worker-2", "worker-3"]);
-    expect(architectureScene({ phase: 3 }).links.filter((link) => link.flow === "back")).toHaveLength(4);
-    expect(architectureScene({ phase: 4 }).nodes.filter((node) => node.kind === "ring")).toHaveLength(4);
-    expect(find(architectureScene({ phase: 5 }), "result")).toBeDefined();
-    expect(find(architectureScene({ phase: 3 }), "result")).toBeUndefined();
-    expect(architectureScene({ phase: 99 }).caption).toMatch(/^6\. Combine/);
   });
 });

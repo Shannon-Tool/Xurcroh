@@ -40,3 +40,5 @@ function createSetting<T extends string>(key: string, fallback: T, allowed: read
 
 export const effectsSetting = createSetting<EffectsPreference>("xurcroh-3d-effects", "auto", ["auto", "on", "off"]);
 export const motionSetting = createSetting<"on" | "off">("xurcroh-3d-motion", "on", ["on", "off"]);
+/** Plain everyday wording, or the technical terms the chapters use. */
+export const wordsSetting = createSetting<"plain" | "technical">("xurcroh-words", "plain", ["plain", "technical"]);
