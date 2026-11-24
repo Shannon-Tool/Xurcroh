@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { LiveIO, type LiveStory } from "@/components/LiveIO";
 import { Scene3DView } from "@/components/Scene3DView";
 import { withIOScreens } from "@/lib/scene/io-screens";
 import type { Scene3D } from "@/lib/scene/types";
 import { paintCard } from "@/lib/show/paint";
+
+/** Inside this context a lab shows only its live strip: used where a lab is quoted on another page. */
+export const LabEmbedContext = createContext(false);
 
 export function LabShell({ id, title, caption, onExport, scene, story, watch, children }: {
   id: string;
@@ -26,7 +29,8 @@ export function LabShell({ id, title, caption, onExport, scene, story, watch, ch
   const [painted, setPainted] = useState(0);
 
   // The same three values the strip shows are drawn on screens inside the 3D view.
-  const hasScreens = story?.screens !== undefined;
+  const embedded = useContext(LabEmbedContext);
+  const hasScreens = story?.screens !== undefined && !embedded;
   const inText = story?.screens?.input ?? "";
   const seenText = story?.screens?.seen ?? "";
   const outText = story?.screens?.output ?? "";
@@ -42,6 +46,8 @@ export function LabShell({ id, title, caption, onExport, scene, story, watch, ch
   }, [hasScreens, inText, seenText, outText, warn, screens]);
 
   const staged = useMemo(() => (scene && hasScreens ? withIOScreens(scene, warn ? "warn" : "good") : scene), [scene, hasScreens, warn]);
+
+  if (embedded) return story ? <div className="lab-embed" role="group" aria-label={title}><LiveIO story={story} /></div> : null;
 
   return (
     <section id={id} className={`lab ${fullscreen ? "lab-fullscreen" : ""}`} aria-labelledby={`${id}-title`}>

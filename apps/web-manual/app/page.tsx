@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LiveShow } from "@/components/LiveShow";
+import { PROTECTION_LAYERS } from "@/lib/show/protection";
 import { sections } from "@/lib/content";
 
 export default function Home() {
@@ -15,6 +16,16 @@ export default function Home() {
         </p>
       </header>
       <LiveShow autoPlay />
+      <section className="overview" aria-labelledby="layers-title">
+        <h2 id="layers-title">How your data is protected</h2>
+        <p>Six layers, each one shown working on your own input, with what it relies on and where it stops.</p>
+        <ol className="layer-row">
+          {PROTECTION_LAYERS.map((layer) => (
+            <li key={layer.id}><Link href="/protection"><strong>{layer.name}</strong><span>{layer.claim}</span></Link></li>
+          ))}
+        </ol>
+        <p className="hero-actions"><Link href="/protection" className="button-link primary">Take the tour</Link></p>
+      </section>
       <section className="overview" aria-labelledby="overview-title">
         <h2 id="overview-title">About this manual</h2>
         <p>
