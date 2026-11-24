@@ -1,7 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import katex from "katex";
-import mermaid from "mermaid";
 
 const root = process.cwd();
 const expected = [
@@ -26,5 +25,4 @@ for (const section of expected) {
   }
 }
 
-await mermaid.parse("flowchart LR\nClient --> Controller --> Worker");
-console.log(`Validated ${expected.length} sections, equations, links, and Mermaid syntax`);
+console.log(`Validated ${expected.length} sections, equations, and links`);

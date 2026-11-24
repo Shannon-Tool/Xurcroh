@@ -8,9 +8,7 @@ The public `Xurcroh` package is a thin facade over `xurcroh` internals. It norma
 
 Python owns the SDK, model adapters, controller, and lifecycle. Rust owns binary framing, directional keys, replay protection, onion metadata, and QUIC. C++/CUDA owns zero-on-free, shared-memory scrubbing, uniform page touch, and ChaCha20 masking. The web manual owns only explanatory simulations.
 
-<Figure caption="Client → controller directory → independently owned stages → protected return path. The controller sees opaque ciphertext, not payload plaintext." />
-
-<Mermaid chart="flowchart LR\n  C[Client boundary] -->|opaque AEAD| D[Blind controller]\n  D --> A[Worker stage A]\n  A --> B[Worker stage B]\n  B -->|protected return| C" caption="Figure 5.1: Protected inference and return path with independent worker boundaries." />
+<ArchitectureDiagram caption="Figure 5.1: The client keeps plaintext, splits each activation into shares, and verifies what four independent role workers return. The controller is a directory that sees only ciphertext." />
 
 ## Runtime reliability
 

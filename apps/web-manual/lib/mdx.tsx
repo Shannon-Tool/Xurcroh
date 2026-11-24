@@ -4,7 +4,9 @@ import { Evidence } from "@/components/Evidence";
 import { Figure } from "@/components/Figure";
 import { Citation } from "@/components/Citation";
 import { LabLink } from "@/components/LabLink";
-import { Mermaid } from "@/components/Mermaid";
+import { ArchitectureDiagram } from "@/components/diagrams/ArchitectureDiagram";
+import { MemoryLifecycleDiagram } from "@/components/diagrams/MemoryLifecycleDiagram";
+import { RuntimeFlowDiagram } from "@/components/diagrams/RuntimeFlowDiagram";
 
 export const mdxComponents: MDXComponents = {
   Equation,
@@ -12,5 +14,7 @@ export const mdxComponents: MDXComponents = {
   Figure,
   Citation,
   LabLink,
-  Mermaid,
+  ArchitectureDiagram,
+  RuntimeFlowDiagram,
+  MemoryLifecycleDiagram,
 };

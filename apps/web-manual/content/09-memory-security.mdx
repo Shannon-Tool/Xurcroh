@@ -10,6 +10,6 @@ The CPU lifecycle tracks request ownership. `KVCachePool` wipes physical slots b
 
 ChaCha20 kernels implement actual 20-round block generation and modulo-\(2^{16}\) mask/unmask. The shared-memory epilogue and uniform page-touch path are best-effort mitigations. They cannot prove all physical registers, every SRAM location, or another device’s local memory is clear.
 
-<Figure caption="Allocate → consume → release → stream synchronization → physical zero → safe reuse. Skipping synchronization can expose stale bytes." />
+<MemoryLifecycleDiagram caption="Figure 9.1: Allocate, execute, release, synchronise, zero, reuse. Skipping synchronisation can hand the next owner a buffer whose wipe has not run yet." />
 
 The [memory laboratory](/15-interactive-laboratory#memory) makes this residual-disclosure path interactive. Request-scoped KV caches use positional-offset prefill/decode and are zeroed on `drop_request`, including errors and cancellation. `/v1/capabilities` exposes only the aggregate entry count; integration tests verify zero entries after inference. CUDA tests are executable but explicitly skipped without CUDA; no local result is presented as a hardware forensic proof.

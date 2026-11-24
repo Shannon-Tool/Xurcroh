@@ -12,7 +12,4 @@ export default withMDX({
   reactStrictMode: true,
   poweredByHeader: false,
   output: "standalone",
-  experimental: {
-    optimizePackageImports: ["mermaid"],
-  },
 });

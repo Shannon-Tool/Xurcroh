@@ -10,6 +10,6 @@ The vLLM adapter uses `xurcroh_sharded`, disables prefix caching and async sched
 
 `ContinuousBatchScheduler` implements bounded running sets and fair chunk scheduling. Dynamic chunks shrink by a configurable smoothing factor while remaining page-aligned. Stage runners keep request-scoped KV caches: full prefill runs once, subsequent calls contain one token, and cache entries are zeroed and removed on completion or cancellation. Native engines supply their own optimized batching and chunked-prefill kernels; local scheduling makes the lifecycle testable without GPUs.
 
-<Figure caption="Client prompt → local boundary → encrypted stage tensors → recovered hidden state → local LM head and sampling." />
+<RuntimeFlowDiagram caption="Figure 7.1: One token through the runtime. Tokenising, the nonlinear steps, the language-model head and sampling stay on the client; workers only apply linear maps to shares." />
 
 Physical kernel hooks and multi-GPU timing remain hardware validation tasks. The CPU paths prove numerical and lifecycle behavior, not full vLLM/SGLang/xDiT performance.
