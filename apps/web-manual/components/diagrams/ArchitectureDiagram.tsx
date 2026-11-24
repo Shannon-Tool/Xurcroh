@@ -1,11 +1,24 @@
-import { Arrow, Box, Diagram, Note, Zone } from "@/components/diagrams/primitives";
+"use client";
+
+import { Arrow, Box, Diagram, Note, Zone, type DiagramStep } from "@/components/diagrams/primitives";
 
 const WORKERS = [
-  { x: 462, y: 250, role: "(0,0)" },
-  { x: 712, y: 250, role: "(0,1)" },
-  { x: 462, y: 380, role: "(1,0)" },
-  { x: 712, y: 380, role: "(1,1)" },
+  { id: "w00", x: 462, y: 250, role: "(0,0)" },
+  { id: "w01", x: 712, y: 250, role: "(0,1)" },
+  { id: "w10", x: 462, y: 380, role: "(1,0)" },
+  { id: "w11", x: 712, y: 380, role: "(1,1)" },
 ] as const;
+const WORKER_IDS = WORKERS.map((worker) => worker.id);
+
+const STEPS: DiagramStep[] = [
+  { title: "Keep the prompt local", text: "The prompt, its tokens and its embeddings never leave your device.", show: ["prompt"] },
+  { title: "Find workers", text: "Your device asks the controller which workers are online. The controller is a directory: it sees who is connected and how large the ciphertexts are, nothing else.", show: ["directory", "lookup", "prompt"] },
+  { title: "Split", text: "Each activation is split into two additive shares. Either share alone looks random.", show: ["split", "to-split"] },
+  { title: "Send shares", text: "Four workers run by independent operators each receive one activation share and already hold one weight share.", show: ["shares", ...WORKER_IDS, "split"] },
+  { title: "Return products", text: "Each worker multiplies the two shares it holds and returns the exact product with a proof.", show: ["products", ...WORKER_IDS, "verify"] },
+  { title: "Verify", text: "Your device checks every product. A single mismatch rejects the whole step.", show: ["verify"] },
+  { title: "Combine", text: "The verified products are added up, the nonlinear step runs locally, and the next layer starts again from the split.", show: ["combine", "to-combine", "next", "split"] },
+];
 
 export function ArchitectureDiagram({ caption }: { caption: string }) {
   return (
@@ -15,28 +28,29 @@ export function ArchitectureDiagram({ caption }: { caption: string }) {
       width={960}
       height={520}
       caption={caption}
+      steps={STEPS}
     >
       {(arrowId) => (
         <>
           <Zone x={16} y={16} width={300} height={488} label="Your device: plaintext stays here" tone="good" />
-          <Box x={40} y={60} width={252} height={64} lines={["Prompt, tokens, embeddings", "kept local"]} tone="good" />
-          <Box x={40} y={164} width={252} height={64} lines={["Split into additive shares", "share 0 + share 1 = activation"]} tone="good" />
-          <Box x={40} y={298} width={252} height={64} lines={["Verify every worker result", "reject on any mismatch"]} tone="good" />
-          <Box x={40} y={412} width={252} height={64} lines={["Combine + nonlinearity", "sample the next token"]} tone="good" />
-          <Arrow arrowId={arrowId} d="M166 124 V164" />
-          <Arrow arrowId={arrowId} d="M166 362 V412" />
-          <Arrow arrowId={arrowId} d="M60 412 C20 380 20 230 40 205" dashed label="next layer" labelX={62} labelY={268} />
+          <Box id="prompt" x={40} y={60} width={252} height={64} lines={["Prompt, tokens, embeddings", "kept local"]} tone="good" />
+          <Box id="split" x={40} y={164} width={252} height={64} lines={["Split into additive shares", "share 0 + share 1 = activation"]} tone="good" />
+          <Box id="verify" x={40} y={298} width={252} height={64} lines={["Verify every worker result", "reject on any mismatch"]} tone="good" />
+          <Box id="combine" x={40} y={412} width={252} height={64} lines={["Combine + nonlinearity", "sample the next token"]} tone="good" />
+          <Arrow id="to-split" from="prompt" to="split" arrowId={arrowId} d="M166 124 V164" />
+          <Arrow id="to-combine" from="verify" to="combine" arrowId={arrowId} d="M166 362 V412" />
+          <Arrow id="next" from="combine" to="split" arrowId={arrowId} d="M60 412 C20 380 20 230 40 205" dashed label="next layer" labelX={62} labelY={268} />
 
           <Zone x={440} y={16} width={504} height={150} label="Controller: a directory that sees only ciphertext" />
-          <Box x={550} y={64} width={284} height={72} lines={["Signed worker directory", "sees who is online and ciphertext sizes"]} />
-          <Arrow arrowId={arrowId} d="M292 84 H550" both dashed label="look up workers" labelX={378} labelY={76} />
+          <Box id="directory" x={550} y={64} width={284} height={72} lines={["Signed worker directory", "sees who is online and ciphertext sizes"]} />
+          <Arrow id="lookup" from="prompt" to="directory" arrowId={arrowId} d="M292 84 H550" both dashed label="look up workers" labelX={378} labelY={76} />
 
           <Zone x={440} y={196} width={504} height={308} label="Role workers: four independent operators" tone="accent" />
           {WORKERS.map((worker) => (
-            <Box key={worker.role} x={worker.x} y={worker.y} width={210} height={92} tone="accent" lines={[`Worker ${worker.role}`, `activation share ${worker.role[1]}`, `weight share ${worker.role[3]}`]} />
+            <Box key={worker.role} id={worker.id} x={worker.x} y={worker.y} width={210} height={92} tone="accent" lines={[`Worker ${worker.role}`, `activation share ${worker.role[1]}`, `weight share ${worker.role[3]}`]} />
           ))}
-          <Arrow arrowId={arrowId} d="M292 190 C366 190 366 290 440 290" tone="accent" label="encrypted shares" labelX={378} labelY={226} />
-          <Arrow arrowId={arrowId} d="M440 410 C366 410 366 334 292 334" label="products + proofs" labelX={378} labelY={392} />
+          <Arrow id="shares" from="split" arrowId={arrowId} d="M292 190 C366 190 366 290 440 290" tone="accent" label="encrypted shares" labelX={378} labelY={226} />
+          <Arrow id="products" to="verify" arrowId={arrowId} d="M440 410 C366 410 366 334 292 334" label="products + proofs" labelX={378} labelY={392} />
           <Note x={462} y={492} lines={["No worker holds two complementary shares; hiding needs non-collusion."]} />
         </>
       )}

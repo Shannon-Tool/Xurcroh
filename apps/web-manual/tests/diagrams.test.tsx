@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { axe } from "jest-axe";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArchitectureDiagram } from "@/components/diagrams/ArchitectureDiagram";
 import { MemoryLifecycleDiagram } from "@/components/diagrams/MemoryLifecycleDiagram";
 import { RuntimeFlowDiagram } from "@/components/diagrams/RuntimeFlowDiagram";
@@ -38,5 +38,56 @@ describe("chapter diagrams", () => {
     const { container } = render(<Figure caption="Only words" />);
     expect(container.querySelector("svg")).toBeNull();
     expect(screen.getByText("Only words")).toBeInTheDocument();
+  });
+
+  describe("walk-through", () => {
+    afterEach(() => vi.useRealTimers());
+
+    it("lights one stage at a time and dims the rest", () => {
+      const { container } = render(<ArchitectureDiagram caption="c" />);
+      const lit = () => container.querySelectorAll(".dg-on").length;
+      const dimmed = () => container.querySelectorAll(".dg-dim").length;
+      expect(lit() + dimmed()).toBe(0);
+      expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      expect(screen.getByText(/1 of 7 · Keep the prompt local/)).toBeInTheDocument();
+      expect(lit()).toBe(1);
+      expect(dimmed()).toBe(14);
+      for (let index = 0; index < 3; index += 1) fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      expect(screen.getByText(/4 of 7 · Send shares/)).toBeInTheDocument();
+      expect(lit()).toBe(6);
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      expect(screen.getByText(/3 of 7 · Split/)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Show all" }));
+      expect(lit() + dimmed()).toBe(0);
+    });
+
+    it("plays through every step and stops on the last one", () => {
+      vi.useFakeTimers();
+      render(<MemoryLifecycleDiagram caption="c" />);
+      fireEvent.click(screen.getByRole("button", { name: "Play walk-through" }));
+      expect(screen.getByText(/1 of 7 · Allocate/)).toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(2700); });
+      expect(screen.getByText(/2 of 7 · Execute/)).toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(2700 * 8); });
+      expect(screen.getByText(/7 of 7 · If synchronisation is skipped/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Play walk-through" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    });
+
+    it("lights the arrows of the box the reader points at", () => {
+      const { container } = render(<ArchitectureDiagram caption="c" />);
+      fireEvent.mouseEnter(screen.getByText("Verify every worker result").closest("g")!);
+      // The box itself, the products arriving and the hand-over to the combine step.
+      expect(container.querySelectorAll(".dg-on")).toHaveLength(3);
+      fireEvent.mouseLeave(screen.getByText("Verify every worker result").closest("g")!);
+      expect(container.querySelectorAll(".dg-on")).toHaveLength(0);
+    });
+
+    it("stays accessible while a step is selected", async () => {
+      const { container } = render(<RuntimeFlowDiagram caption="c" />);
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      expect((await axe(container)).violations).toHaveLength(0);
+    });
   });
 });
