@@ -1,19 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { simulateMemory } from "@/lib/simulation/memory";
 import { LabShell } from "@/components/LabShell";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
+import { memoryScene } from "@/lib/scene/builders";
 
 export function MemoryLab() {
   const [synchronized, setSynchronized] = useState(true);
   const playback = usePlayback(5);
-  const steps = simulateMemory(synchronized);
+  const steps = useMemo(() => simulateMemory(synchronized), [synchronized]);
+  const scene = useMemo(() => memoryScene({ steps, index: playback.index }), [steps, playback.index]);
   const step = steps[playback.index]!;
   const residual = step.bytes.some((value) => value !== 0);
   return (
-    <LabShell id="memory" title="GPU memory lifecycle" caption="Logical allocator cleanup is distinct from physical sanitization. Toggle synchronization to see how queued—not completed—wipes can expose sensitive residual bytes on reallocation.">
+    <LabShell id="memory" scene={scene} title="GPU memory lifecycle" caption="Logical allocator cleanup is distinct from physical sanitization. Toggle synchronization to see how queued—not completed—wipes can expose sensitive residual bytes on reallocation.">
       <div className="lab-controls">
         <label><input type="checkbox" checked={synchronized} onChange={(event) => setSynchronized(event.target.checked)} /> Complete wipe before reuse</label>
         <PlaybackControls {...playback} canStepBackward={playback.index > 0} onToggle={() => playback.setPlaying(!playback.playing)} />

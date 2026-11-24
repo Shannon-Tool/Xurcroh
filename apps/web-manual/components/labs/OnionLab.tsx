@@ -5,6 +5,7 @@ import { openOnion, ReplayWindow, sealOnion, type OnionLayer } from "@/lib/simul
 import { LabShell } from "@/components/LabShell";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
+import { onionScene } from "@/lib/scene/builders";
 
 export function OnionLab() {
   const [layers, setLayers] = useState<OnionLayer[]>([]);
@@ -41,8 +42,10 @@ export function OnionLab() {
     }
   }
 
+  const scene = useMemo(() => onionScene({ hops: layers.map((candidate) => candidate.nextHop), step: playback.index, tampered: tamper, compromised, colluding }), [layers, playback.index, tamper, compromised, colluding]);
+
   return (
-    <LabShell id="onion" title="Interactive onion-routing simulation" caption="Actual ECDH/AES-GCM layers with per-hop visibility, compromised-relay controls, authentication failure, and replay rejection. This is a protocol demonstration, not a traffic-analysis guarantee.">
+    <LabShell id="onion" scene={layers.length > 0 ? scene : undefined} title="Interactive onion-routing simulation" caption="Actual ECDH/AES-GCM layers with per-hop visibility, compromised-relay controls, authentication failure, and replay rejection. This is a protocol demonstration, not a traffic-analysis guarantee.">
       <div className="lab-controls">
         <label><input type="checkbox" checked={tamper} onChange={(event) => setTamper(event.target.checked)} /> Tamper current ciphertext</label>
         <label><input type="checkbox" checked={compromised} onChange={(event) => setCompromised(event.target.checked)} /> Compromised relay</label>

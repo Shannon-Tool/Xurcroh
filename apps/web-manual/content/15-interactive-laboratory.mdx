@@ -2,7 +2,7 @@
 
 <Evidence type="local">Deterministic simulations validated by automated tests</Evidence>
 
-Every lab computes its displayed state from explicit inputs. Playback changes the current state, not a decorative timer. Step forward/backward, reset, parameters, and speed are functional controls. Reduced-motion preferences disable autoplay, and expensive FWHT work can move to a Web Worker.
+Every lab computes its displayed state from explicit inputs. Playback changes the current state, not a decorative timer. Step forward/backward, reset, parameters, and speed are functional controls. Reduced-motion preferences disable autoplay. Each lab also draws its current state as a 3D scene that you can rotate by dragging or with the arrow keys and zoom with plus and minus; the scene is built from the same state as the text and tables below it, which remain the exact view. Where WebGL is unavailable the lab says so and the text view still works.
 
 ## Laboratories
 
@@ -10,6 +10,7 @@ The complete mounted suite is available at [Mounted laboratory](/laboratory).
 
 - [Share grid](/laboratory#share-grid): exact role products, epoch refresh, and tamper attribution.
 - [Freivalds](/laboratory#freivalds): prime-field verification and malformed challenge handling.
+- [Quantized formats](/laboratory#quantized-formats): source decoding, independent quantization, and exact modular shares.
 - [Placement](/laboratory#placement): operation/provider assignments and epoch reshuffling.
 - [Conjugation](/laboratory#conjugation): original/transformed matrices, recovered output, equivalence error, and norm leakage.
 - [FWHT](/laboratory#fwht): every butterfly stage and direct-matrix comparison.

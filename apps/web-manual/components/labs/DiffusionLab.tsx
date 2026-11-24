@@ -6,6 +6,7 @@ import { LabShell } from "@/components/LabShell";
 import { MatrixView } from "@/components/MatrixView";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
+import { diffusionScene } from "@/lib/scene/builders";
 
 const initial = [[0.2, -0.4], [0.8, 0.1], [-0.5, 0.7], [1.0, -0.2]];
 const velocity = [[0.1, 0.3], [-0.2, 0.4], [0.5, -0.1], [-0.3, 0.2]];
@@ -33,8 +34,9 @@ export function DiffusionLab() {
     { title: "Denoised transformed latent", matrix: state.transformed },
     { title: "Recovered client latent", matrix: state.recovered },
   ];
+  const scene = diffusionScene({ stages: stages.map((stage) => ({ title: stage.title, points: stage.matrix })), step: playback.index });
   return (
-    <LabShell id="diffusion" title="Diffusion and video inference" caption="Synthetic latent demonstration. Secret channel rotation and spatial permutation precede Euler denoising; client recovery is checked against the original latent. No model-quality image or video is implied.">
+    <LabShell id="diffusion" scene={scene} title="Diffusion and video inference" caption="Synthetic latent demonstration. Secret channel rotation and spatial permutation precede Euler denoising; client recovery is checked against the original latent. No model-quality image or video is implied.">
       <div className="lab-controls">
         <label>Rotation {(angle / Math.PI).toFixed(2)}π <input type="range" min="0" max={2 * Math.PI} step={Math.PI / 16} value={angle} onChange={(event) => setAngle(Number(event.target.value))} /></label>
         <label>Euler steps {steps} <input type="range" min="1" max="4" value={steps} onChange={(event) => setSteps(Number(event.target.value))} /></label>

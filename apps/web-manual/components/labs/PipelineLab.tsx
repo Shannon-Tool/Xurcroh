@@ -5,6 +5,7 @@ import { simulatePipeline } from "@/lib/simulation/pipeline";
 import { LabShell } from "@/components/LabShell";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
+import { pipelineScene } from "@/lib/scene/builders";
 
 export function PipelineLab() {
   const [nodes, setNodes] = useState(4);
@@ -15,8 +16,9 @@ export function PipelineLab() {
   const events = useMemo(() => simulatePipeline({ nodes, latencyMs: latency, packetLoss: loss, requests, failNode: fail && nodes > 1 ? 1 : null }), [nodes, latency, loss, requests, fail]);
   const playback = usePlayback(events.length - 1);
   const event = events[playback.index]!;
+  const scene = useMemo(() => pipelineScene({ nodes, failNode: fail && nodes > 1 ? 1 : null, event }), [nodes, fail, event]);
   return (
-    <LabShell id="pipeline" title="Distributed inference pipeline" caption="Discrete-event simulation. Time and retransmission counts are synthetic controls, not hardware measurements. Every event changes with nodes, latency, loss, workload, or failure settings.">
+    <LabShell id="pipeline" scene={scene} title="Distributed inference pipeline" caption="Discrete-event simulation. Time and retransmission counts are synthetic controls, not hardware measurements. Every event changes with nodes, latency, loss, workload, or failure settings.">
       <div className="lab-controls">
         <label>Nodes <select value={nodes} onChange={(event) => { setNodes(Number(event.target.value)); playback.onReset(); }}>{[2, 3, 4, 5, 6, 8].map((value) => <option key={value}>{value}</option>)}</select></label>
         <label>Latency {latency} ms <input type="range" min="1" max="20" value={latency} onChange={(event) => setLatency(Number(event.target.value))} /></label>

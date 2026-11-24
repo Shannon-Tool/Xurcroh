@@ -14,4 +14,4 @@ Stages retain a common residual basis internally and apply \(T=U_{next}U_{prev}^
 
 Architecture adapters decouple tensor semantics from weight containers. Dense MHA/GQA/MQA, fused QKV, gated FFN, shared/routed experts, MLA, recurrent layers, and VLM projections are accepted only through an explicit semantic adapter. Fused and padded tensors are sliced into the same per-operation share grid; routers, embeddings, output heads, normalization gains, and nonlinear state remain on the trusted combiner. Unknown graph semantics are not inferred from filenames.
 
-Use the [conjugation lab](/15-interactive-laboratory#conjugation) to inspect basis recovery and structural invariants.
+Use the [conjugation lab](/laboratory#conjugation) to inspect basis recovery and structural invariants.

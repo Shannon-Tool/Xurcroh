@@ -14,4 +14,4 @@ Double-stream joint attention shares head rotations across image and text stream
 
 Media adapters enumerate every denoiser component independently, including timestep-specialized transformers, and namespace operations as `component:tensor` to prevent placement and artifact collisions. Text encoders, VAEs, schedulers, modulation/nonlinear state, source media, and decoded outputs stay on the trusted client. Image-to-image and masked editing forward validated client inputs only when the pinned pipeline exposes those parameters. Local-versus-grid checks require exact quantized latents before PNG encoding.
 
-See the [diffusion laboratory](/15-interactive-laboratory#diffusion) for synthetic latent state transitions.
+See the [diffusion laboratory](/laboratory#diffusion) for synthetic latent state transitions.

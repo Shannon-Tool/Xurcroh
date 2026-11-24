@@ -6,7 +6,7 @@ const STEPS = [
   ["Release", "allocator marks free"],
   ["Synchronise", "wait for the stream"],
   ["Zero", "overwrite the bytes"],
-  ["Reuse", "next owner reads zeros"],
+  ["Reuse", "reads back zeros"],
 ] as const;
 
 export function MemoryLifecycleDiagram({ caption }: { caption: string }) {
@@ -26,8 +26,8 @@ export function MemoryLifecycleDiagram({ caption }: { caption: string }) {
           {STEPS.slice(0, -1).map(([name], index) => (
             <Arrow key={name} arrowId={arrowId} d={`M${154 + index * 158} 95 H${174 + index * 158}`} />
           ))}
-          <Arrow arrowId={arrowId} d="M401 130 C401 226 875 226 875 130" tone="warn" dashed label="synchronisation skipped: the wipe is still queued" labelX={638} labelY={196} />
-          <Note x={420} y={246} lines={["The next owner can read stale secret bytes."]} />
+          <Arrow arrowId={arrowId} d="M401 130 C401 226 875 226 875 130" tone="warn" dashed label="synchronisation skipped: the wipe is still queued" labelX={638} labelY={226} />
+          <Note x={520} y={246} lines={["The next owner can read stale secret bytes."]} />
           <Note x={16} y={30} lines={["Freeing memory is not erasing it."]} />
         </>
       )}

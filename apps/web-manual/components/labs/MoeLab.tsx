@@ -5,6 +5,7 @@ import { combineMoe, routeMoe } from "@/lib/simulation/moe";
 import { LabShell } from "@/components/LabShell";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
+import { moeScene } from "@/lib/scene/builders";
 
 const hidden = [[1, 0], [0, 1], [1, 1], [2, 0], [0, 2], [2, 2]];
 const router = [[1, 0], [0, 1], [1, 1], [2, 0.5]];
@@ -26,9 +27,10 @@ export function MoeLab() {
     }
   }, [topK, constantLoad]);
   const state = calculation.state;
-  const loads = state ? (protectedMode ? state.plan.loads : state.realLoads) : [];
+  const loads = useMemo(() => (state ? (protectedMode ? state.plan.loads : state.realLoads) : []), [state, protectedMode]);
+  const scene = useMemo(() => moeScene({ tokens: hidden.length, plan: state ? state.plan : null, loads, protectedMode, step: playback.index }), [state, loads, protectedMode, playback.index]);
   return (
-    <LabShell id="moe" title="Mixture-of-Experts routing simulator" caption="Real router logits, top-k dispatch, dummy padding, and weighted combination. Constant loads hide volume, not timing, cache, TLB, power, or co-residency channels.">
+    <LabShell id="moe" scene={scene} title="Mixture-of-Experts routing simulator" caption="Real router logits, top-k dispatch, dummy padding, and weighted combination. Constant loads hide volume, not timing, cache, TLB, power, or co-residency channels.">
       <div className="lab-controls">
         <label>Top-k <select value={topK} onChange={(event) => { setTopK(Number(event.target.value)); playback.onReset(); }}>{[1, 2, 3].map((value) => <option key={value}>{value}</option>)}</select></label>
         <label>Capacity {constantLoad} <input type="range" min="2" max="8" value={constantLoad} onChange={(event) => setConstantLoad(Number(event.target.value))} /></label>

@@ -5,6 +5,7 @@ import { fwht } from "@/lib/simulation/algebra";
 import { LabShell } from "@/components/LabShell";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
+import { fwhtScene } from "@/lib/scene/builders";
 
 export function FwhtLab() {
   const [dimension, setDimension] = useState(8);
@@ -22,8 +23,9 @@ export function FwhtLab() {
     }
   }, [text, dimension]);
   const stage = result.stages[playback.index] ?? [];
+  const scene = useMemo(() => fwhtScene({ stages: result.stages, step: playback.index }), [result, playback.index]);
   return (
-    <LabShell id="fwht" title="Animated Fast Walsh–Hadamard Transform" caption="Every butterfly stage is computed from your vector. The final stage is orthonormal; complexity is O(d log d). Non-power-of-two dimensions are rejected, not silently padded.">
+    <LabShell id="fwht" scene={scene} title="Animated Fast Walsh–Hadamard Transform" caption="Every butterfly stage is computed from your vector. The final stage is orthonormal; complexity is O(d log d). Non-power-of-two dimensions are rejected, not silently padded.">
       <div className="lab-controls">
         <label>Dimension
           <select value={dimension} onChange={(event) => {

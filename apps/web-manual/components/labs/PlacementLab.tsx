@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { LabShell } from "@/components/LabShell";
 import { placeOperations } from "@/lib/simulation/fortress";
+import { placementScene } from "@/lib/scene/builders";
 
 export function PlacementLab() {
   const [epoch, setEpoch] = useState(0);
-  const roles = placeOperations(epoch);
+  const roles = useMemo(() => placeOperations(epoch), [epoch]);
+  const scene = useMemo(() => placementScene({ roles }), [roles]);
   return (
-    <LabShell id="placement" title="Operation placement and epoch reshuffle" caption="Adjacent and paired operations occupy disjoint providers. Country and CPU-vendor labels make diversity inspectable; production additionally enforces secret placement policy.">
+    <LabShell id="placement" scene={scene} title="Operation placement and epoch reshuffle" caption="Adjacent and paired operations occupy disjoint providers. Country and CPU-vendor labels make diversity inspectable; production additionally enforces secret placement policy.">
       <div className="lab-controls">
         <label>Placement epoch
           <input type="number" min="0" max="20" value={epoch} onChange={(event) => setEpoch(Number(event.target.value))} />

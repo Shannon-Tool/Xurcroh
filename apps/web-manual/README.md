@@ -21,4 +21,4 @@ npm run check
 - `tests/`: engine, interaction, playback, and accessibility tests.
 - `scripts/validate-content.mjs`: section, math, and link checks.
 
-All labs support play/pause, step forward/backward, reset, speed, parameter changes, state inspection, and reduced-motion preferences. Synthetic simulations are not benchmark results or model-quality outputs. Physical GPU/TEE claims remain explicitly hardware-pending.
+Labs with more than one step support play/pause, step forward/backward, reset and speed; every lab has parameter controls, a rotatable 3D view of its current state, and a text view, and honours reduced-motion preferences. Synthetic simulations are not benchmark results or model-quality outputs. Physical GPU/TEE claims remain explicitly hardware-pending.

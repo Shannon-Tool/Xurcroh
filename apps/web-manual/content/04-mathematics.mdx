@@ -14,4 +14,4 @@ RMSNorm coordinate gains are absorbed into every adjacent projection before basi
 
 RoPE and interleaved MRoPE require each Q/K transform to commute with every 2×2 planar rotation and to share structure across a GQA group. Frame-wise DeltaNet uses \(A=K^\top\operatorname{Diag}(\beta)K\) and \(B=V^\top\operatorname{Diag}(\beta)K\); orthogonal conjugation gives \(\hat A=OAO^\top\) and \(\hat B=RBO^\top\), preserving the normal-equation update.
 
-Counterexample: a dense residual rotation does not preserve coordinate-wise AdaLN. Zero-shot diffusion uses signed permutations; dense residual bases require separately trained block-scalar modulation. The [conjugation laboratory](/15-interactive-laboratory#conjugation) evaluates these relationships numerically.
+Counterexample: a dense residual rotation does not preserve coordinate-wise AdaLN. Zero-shot diffusion uses signed permutations; dense residual bases require separately trained block-scalar modulation. The [conjugation laboratory](/laboratory#conjugation) evaluates these relationships numerically.
