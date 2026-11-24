@@ -213,18 +213,18 @@ export function showScene(input: ShowSceneInput): Scene3D {
   };
 }
 
-const WIDE: Direction = { theta: 0.06, phi: 0.9, zoom: 0.62, focusId: null, sway: 0.14 };
+const WIDE: Direction = { theta: 0.3, phi: 0.95, zoom: 0.5, focusId: null, sway: 0.12 };
 
 /** Where the camera goes for each beat while the reader is not steering it. */
 export function showCamera(beat: Beat, tamperRole: number | null, rejectKind?: Attack | null): Direction {
   switch (beat) {
     case "split": return { theta: 0.1, phi: 1.15, zoom: 1, focusId: "device", sway: 0 };
-    case "attest": return { ...WIDE, theta: 0.2, sway: 0 };
+    case "attest": return { ...WIDE, theta: 0.42, sway: 0 };
     case "seal": return { theta: 0.3, phi: 1.15, zoom: 1, focusId: "device", sway: 0 };
-    case "route": return { ...WIDE, theta: -0.05, zoom: 0.76, sway: 0 };
+    case "route": return { ...WIDE, theta: 0.18, sway: 0 };
     case "compute": return { theta: 0.7, phi: 1.02, zoom: 1.25, focusId: "worker-1", sway: 0 };
-    case "return": return { ...WIDE, theta: 0.12, sway: 0 };
-    case "verify": return { ...WIDE, theta: 0, sway: 0 };
+    case "return": return { ...WIDE, theta: 0.36, sway: 0 };
+    case "verify": return { ...WIDE, theta: 0.24, sway: 0 };
     case "combine": return { theta: 0.12, phi: 1.15, zoom: 1, focusId: "device", sway: 0 };
     case "rejected": return { theta: 0.6, phi: 1.05, zoom: 1.1, focusId: rejectKind === "packet" ? `relay-${relayOf(tamperRole ?? 0)}` : `worker-${tamperRole ?? 0}`, sway: 0 };
     case "done": return { ...WIDE, sway: 0.25 };

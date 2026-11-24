@@ -91,9 +91,9 @@ export function useLabPanels(story: LiveStory): { input: ReactNode; seen: ReactN
       <section className={story.outputTone === "warn" ? "stage-panel stage-out liveio-card liveio-out warn" : "stage-panel stage-out liveio-card liveio-out"}>
         <h3 className="stage-label">What comes out</h3>
         <div className="liveio-body">
-          {!released ? <p className="liveio-answer withheld"><span>The model&apos;s answer</span> No answer is released.</p>
-            : kind === "picture" ? <div className="liveio-answer"><span>The model&apos;s picture</span><AnswerPicture /></div>
-              : <p className="liveio-answer"><span>The model&apos;s answer</span> <TypedText text={journey.answer} /></p>}
+          {!released ? <p className="liveio-answer withheld"><span className="liveio-tag">The model&apos;s answer</span> No answer is released.</p>
+            : kind === "picture" ? <div className="liveio-answer"><span className="liveio-tag">The model&apos;s picture</span><AnswerPicture /></div>
+              : <p className="liveio-answer"><span className="liveio-tag">The model&apos;s answer</span> <TypedText text={journey.answer} /></p>}
           <div className="liveio-result">{story.output}</div>
         </div>
       </section>

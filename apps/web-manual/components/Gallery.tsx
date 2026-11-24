@@ -45,7 +45,7 @@ export const GALLERY: GalleryItem[] = [
   lab("moe", "Hiding which experts were used", "MoeLab", () => <MoeLab />),
   lab("diffusion", "Making a picture", "DiffusionLab", () => <DiffusionLab />),
   lab("memory", "Wiping memory afterwards", "MemoryLab", () => <MemoryLab />),
-  { id: "tour", name: "The protection tour", files: "components/ProtectionTour.tsx · lib/scene/protection-scene.ts", where: "/protection", render: () => <ProtectionTour /> },
+  { id: "tour", name: "The protection tour", files: "components/ProtectionTour.tsx · lib/scene/protection-scene.ts", where: "/protection", render: () => <ProtectionTour autoPlay /> },
 ].map((item, index, all) => (all.findIndex((other) => other.id === item.id) === index ? item : { ...item, id: `lab-${item.id}` }));
 
 /** Every animation in the manual on one page, each on its stage, for review and polishing. */

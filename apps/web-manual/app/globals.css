@@ -280,9 +280,9 @@ input[type="checkbox"] { width: 1rem; height: 1rem; }
 .question-picker { display: grid; gap: 0.25rem; margin-bottom: 0.5rem; font-size: 0.85rem; font-weight: 700; }
 .question-picker select { width: 100%; font-size: 0.92rem; font-weight: 600; }
 .liveio-answer { margin: 0 0 0.5rem; font-size: 0.95rem; line-height: 1.5; }
-.liveio-answer > span { display: block; margin-bottom: 0.1rem; color: var(--good); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.liveio-answer > .liveio-tag { display: block; margin-bottom: 0.1rem; color: var(--good); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 .liveio-answer.withheld { color: var(--warning); font-weight: 700; }
-.liveio-answer.withheld > span { color: var(--warning); }
+.liveio-answer.withheld > .liveio-tag { color: var(--warning); }
 .liveio-picture { display: block; width: 100%; max-width: 280px; aspect-ratio: 8 / 5; border-radius: 6px; image-rendering: pixelated; }
 .liveio-result { padding-top: 0.45rem; border-top: 1px dashed var(--border); }
 .liveio-result p { color: var(--muted); font-size: 0.84rem; }
