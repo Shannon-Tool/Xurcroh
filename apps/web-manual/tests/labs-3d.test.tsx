@@ -34,7 +34,7 @@ describe("labs with a 3D view", () => {
   it("redraws the share grid when the reader steps the playback", async () => {
     const { container } = render(<ShareGridLab />);
     await waitFor(() => expect(draw).toHaveBeenCalled());
-    const caption = () => container.querySelector(".scene3d-caption")!.textContent;
+    const caption = () => container.querySelector(".stage-caption p")!.textContent;
     const before = caption();
     const activeBefore = draw.mock.calls.at(-1)![0].nodes.find((node) => node.emphasis > 0)?.id;
     fireEvent.click(screen.getByRole("button", { name: "Step forward" }));

@@ -499,13 +499,13 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
 
   const forms: FlowForm[] = [
     { id: "readable", label: "Readable", value: model.prompt.length > 26 ? `${model.prompt.slice(0, 25)}…` : model.prompt, tone: "good" },
-    { id: "numbers", label: "As numbers", value: snapshot.numbers || "—", tone: "plain" },
-    { id: "shuffled", label: "Shuffled (disguise)", value: snapshot.shuffled || "—", tone: "plain" },
-    { id: "pieces", label: "Two random pieces", value: snapshot.pieces || "—", tone: "accent" },
-    { id: "sealed", label: sealed.failedAt === null ? "Sealed three times" : "Altered: refused", value: sealed.hex || "—", tone: sealed.failedAt === null ? "cipher" : "warn" },
-    { id: "enclave", label: "Result in the enclave", value: snapshot.result || "—", tone: attested && attested.some((ok) => !ok) ? "warn" : "accent" },
+    { id: "numbers", label: "Numbers", value: snapshot.numbers || "—", tone: "plain" },
+    { id: "shuffled", label: "Shuffled", value: snapshot.shuffled || "—", tone: "plain" },
+    { id: "pieces", label: "Two pieces", value: snapshot.pieces || "—", tone: "accent" },
+    { id: "sealed", label: sealed.failedAt === null ? "Sealed ×3" : "Refused", value: sealed.hex || "—", tone: sealed.failedAt === null ? "cipher" : "warn" },
+    { id: "enclave", label: "In enclave", value: snapshot.result || "—", tone: attested && attested.some((ok) => !ok) ? "warn" : "accent" },
     { id: "checked", label: "Checked", value: rejectKind === "result" ? "1 of 4 fails" : snapshot.passed || "—", tone: rejectKind === "result" ? "warn" : "good" },
-    { id: "answer", label: "Readable again", value: model.kind === "text" ? (snapshot.tokens.join("").slice(-22) || "—") : `${Math.min(state.revealed, model.units)} of ${model.units} steps`, tone: "good" },
+    { id: "answer", label: "Answer", value: model.kind === "text" ? (snapshot.tokens.join("").slice(-22) || "—") : `${Math.min(state.revealed, model.units)} of ${model.units} steps`, tone: "good" },
   ];
   const lit = beat === "rejected" ? [rejectKind === "software" ? "enclave" : rejectKind === "packet" ? "sealed" : "checked"] : LIT[beat];
 
@@ -536,29 +536,33 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
       ) : null}
       {looking ? <p className="show-eye-note">{eyeNote}</p> : null}
       {tamperRole !== null ? <p className="show-rejected">{refusal}</p> : null}
-      <div className="show-workers">
-        <p className="stage-label">What each worker sees</p>
-        <ul>
-          {ROLES.map((role) => (
-            <li key={role} className={tamperRole === role && rejectKind !== "packet" ? "show-tile bad" : "show-tile"}>
-              <canvas ref={(element) => { workerCanvases.current[role] = element; }} width={64} height={40} aria-hidden="true" />
-              <span>{workerName(role)}{attested ? (attested[role] ? " ✓" : " ✗") : ""}</span>
-            </li>
-          ))}
-        </ul>
-        <p className="show-note">Real numbers from this step: noise. A tick means the worker&apos;s signed report was verified.</p>
-      </div>
     </div>
   );
 
   const corner = (
-    <div className="show-hud">
+    <>
+    <div className="stage-panel show-hud">
       <div className="show-progress" role="progressbar" aria-label="Progress of this run" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div>
       <dl className="show-counters">
         <div><dt>{words === "plain" ? "Answers checked" : "Products checked"}</dt><dd data-testid="checks">{snapshot.checks}</dd></div>
         <div className={snapshot.failed > 0 ? "bad" : undefined}><dt>Rejected</dt><dd data-testid="rejected">{snapshot.failed}</dd></div>
       </dl>
     </div>
+    <div className="stage-panel">
+      <div className="show-workers">
+        <p className="stage-label">What each worker sees</p>
+        <ul>
+          {ROLES.map((role) => (
+            <li key={role} className={tamperRole === role && rejectKind !== "packet" ? "show-tile bad" : "show-tile"}>
+              <canvas ref={(element) => { workerCanvases.current[role] = element; }} width={64} height={40} aria-hidden="true" />
+              <span><span className="sr-only">Worker </span>({role >> 1},{role & 1}){attested ? (attested[role] ? " ✓" : " ✗") : ""}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="show-note">Real numbers from this step: noise. A tick means the worker&apos;s signed report was verified.</p>
+      </div>
+    </div>
+    </>
   );
 
   return (
@@ -635,9 +639,8 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
         direct={direct}
         screens={screens}
         screensVersion={snapshot.version + loopFrame + sealedVersion}
-        input={input}
-        output={output}
-        corner={corner}
+        left={<>{input}{output}</>}
+        right={corner}
         caption={scene.caption}
         why={showWhy(beat, rejectKind)}
         forms={forms}

@@ -7,11 +7,16 @@ export function usePlayback(maxIndex: number) {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
 
+  // A lab plays by itself, in a loop, unless the reader prefers reduced motion (or motion cannot be asked about).
   useEffect(() => {
-    if (!playing || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (maxIndex > 0 && typeof window.matchMedia === "function" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) setPlaying(true);
+  }, [maxIndex]);
+
+  useEffect(() => {
+    if (!playing || typeof window.matchMedia !== "function" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const timer = window.setInterval(() => {
       setIndex((current) => (current >= maxIndex ? 0 : current + 1));
-    }, 1000 / speed);
+    }, 1600 / speed);
     return () => window.clearInterval(timer);
   }, [playing, speed, maxIndex]);
 

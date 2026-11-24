@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/components/Scene3DView", () => ({ Scene3DView: () => <div data-testid="view" /> }));
+vi.mock("@/components/Scene3DView", () => ({ Scene3DView: ({ overlay }: { overlay?: React.ReactNode }) => <div data-testid="view">{overlay}</div> }));
 
 import LaboratoryPage from "@/app/laboratory/page";
 import { ConjugationLab } from "@/components/labs/ConjugationLab";
@@ -31,8 +31,10 @@ afterEach(() => questionSetting.set("text-shares"));
 describe("every lab as a trip from the question to the answer", () => {
   it("gives all eleven labs an everyday title, the trip bar, the shared question and the model's full answer", () => {
     const { container } = render(<LaboratoryPage />);
-    expect(container.querySelectorAll("section.lab .liveio")).toHaveLength(11);
-    expect(container.querySelectorAll("section.lab .trip [aria-current=step]")).toHaveLength(11);
+    expect(container.querySelectorAll("section.lab .stage")).toHaveLength(11);
+    // Every lab marks its own stop on the ribbon, between the question and the answer.
+    expect(container.querySelectorAll("section.lab .ribbon")).toHaveLength(11);
+    expect([...container.querySelectorAll("section.lab .ribbon")].every((ribbon) => ribbon.querySelectorAll("[aria-current=step]").length === 3)).toBe(true);
     expect(screen.getAllByLabelText("Your question")).toHaveLength(10);
     expect(screen.getAllByLabelText("Your picture request")).toHaveLength(1);
     const answers = [...container.querySelectorAll(".liveio-answer")];

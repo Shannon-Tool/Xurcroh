@@ -166,7 +166,7 @@ describe("directed camera", () => {
     expect(showCamera("stream", null).focusId).toBeNull();
     expect(showCamera("stream", null).sway).toBeGreaterThan(0);
     expect(showCamera("split", null).focusId).toBe("device");
-    expect(showCamera("route", null).focusId).toBe("relay-1");
+    expect(showCamera("route", null).focusId).toBeNull();
     expect(showCamera("compute", null).focusId).toBe("worker-1");
   });
 });

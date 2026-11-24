@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
+import type { FlowForm } from "@/components/FlowRibbon";
 import { QuestionPicker } from "@/components/QuestionPicker";
+import { TypedText } from "@/components/TypedText";
 import { paintPixels } from "@/lib/show/paint";
 import { useJourney, usePictureJourney } from "@/lib/show/question";
 
@@ -41,7 +43,7 @@ export interface LiveStory {
   limit: string;
   /** An attack the reader can switch on, and what happened to it. */
   attack?: { label: string; on: boolean; onToggle: () => void; outcome: string };
-  /** Short text for the middle screen in the 3D view. */
+  /** One short line of what the other party sees, for the ribbon along the bottom of the stage. */
   screenSeen?: string;
 }
 
@@ -54,45 +56,55 @@ function AnswerPicture() {
   return <canvas ref={canvas} className="liveio-picture" width={picture.width} height={picture.height} role="img" aria-label={`The finished picture: ${picture.request}`} />;
 }
 
-export function LiveIO({ story }: { story: LiveStory }) {
+/** The three panels of a lab: what goes in, what the other party sees, what comes out. */
+export function useLabPanels(story: LiveStory): { input: ReactNode; seen: ReactNode; output: ReactNode; forms: FlowForm[]; current: string[] } {
   const journey = useJourney();
+  const picture = usePictureJourney();
   const kind = story.kind ?? "text";
   const released = story.released !== false;
+  const question = kind === "picture" ? picture.request : journey.question;
+  const seenLine = (story.screenSeen ?? "").split("\n")[0] ?? "";
+  const forms: FlowForm[] = [
+    { id: "question", label: "Your question", value: question.length > 22 ? `${question.slice(0, 21)}…` : question, tone: "good" },
+    ...TRIP.map((stop): FlowForm => ({ id: stop.id, label: stop.id === story.stage ? `${stop.name} · this lab` : stop.name, value: stop.id === story.stage ? seenLine || "…" : "·", tone: stop.id === story.stage ? "accent" : "plain" })),
+    { id: "answer", label: "Answer", value: !released ? "none released" : kind === "picture" ? "the picture" : `${journey.tokens.slice(0, 3).join("").trim()}…`, tone: released ? "good" : "warn" },
+  ];
+  return {
+    forms,
+    current: ["question", story.stage, "answer"],
+    input: (
+      <section className="stage-panel stage-in liveio-card liveio-in">
+        <h3 className="stage-label">What goes in</h3>
+        <div className="liveio-body">
+          <QuestionPicker kind={kind} />
+          {story.input}
+        </div>
+      </section>
+    ),
+    seen: (
+      <section className="stage-panel stage-seen liveio-card liveio-seen">
+        <h3 className="stage-label">{story.seenTitle}</h3>
+        <div className="liveio-body">{story.seen}</div>
+      </section>
+    ),
+    output: (
+      <section className={story.outputTone === "warn" ? "stage-panel stage-out liveio-card liveio-out warn" : "stage-panel stage-out liveio-card liveio-out"}>
+        <h3 className="stage-label">What comes out</h3>
+        <div className="liveio-body">
+          {!released ? <p className="liveio-answer withheld"><span>The model&apos;s answer</span> No answer is released.</p>
+            : kind === "picture" ? <div className="liveio-answer"><span>The model&apos;s picture</span><AnswerPicture /></div>
+              : <p className="liveio-answer"><span>The model&apos;s answer</span> <TypedText text={journey.answer} /></p>}
+          <div className="liveio-result">{story.output}</div>
+        </div>
+      </section>
+    ),
+  };
+}
+
+/** What sits under a lab's stage: the attack to try, the three reasons, and the note on what is prepared. */
+export function LiveNotes({ story }: { story: LiveStory }) {
   return (
-    <div className="liveio">
-      <ol className="trip" aria-label="The trip from your question to the answer">
-        <li className="trip-end">Your question</li>
-        {TRIP.map((stop) => (
-          <li key={stop.id} className={stop.id === story.stage ? "trip-here" : undefined} aria-current={stop.id === story.stage ? "step" : undefined}>
-            {stop.name}{stop.id === story.stage ? <span> · this lab</span> : null}
-          </li>
-        ))}
-        <li className="trip-end">Answer</li>
-      </ol>
-      <div className="liveio-row">
-        <section className="liveio-card liveio-in">
-          <h3>What goes in</h3>
-          <div className="liveio-body">
-            <QuestionPicker kind={kind} />
-            {story.input}
-          </div>
-        </section>
-        <span className="liveio-arrow" aria-hidden="true" />
-        <section className="liveio-card liveio-seen">
-          <h3>{story.seenTitle}</h3>
-          <div className="liveio-body">{story.seen}</div>
-        </section>
-        <span className="liveio-arrow" aria-hidden="true" />
-        <section className={story.outputTone === "warn" ? "liveio-card liveio-out warn" : "liveio-card liveio-out"}>
-          <h3>What comes out</h3>
-          <div className="liveio-body">
-            {!released ? <p className="liveio-answer withheld"><span>The model&apos;s answer</span> No answer is released.</p>
-              : kind === "picture" ? <div className="liveio-answer"><span>The model&apos;s picture</span><AnswerPicture /></div>
-                : <p className="liveio-answer"><span>The model&apos;s answer</span> {journey.answer}</p>}
-            <div className="liveio-result">{story.output}</div>
-          </div>
-        </section>
-      </div>
+    <>
       {story.attack ? (
         <div className={story.attack.on ? "liveio-attack on" : "liveio-attack"}>
           <button aria-pressed={story.attack.on} onClick={story.attack.onToggle}>Try to break it: {story.attack.label}</button>
@@ -105,6 +117,23 @@ export function LiveIO({ story }: { story: LiveStory }) {
         <div><dt>Where it stops</dt><dd>{story.limit}</dd></div>
       </dl>
       <p className="liveio-honest">The questions and answers are prepared: no language or image model runs in this manual. The numbers on this page are computed in your browser from the question you chose.</p>
+    </>
+  );
+}
+
+/** A lab without its 3D stage: the three panels side by side. Used where a lab is quoted on another page. */
+export function LiveIO({ story }: { story: LiveStory }) {
+  const panels = useLabPanels(story);
+  return (
+    <div className="liveio">
+      <div className="liveio-row">
+        {panels.input}
+        <span className="liveio-arrow" aria-hidden="true" />
+        {panels.seen}
+        <span className="liveio-arrow" aria-hidden="true" />
+        {panels.output}
+      </div>
+      <LiveNotes story={story} />
     </div>
   );
 }

@@ -62,7 +62,7 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab", direct,
   const stageRef = useRef<Stage | null>(null);
   const liveRef = useRef<LiveScene>(EMPTY_LIVE);
   const motionRef = useRef<OrbitMotion>(restingMotion(DEFAULT_ORBIT));
-  const sizeRef = useRef({ width: 640, height: 460, inset: 0, insetBottom: 0 });
+  const sizeRef = useRef({ width: 640, height: 460, inset: 0, insetBottom: 0, insetCover: 0 });
   const timeRef = useRef(0);
   const slowRef = useRef(false);
   const touchedRef = useRef(false);
@@ -205,6 +205,7 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab", direct,
         focusId: directed ? directed.focusId : focusRef.current,
         inset: sizeRef.current.inset,
         insetBottom: sizeRef.current.insetBottom,
+        insetCover: sizeRef.current.insetCover,
       });
       paintLabels(result.labels);
       if (!still && elapsed > 0 && !slowRef.current) {
@@ -275,11 +276,13 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab", direct,
       // Panels that float over the view push the scene's centre away from them: data-inset="left" or "right"
       // for a side column, data-inset-bottom for a strip along the bottom.
       const floats = (element: HTMLElement | null): element is HTMLElement => element !== null && getComputedStyle(element).position === "absolute";
-      const panel = frame.querySelector<HTMLElement>("[data-inset]");
+      const left = frame.querySelector<HTMLElement>('[data-inset="left"]');
+      const right = frame.querySelector<HTMLElement>('[data-inset="right"]');
       const foot = frame.querySelector<HTMLElement>("[data-inset-bottom]");
-      const inset = !floats(panel) ? 0 : panel.dataset.inset === "left" ? -Math.round(panel.getBoundingClientRect().right - box.left) : Math.round(box.right - panel.getBoundingClientRect().left);
+      const coverLeft = floats(left) ? Math.max(0, Math.round(left.getBoundingClientRect().right - box.left)) : 0;
+      const coverRight = floats(right) ? Math.max(0, Math.round(box.right - right.getBoundingClientRect().left)) : 0;
       const insetBottom = floats(foot) ? Math.max(0, Math.round(box.bottom - foot.getBoundingClientRect().top)) : 0;
-      if (box.width > 0 && box.height > 0) sizeRef.current = { width: Math.round(box.width), height: Math.round(box.height), inset, insetBottom };
+      if (box.width > 0 && box.height > 0) sizeRef.current = { width: Math.round(box.width), height: Math.round(box.height), inset: coverRight - coverLeft, insetBottom, insetCover: coverLeft + coverRight };
       requestRef.current();
     };
     measure();

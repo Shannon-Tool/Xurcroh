@@ -3,14 +3,13 @@ import { axe } from "jest-axe";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/Scene3DView", () => ({
-  Scene3DView: ({ scene, screens }: { scene: { nodes: { id: string; kind: string }[] }; screens?: Record<string, unknown> }) => (
-    <div data-testid="view" data-screens={Object.keys(screens ?? {}).join(",")}>{scene.nodes.filter((node) => node.kind === "screen").map((node) => node.id).join(",")}</div>
+  Scene3DView: ({ scene, overlay, variant }: { scene: { caption: string }; overlay?: React.ReactNode; variant?: string }) => (
+    <div data-testid="view" data-variant={variant ?? "lab"} data-caption={scene.caption}>{overlay}</div>
   ),
 }));
 
 import { LabShell } from "@/components/LabShell";
 import type { LiveStory } from "@/components/LiveIO";
-import { withIOScreens } from "@/lib/scene/io-screens";
 import type { Scene3D } from "@/lib/scene/types";
 import { journeyOf } from "@/lib/show/journey";
 import { questionSetting } from "@/lib/show/question";
@@ -40,21 +39,6 @@ function story(extra: Partial<LiveStory> = {}): LiveStory {
   };
 }
 
-describe("io screens", () => {
-  it("adds three joined screens behind the scene without touching what was there", () => {
-    const staged = withIOScreens(scene);
-    expect(staged.nodes.slice(0, 2)).toEqual(scene.nodes);
-    const added = staged.nodes.slice(2);
-    expect(added.map((node) => [node.id, node.kind, node.screen])).toEqual([["io-in", "screen", "io-in"], ["io-seen", "screen", "io-seen"], ["io-out", "screen", "io-out"]]);
-    for (const node of added) expect(node.position[2]).toBeLessThan(-1.5);
-    expect(added[0]!.position[0]).toBeLessThan(added[1]!.position[0]);
-    expect(added[1]!.position[0]).toBeCloseTo(1);
-    expect(staged.links.filter((link) => link.flow === "forward").map((link) => [link.from, link.to])).toEqual([["io-in", "io-seen"], ["io-seen", "io-out"]]);
-    expect(withIOScreens(scene, "warn").nodes.at(-1)!.tone).toBe("warn");
-    expect(withIOScreens({ caption: "Empty scene here.", nodes: [], links: [] }).nodes).toHaveLength(3);
-  });
-});
-
 describe("lab shell with a story", () => {
   it("tells the lab in plain words, shows in, seen and out, and keeps the exact numbers", async () => {
     const { container } = render(<LabShell id="demo" title="Demo lab" caption="Technical caption." scene={scene} story={story()}><p>exact table</p></LabShell>);
@@ -68,26 +52,30 @@ describe("lab shell with a story", () => {
     expect(screen.getByRole("option", { name: "Who runs the workers?" })).toBeInTheDocument();
     expect(document.querySelector(".liveio-answer")).toHaveTextContent(`The model's answer ${journeyOf("text-shares").answer}`);
     expect(document.querySelector(".liveio-result")).toHaveTextContent("19, 43");
-    expect(document.querySelector(".trip [aria-current=step]")).toHaveTextContent("Split · this lab");
-    expect(screen.getAllByRole("listitem").filter((item) => item.closest(".trip")).map((item) => item.textContent)).toEqual(["Your question", "Prepare", "Split · this lab", "Place", "Send", "Compute", "Check", "Wipe", "Answer"]);
+    // The ribbon along the bottom of the stage is the trip, with this lab's stop marked.
+    expect([...document.querySelectorAll(".ribbon-label")].map((item) => item.textContent)).toEqual(["Your question", "Prepare", "Split · this lab", "Place", "Send", "Compute", "Check", "Wipe", "Answer"]);
+    expect([...document.querySelectorAll(".ribbon-form[aria-current=step] .ribbon-label")].map((item) => item.textContent)).toEqual(["Your question", "Split · this lab", "Answer"]);
+    expect(screen.getByRole("group", { name: "Demo lab: live stage" })).toBeInTheDocument();
+    expect(screen.getByTestId("view")).toHaveAttribute("data-variant", "show");
+    expect(document.querySelector(".stage-side:not(.stage-right)")).toHaveTextContent("What goes in");
+    expect(document.querySelector(".stage-side:not(.stage-right)")).toHaveTextContent("What one worker sees");
+    expect(document.querySelector(".stage-right")).toHaveTextContent("What comes out");
     expect(document.querySelector(".liveio-honest")).toHaveTextContent("no language or image model runs in this manual");
     expect(screen.getByText("Why this protects you").nextElementSibling).toHaveTextContent("One piece alone is random.");
     expect(screen.getByText("Where it stops").nextElementSibling).toHaveTextContent("Two workers together can rebuild it.");
     expect(screen.getByText("exact table").closest("details")).toHaveAttribute("open");
-    expect(screen.getByTestId("view")).toHaveTextContent("io-in,io-seen,io-out");
-    expect(screen.getByTestId("view")).toHaveAttribute("data-screens", "io-in,io-seen,io-out");
     expect((await axe(container)).violations).toHaveLength(0);
   });
 
   it("offers the attack and reports what happened to it", () => {
     const onToggle = vi.fn();
-    const { rerender } = render(<LabShell id="demo" title="Demo lab" caption="c" story={story({ attack: { label: "tamper with a worker", on: false, onToggle, outcome: "All four products passed." } })}><p>x</p></LabShell>);
+    const { rerender } = render(<LabShell id="demo" title="Demo lab" caption="c" scene={scene} story={story({ attack: { label: "tamper with a worker", on: false, onToggle, outcome: "All four products passed." } })}><p>x</p></LabShell>);
     const button = screen.getByRole("button", { name: "Try to break it: tamper with a worker" });
     expect(button).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("status")).toHaveTextContent("All four products passed.");
     fireEvent.click(button);
     expect(onToggle).toHaveBeenCalledTimes(1);
-    rerender(<LabShell id="demo" title="Demo lab" caption="c" story={story({ outputTone: "warn", attack: { label: "tamper with a worker", on: true, onToggle, outcome: "Caught." } })}><p>x</p></LabShell>);
+    rerender(<LabShell id="demo" title="Demo lab" caption="c" scene={scene} story={story({ outputTone: "warn", attack: { label: "tamper with a worker", on: true, onToggle, outcome: "Caught." } })}><p>x</p></LabShell>);
     expect(screen.getByRole("button", { name: "Try to break it: tamper with a worker" })).toHaveAttribute("aria-pressed", "true");
     expect(document.querySelector(".liveio-out")).toHaveClass("warn");
   });

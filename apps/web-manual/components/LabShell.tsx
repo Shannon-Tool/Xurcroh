@@ -1,15 +1,33 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { LiveIO, type LiveStory } from "@/components/LiveIO";
+import { createContext, useContext, useState } from "react";
+import { LiveIO, LiveNotes, useLabPanels, type LiveStory } from "@/components/LiveIO";
 import { Scene3DView } from "@/components/Scene3DView";
-import { withIOScreens } from "@/lib/scene/io-screens";
+import { StageBox } from "@/components/StageBox";
 import type { Scene3D } from "@/lib/scene/types";
-import { paintCard } from "@/lib/show/paint";
-import { useJourney, usePictureJourney } from "@/lib/show/question";
 
-/** Inside this context a lab shows only its live strip: used where a lab is quoted on another page. */
+/** Inside this context a lab shows only its three panels: used where a lab is quoted on another page. */
 export const LabEmbedContext = createContext(false);
+
+const EMPTY_SCENE: Scene3D = { caption: "", nodes: [], links: [] };
+
+/** The lab's panels laid over its own 3D scene on the shared 16:9 stage. */
+function LabStage({ title, scene, story }: { title: string; scene: Scene3D; story: LiveStory }) {
+  const panels = useLabPanels(story);
+  return (
+    <StageBox
+      label={`${title}: live stage`}
+      scene={scene}
+      left={<>{panels.input}{panels.seen}</>}
+      right={panels.output}
+      caption={scene.caption || story.plain}
+      why={story.why}
+      forms={panels.forms}
+      current={panels.current}
+      ribbonLabel="The trip from your question to the answer"
+    />
+  );
+}
 
 export function LabShell({ id, title, plainTitle, caption, onExport, scene, story, watch, children }: {
   id: string;
@@ -21,7 +39,7 @@ export function LabShell({ id, title, plainTitle, caption, onExport, scene, stor
   onExport?: () => void;
   /** 3D drawing of the current state; the children stay as the exact, readable view. */
   scene?: Scene3D;
-  /** The lab as a live story: in, what others see, out. Shown above the exact numbers. */
+  /** The lab as a live story: in, what others see, out. Shown on the stage above the exact numbers. */
   story?: LiveStory;
   /** Lets the header's Watch button play the lab from the start. */
   watch?: { playing: boolean; onToggle: () => void };
@@ -29,31 +47,7 @@ export function LabShell({ id, title, plainTitle, caption, onExport, scene, stor
 }) {
   const [fullscreen, setFullscreen] = useState(false);
   const [show3d, setShow3d] = useState(true);
-  const [screens, setScreens] = useState<Record<string, HTMLCanvasElement> | null>(null);
-  const [painted, setPainted] = useState(0);
-
-  // The same three values the strip shows are drawn on screens inside the 3D view.
   const embedded = useContext(LabEmbedContext);
-  const journey = useJourney();
-  const picture = usePictureJourney();
-  const hasScreens = story?.screenSeen !== undefined && !embedded;
-  const pictures = story?.kind === "picture";
-  // The screens in the 3D view carry the same trip: the question, what others see, the start of the answer.
-  const inText = pictures ? picture.request : journey.question;
-  const seenText = story?.screenSeen ?? "";
-  const outText = story?.released === false ? "no answer" : pictures ? "the picture" : `${journey.tokens.slice(0, 5).join("").trim()}…`;
-  const warn = story?.outputTone === "warn";
-  useEffect(() => {
-    if (!hasScreens) return;
-    const canvases = screens ?? { "io-in": document.createElement("canvas"), "io-seen": document.createElement("canvas"), "io-out": document.createElement("canvas") };
-    paintCard(canvases["io-in"]!, "Goes in", inText, "good");
-    paintCard(canvases["io-seen"]!, "Others see", seenText, "accent");
-    paintCard(canvases["io-out"]!, "Comes out", outText, warn ? "warn" : "good");
-    if (!screens) setScreens(canvases);
-    setPainted((current) => current + 1);
-  }, [hasScreens, inText, seenText, outText, warn, screens]);
-
-  const staged = useMemo(() => (scene && hasScreens ? withIOScreens(scene, warn ? "warn" : "good") : scene), [scene, hasScreens, warn]);
 
   if (embedded) return story ? <div className="lab-embed" role="group" aria-label={plainTitle ?? title}><LiveIO story={story} /></div> : null;
 
@@ -68,12 +62,14 @@ export function LabShell({ id, title, plainTitle, caption, onExport, scene, stor
         <div className="playback">
           {watch ? <button className="lab-watch" onClick={watch.onToggle}>{watch.playing ? "Stop" : "Watch"}</button> : null}
           {onExport ? <button onClick={onExport}>Export state</button> : null}
-          {scene ? <button onClick={() => setShow3d(!show3d)}>{show3d ? "Hide 3D view" : "Show 3D view"}</button> : null}
+          {scene || story ? <button onClick={() => setShow3d(!show3d)}>{show3d ? "Hide 3D view" : "Show 3D view"}</button> : null}
           <button onClick={() => setFullscreen(!fullscreen)}>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
         </div>
       </div>
-      {story ? <LiveIO story={story} /> : null}
-      {staged && show3d ? <Scene3DView scene={staged} screens={screens ?? undefined} screensVersion={painted} /> : null}
+      {story && show3d ? <LabStage title={plainTitle ?? title} scene={scene ?? EMPTY_SCENE} story={story} /> : null}
+      {story && !show3d ? <LiveIO story={story} /> : null}
+      {story && show3d ? <LiveNotes story={story} /> : null}
+      {!story && scene && show3d ? <Scene3DView scene={scene} /> : null}
       {story ? (
         <details className="lab-exact" open>
           <summary>Exact numbers and controls</summary>

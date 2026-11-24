@@ -33,7 +33,7 @@ const LABS = [
 
 export default function LaboratoryPage() {
   return (
-    <article className="article">
+    <article className="article article-wide">
       <header className="hero">
         <span className="evidence">Executable teaching models · not production inference</span>
         <h1>Interactive laboratory</h1>

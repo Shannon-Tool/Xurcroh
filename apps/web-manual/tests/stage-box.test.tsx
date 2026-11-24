@@ -61,9 +61,8 @@ describe("flow ribbon and stage box", () => {
       <StageBox
         label="Demo stage"
         scene={{ caption: "scene caption", nodes: [], links: [] }}
-        input={<p>question here</p>}
-        output={<p>answer here</p>}
-        corner={<p>12 checked</p>}
+        left={<><p>question here</p><p>answer here</p></>}
+        right={<p>12 checked</p>}
         caption="Step 3 of 8 · Seal."
         why="Everything on the wire is unreadable."
         forms={forms}
@@ -75,7 +74,8 @@ describe("flow ribbon and stage box", () => {
     const side = container.querySelector(".stage-side")!;
     expect(side).toHaveAttribute("data-inset", "left");
     expect(side).toHaveTextContent("question hereanswer here");
-    expect(container.querySelector(".stage-corner")).toHaveTextContent("12 checked");
+    expect(container.querySelector(".stage-right")).toHaveAttribute("data-inset", "right");
+    expect(container.querySelector(".stage-right")).toHaveTextContent("12 checked");
     expect(container.querySelector(".stage-caption")).toHaveTextContent("Step 3 of 8 · Seal.Why it matters Everything on the wire is unreadable.");
     expect(container.querySelector(".stage-foot .ribbon")).not.toBeNull();
     expect((await axe(container)).violations).toHaveLength(0);

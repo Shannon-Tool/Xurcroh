@@ -246,20 +246,20 @@ describe("live demonstration", () => {
     render(<LiveShow autoPlay rng={seededRng(15)} />);
     const forms = () => [...document.querySelectorAll(".ribbon-form")];
     const lit = () => forms().filter((form) => form.getAttribute("aria-current") === "step").map((form) => form.querySelector(".ribbon-label")!.textContent);
-    expect(forms().map((form) => form.querySelector(".ribbon-label")!.textContent)).toEqual(["Readable", "As numbers", "Shuffled (disguise)", "Two random pieces", "Sealed three times", "Result in the enclave", "Checked", "Readable again"]);
-    expect(lit()).toEqual(["As numbers", "Shuffled (disguise)", "Two random pieces"]);
+    expect(forms().map((form) => form.querySelector(".ribbon-label")!.textContent)).toEqual(["Readable", "Numbers", "Shuffled", "Two pieces", "Sealed ×3", "In enclave", "Checked", "Answer"]);
+    expect(lit()).toEqual(["Numbers", "Shuffled", "Two pieces"]);
     advance(1100 * 2 + 50);
-    expect(lit()).toEqual(["Sealed three times"]);
+    expect(lit()).toEqual(["Sealed ×3"]);
     expect(screen.getByText(/^Step 3 of 8 · Seal\./)).toBeInTheDocument();
     advance(SLOW - 1100 * 2);
-    expect(lit()).toEqual(["Readable again"]);
+    expect(lit()).toEqual(["Answer"]);
     // Real values of the step that just ran: two different random pieces, and a result that is neither.
     const value = (label: string) => forms().find((form) => form.querySelector(".ribbon-label")!.textContent === label)!.querySelector(".sr-only")!.textContent!;
-    expect(value("Two random pieces")).toMatch(/^([0-9a-f]{4} ){2}[0-9a-f]{4} \| ([0-9a-f]{4} ){2}[0-9a-f]{4}$/);
-    expect(value("As numbers")).toMatch(/^([0-9a-f]{4} ?){6}$/);
-    expect(value("Shuffled (disguise)")).toMatch(/^([0-9a-f]{4} ?){6}$/);
+    expect(value("Two pieces")).toMatch(/^([0-9a-f]{4} ){2}[0-9a-f]{4} \| ([0-9a-f]{4} ){2}[0-9a-f]{4}$/);
+    expect(value("Numbers")).toMatch(/^([0-9a-f]{4} ?){6}$/);
+    expect(value("Shuffled")).toMatch(/^([0-9a-f]{4} ?){6}$/);
     expect(value("Checked")).toBe("4 of 4 pass");
-    expect(value("Readable again")).toBe(first.tokens[0]);
+    expect(value("Answer")).toBe(first.tokens[0]);
     expect(document.querySelector(".stage-leaves")).toHaveTextContent("What leaves your device");
   });
 
@@ -294,7 +294,7 @@ describe("live demonstration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next step" }));
     expect(screen.getByText(/Someone altered a sealed packet\. Relay \d noticed/, { selector: ".stage-caption p" })).toBeInTheDocument();
     await vi.waitFor(() => expect(sealed()).toHaveClass("ribbon-warn"));
-    expect(sealed().querySelector(".ribbon-label")).toHaveTextContent("Altered: refused");
+    expect(sealed().querySelector(".ribbon-label")).toHaveTextContent("Refused");
     await vi.waitFor(() => expect(screen.getByTestId("rejected")).toHaveTextContent("1"));
     fireEvent.click(screen.getByRole("button", { name: "Next step" }));
     await vi.waitFor(() => expect(sealed()).toHaveClass("ribbon-cipher"));

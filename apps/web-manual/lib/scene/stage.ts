@@ -28,6 +28,8 @@ export interface StageView {
   inset?: number;
   /** Pixels along the bottom that panels cover. */
   insetBottom?: number;
+  /** Total width covered by side panels, left and right together. */
+  insetCover?: number;
 }
 
 export interface StageResult {
@@ -698,7 +700,8 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
       const wantLook = focused ? scratch.set(focused.position[0], focused.position[1], focused.position[2]).clone() : center.clone();
       if (lookAt.distanceTo(wantLook) > 0.01) animating = true;
       lookAt.lerp(wantLook, blendFactor(view.dt, 6));
-      const narrow = Math.max(1, 1.35 / ((width - Math.abs(inset)) / Math.max(1, height - insetBottom)));
+      const cover = Math.min(width * 0.7, Math.max(Math.abs(inset), view.insetCover ?? 0));
+      const narrow = Math.max(1, 1.35 / ((width - cover) / Math.max(1, height - insetBottom)));
       const offset = orbitOffset(view.orbit, radius * narrow * (focused ? 0.7 : 1));
       camera.position.set(lookAt.x + offset[0], lookAt.y + offset[1], lookAt.z + offset[2]);
       camera.lookAt(lookAt);
