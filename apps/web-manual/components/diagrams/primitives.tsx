@@ -1,7 +1,9 @@
 "use client";
 
 import { createContext, useContext, useEffect, useId, useMemo, useState } from "react";
+import { QuestionPicker } from "@/components/QuestionPicker";
 import type { DiagramData } from "@/lib/show/diagram-data";
+import { useJourney } from "@/lib/show/question";
 
 export type Tone = "plain" | "accent" | "warn" | "good";
 
@@ -12,12 +14,9 @@ export interface DiagramStep {
   show: string[];
 }
 
-/** Makes a diagram carry the reader's own input: real values travel along it and every part can be opened. */
+/** Makes a diagram follow the chosen question: its real values travel along it and every part can be opened. */
 export interface DiagramLive {
-  inputLabel: string;
-  defaultInput: string;
-  maxLength?: number;
-  compute(input: string): DiagramData;
+  compute(questionId: string): DiagramData;
 }
 
 interface DiagramState {
@@ -69,11 +68,11 @@ export function Diagram({ title, description, width, height, caption, steps = []
   const [step, setStep] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
-  const [input, setInput] = useState(live?.defaultInput ?? "");
+  const questionId = useJourney().id;
   const [picked, setPicked] = useState<string | null>(null);
   const [still, setStill] = useState(true);
   const compute = live?.compute;
-  const data = useMemo(() => (compute ? compute(input) : null), [compute, input]);
+  const data = useMemo(() => (compute ? compute(questionId) : null), [compute, questionId]);
 
   useEffect(() => {
     setStill(typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -138,12 +137,13 @@ export function Diagram({ title, description, width, height, caption, steps = []
           </div>
           <p className="dg-step" aria-live="polite">
             {current
-              ? <><strong>{step! + 1} of {steps.length} · {current.title}.</strong> {current.text}{data && data.values[step!] ? <> <span className="dg-value">With your input: <code>{data.values[step!]}</code></span></> : null}</>
+              ? <><strong>{step! + 1} of {steps.length} · {current.title}.</strong> {current.text}{data && data.values[step!] ? <> <span className="dg-value">With your question: <code>{data.values[step!]}</code></span></> : null}</>
               : <>Walk through the {steps.length} steps with Play or Next, or point at a box to see what it connects to.</>}
           </p>
           {live && data ? (
             <div className="dg-live">
-              <label>{live.inputLabel} <input value={input} maxLength={live.maxLength ?? 24} onChange={(event) => setInput(event.target.value)} /></label>
+              <QuestionPicker />
+              <p className="dg-answer"><strong>The model&apos;s answer:</strong> {data.answer}</p>
               <div className="playback" role="group" aria-label="Look inside a part">
                 <span className="dg-live-title">Look inside:</span>
                 {data.parts.map((part) => (
@@ -156,7 +156,7 @@ export function Diagram({ title, description, width, height, caption, steps = []
                   <div><dt>It sees</dt><dd>{open.sees}</dd></div>
                   <div><dt>It cannot see</dt><dd>{open.cannot}</dd></div>
                 </dl>
-              ) : <p className="small">Type your own input, step through, and open any part to see what it holds with that input. The numbers are computed in your browser.</p>}
+              ) : <p className="small">Choose a question, step through, and open any part to see what it holds for that question. The questions and answers are prepared; the numbers are computed in your browser.</p>}
             </div>
           ) : null}
         </div>

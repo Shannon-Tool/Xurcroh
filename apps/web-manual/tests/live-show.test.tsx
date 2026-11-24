@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { axe } from "jest-axe";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { wordsSetting } from "@/lib/scene/settings";
+import { questionSetting } from "@/lib/show/question";
 import { LiveShow } from "@/components/LiveShow";
 import { getModel, seededRng, type TextModel } from "@/lib/simulation/show";
 
@@ -220,17 +221,22 @@ describe("live demonstration", () => {
     expect(window.localStorage.getItem("xurcroh-words")).toBe("technical");
   });
 
-  it("has a compact form for chapters that starts on the reader's own text", () => {
+  it("has a compact form for chapters that follows the question chosen for the labs and diagrams", () => {
     render(<LiveShow compact autoPlay rng={seededRng(14)} />);
     expect(screen.queryByRole("heading", { name: "Live demonstration" })).toBeNull();
-    expect(screen.getByRole("region", { name: "Live demonstration with your own text" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Type something")).toHaveValue("hello world");
+    expect(screen.getByRole("region", { name: "Live demonstration of the chosen question" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Your question")).toHaveValue("text-shares");
+    expect(screen.queryByRole("button", { name: "Your drawing" })).toBeNull();
     expect(screen.queryByText("What is real here")).toBeNull();
     expect(document.querySelector(".show-truth")).toHaveTextContent("Designed for defence in depth; claims under evaluation");
     advance(SLOW + 50);
-    expect(answer()).toBe("d");
-    advance(1100 + 300 * 10);
-    expect(answer()).toBe("dlrow olleh");
+    expect(answer()).toBe(first.tokens[0]);
+    fireEvent.change(screen.getByLabelText("Your question"), { target: { value: "text-operators" } });
+    expect(answer()).toBe("");
+    expect(screen.getByText("Who runs the workers?", { selector: ".show-prompt *" })).toBeInTheDocument();
+    advance(SLOW + 50);
+    expect(answer()).toBe("The");
+    questionSetting.set("text-shares");
   });
 
   it("says plainly what is real and what is prepared", () => {

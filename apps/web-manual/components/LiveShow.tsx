@@ -6,7 +6,9 @@ import { Scene3DView } from "@/components/Scene3DView";
 import { wordsSetting } from "@/lib/scene/settings";
 import { showCamera, showScene, showWhy, workerName } from "@/lib/scene/show-scene";
 import { inkToRgb, presetInk, stampInk, type PadPreset } from "@/lib/show/pad";
+import { QuestionPicker } from "@/components/QuestionPicker";
 import { paintBlank, paintNumbers, paintPixels, paintText } from "@/lib/show/paint";
+import { useJourney } from "@/lib/show/question";
 import { ATTRACT_ORDER, beatMs, currentBeat, initialShow, showReducer, tamperRoleOf } from "@/lib/show/timeline";
 import {
   PAD, SHOW_MODELS, SHOW_PRIME, cryptoRng, decodePixels, getModel, openSession, ownDrawingModel, ownTextModel, pooledView, runStep,
@@ -90,7 +92,8 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
   rng?: Rng;
 }) {
   const titleId = useId();
-  const [state, dispatch] = useReducer(showReducer, undefined, () => initialShow(compact ? "own-text" : ATTRACT_ORDER[0]!, { playing: false, attract: autoPlay && !compact }));
+  const [state, dispatch] = useReducer(showReducer, undefined, () => initialShow(ATTRACT_ORDER[0]!, { playing: false, attract: autoPlay && !compact }));
+  const chosen = useJourney().id;
   const [ownText, setOwnText] = useState("hello world");
   const [ownInk, setOwnInk] = useState(() => presetInk("smile"));
   const model = useMemo(
@@ -126,6 +129,11 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
   useEffect(() => {
     setScreens({ device: deviceCanvas.current, "worker-0": workerCanvases.current[0]!, "worker-1": workerCanvases.current[1]!, "worker-2": workerCanvases.current[2]!, "worker-3": workerCanvases.current[3]! });
   }, []);
+
+  // Inside a chapter the demonstration follows the question chosen for the labs and diagrams.
+  useEffect(() => {
+    if (compact) dispatch({ type: "select", modelId: chosen, playing: !prefersReducedMotion() });
+  }, [compact, chosen]);
 
   // Start by itself only where asked, and never for readers who prefer reduced motion.
   useEffect(() => {
@@ -394,10 +402,13 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
   );
 
   return (
-    <section ref={sectionRef} className={`theater${full ? " full" : ""}${compact ? " compact" : ""}`} aria-labelledby={compact ? undefined : titleId} aria-label={compact ? "Live demonstration with your own text" : undefined}>
+    <section ref={sectionRef} className={`theater${full ? " full" : ""}${compact ? " compact" : ""}`} aria-labelledby={compact ? undefined : titleId} aria-label={compact ? "Live demonstration of the chosen question" : undefined}>
       <header className="show-head">
         {compact ? (
-          <p className="show-lead"><strong>Try it.</strong> Type a message and watch it go through the six steps. No worker ever sees it.</p>
+          <div className="show-lead">
+            <p><strong>Watch it live.</strong> Choose a question and follow it through the six steps to the model&apos;s answer. No worker ever sees it.</p>
+            <QuestionPicker />
+          </div>
         ) : (
           <div>
             <span className="evidence">Simulation · toy models · real share arithmetic</span>
@@ -405,7 +416,7 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
             <p>An answer, a picture and a short clip are produced below, one protected step at a time, while the 3D view shows the steps that produce them. Then try it with your own text or drawing.</p>
           </div>
         )}
-        <div className="show-pick">
+        {compact ? null : <div className="show-pick">
           <div className="playback" role="group" aria-label="What to produce">
             {MODES.map((entry) => (
               <button key={entry.mode} className="show-kind" aria-pressed={entry.mode === mode} onClick={() => selectMode(entry.mode)}>{entry.label}</button>
@@ -418,7 +429,7 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
               ))}
             </div>
           ) : null}
-        </div>
+        </div>}
         {mode === "own-text" ? (
           <div className="show-own">
             <label>Type something <input value={ownText} maxLength={40} onChange={(event) => typeOwnText(event.target.value)} /></label>

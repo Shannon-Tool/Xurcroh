@@ -3,7 +3,7 @@
 import { runtimeData } from "@/lib/show/diagram-data";
 import { Arrow, Box, Diagram, Note, Zone, type DiagramLive, type DiagramStep } from "@/components/diagrams/primitives";
 
-const LIVE: DiagramLive = { inputLabel: "Your message", defaultInput: "hi there", compute: runtimeData };
+const LIVE: DiagramLive = { compute: runtimeData };
 
 const STEPS: DiagramStep[] = [
   { title: "Prompt", text: "The prompt is tokenised and embedded on the client. Nothing has left the device yet.", show: ["prompt"] },

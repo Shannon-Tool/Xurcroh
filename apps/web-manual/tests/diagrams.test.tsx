@@ -6,6 +6,8 @@ import { MemoryLifecycleDiagram } from "@/components/diagrams/MemoryLifecycleDia
 import { RuntimeFlowDiagram } from "@/components/diagrams/RuntimeFlowDiagram";
 import { Figure } from "@/components/Figure";
 import { architectureData, memoryData, runtimeData } from "@/lib/show/diagram-data";
+import { journeyOf } from "@/lib/show/journey";
+import { questionSetting } from "@/lib/show/question";
 import { SHOW_PRIME } from "@/lib/simulation/show";
 
 describe("chapter diagrams", () => {
@@ -94,72 +96,85 @@ describe("chapter diagrams", () => {
   });
 });
 
-describe("diagrams that carry the reader's input", () => {
-  it("computes real pieces, answers and the result for a typed message", () => {
-    const data = architectureData("cat");
+describe("diagrams that follow the chosen question", () => {
+  afterEach(() => questionSetting.set("text-shares"));
+
+  it("quotes the real pieces, results and score of the question, and its full answer", () => {
+    const data = architectureData("text-tamper");
+    const journey = journeyOf("text-tamper");
+    expect(data.question).toBe("What if a worker returns a wrong answer?");
+    expect(data.answer).toBe(journey.answer);
     expect(data.values).toHaveLength(7);
-    expect(data.values[0]).toBe("“cat”");
+    expect(data.values[0]).toBe("“What if a worker returns a wrong answer?”");
+    // The first word, "what", is a 1 in the word counts; its two pieces add back to 1.
     const [first, second] = data.values[2]!.split(" + ").map(Number);
-    // The toy model writes the text backwards, so it works on the last letter first.
-    expect((first! + second!) % SHOW_PRIME).toBe("t".charCodeAt(0));
-    expect(first).not.toBe("t".charCodeAt(0));
+    expect((first! + second!) % SHOW_PRIME).toBe(1);
+    expect(first).not.toBe(1);
+    // The four workers' results add up to the winning score.
+    const results = data.values[4]!.split(", ").map(Number);
+    const score = Math.max(...journey.scores);
+    expect(results.reduce((sum, value) => sum + value, 0) % SHOW_PRIME).toBe(score);
     expect(data.values[5]).toBe("4 of 4 pass");
-    expect(data.values[6]).toBe("“t”");
+    expect(data.values[6]).toBe(`score ${score} → “Your device tests every…”`);
     expect(data.parts.map((part) => part.id)).toEqual(["prompt", "split", "directory", "w00", "w01", "w10", "w11", "verify", "combine"]);
     const worker = data.parts.find((part) => part.id === "w10")!;
-    expect(worker.holds).toContain(`Piece 1 of your data, ${second}`);
-    expect(worker.cannot).toContain(`the other piece ${first}`);
-    expect(architectureData("cat")).toEqual(data);
-    expect(architectureData("dog").values[2]).not.toBe(data.values[2]);
-    expect(architectureData("   ").values[0]).toBe("“hi”");
-    expect(runtimeData("cat").values).toHaveLength(7);
-    expect(runtimeData("cat").values[5]).toBe("“t”");
+    expect(worker.holds).toContain(`for “what”: ${second}`);
+    expect(worker.cannot).toContain(`the other piece (${first})`);
+    expect(architectureData("text-tamper")).toEqual(data);
+    expect(architectureData("text-limits").values[2]).not.toBe(data.values[2]);
+    expect(runtimeData("text-tamper").values).toHaveLength(7);
+    expect(runtimeData("text-tamper").values[5]).toBe("“Your”");
+    expect(runtimeData("text-tamper").answer).toBe(journey.answer);
   });
 
-  it("follows the reader's bytes through the memory lifecycle, wiped or not", () => {
-    const data = memoryData("01 02 03 0a");
-    expect(data.values).toEqual(["empty buffer", "01 02 03 0a", "01 02 03 0a", "01 02 03 0a", "00 00 00 00", "00 00 00 00", "01 02 03 0a read by the next owner"]);
+  it("follows the start of the question through the memory lifecycle, wiped or not", () => {
+    const data = memoryData("text-shares");
+    expect(data.values).toEqual(["empty buffer", "48 6f 77 20", "48 6f 77 20", "48 6f 77 20", "00 00 00 00", "00 00 00 00", "48 6f 77 20 read by the next owner"]);
+    expect(data.parts[1]!.holds).toContain("“How ”, the start of your question");
     expect(data.parts[5]!.sees).toBe("The next owner reads 00 00 00 00.");
-    expect(memoryData("nonsense").values[1]).toBe("de ad be ef");
+    expect(data.answer).toBe(journeyOf("text-shares").answer);
   });
 
-  it("shows the value at each step of the architecture and lets the reader open a part", async () => {
+  it("shows the chosen question's value at each step, its full answer, and lets the reader open a part", async () => {
     const { container } = render(<ArchitectureDiagram caption="Figure 5.1" />);
-    fireEvent.change(screen.getByLabelText("Your message"), { target: { value: "cat" } });
+    expect(container.querySelector(".dg-answer")).toHaveTextContent(`The model's answer: ${journeyOf("text-shares").answer}`);
+    fireEvent.change(screen.getByLabelText("Your question"), { target: { value: "text-memory" } });
+    expect(container.querySelector(".dg-answer")).toHaveTextContent(journeyOf("text-memory").answer);
     const next = screen.getByRole("button", { name: "Next" });
     fireEvent.click(next);
-    expect(container.querySelector(".dg-value")).toHaveTextContent("With your input: “cat”");
+    expect(container.querySelector(".dg-value")).toHaveTextContent("With your question: “What happens to my data in memory afterwards?”");
     fireEvent.click(next);
     fireEvent.click(next);
-    expect(container.querySelector(".dg-value")).toHaveTextContent(/With your input: \d+ \+ \d+/);
+    expect(container.querySelector(".dg-value")).toHaveTextContent(/With your question: \d+ \+ \d+/);
     fireEvent.click(next);
     // The value rides the arrow of the current step.
     expect(container.querySelectorAll(".dg-packet")).toHaveLength(1);
     expect(container.querySelector(".dg-packet text")!.textContent).toMatch(/^\d+ and \d+/);
     fireEvent.click(screen.getByRole("button", { name: "Worker (1,0)" }));
     expect(screen.getByRole("button", { name: "Worker (1,0)" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("Worker (1,0) holds").nextElementSibling).toHaveTextContent(/Piece 1 of your data, \d+, and piece 0 of the model\./);
-    expect(screen.getByText("It cannot see").nextElementSibling).toHaveTextContent("The letter “t”");
+    expect(screen.getByText("Worker (1,0) holds").nextElementSibling).toHaveTextContent(/Piece 1 of your question \(for “what”: \d+\) and piece 0 of the model\./);
+    expect(screen.getByText("It cannot see").nextElementSibling).toHaveTextContent("Your words");
     // Clicking a box in the picture opens it too.
     fireEvent.click(screen.getByText("Signed worker directory", { selector: "text" }));
     expect(screen.getByText("Controller holds").nextElementSibling).toHaveTextContent("The list of workers that are online.");
     expect(container.querySelectorAll(".dg-picked")).toHaveLength(1);
+    for (let index = 0; index < 3; index += 1) fireEvent.click(next);
+    expect(container.querySelector(".dg-value")).toHaveTextContent(/score \d+ → “The memory your request…”/);
     expect((await axe(container)).violations).toHaveLength(0);
   });
 
-  it("carries typed bytes through the memory diagram", () => {
-    const { container } = render(<MemoryLifecycleDiagram caption="Figure 9.1" />);
-    fireEvent.change(screen.getByLabelText("Your four secret bytes (hex)"), { target: { value: "aa bb cc dd" } });
+  it("carries the question through the memory and runtime diagrams, with the answer always shown", () => {
+    const memory = render(<MemoryLifecycleDiagram caption="Figure 9.1" />);
     const next = screen.getByRole("button", { name: "Next" });
     for (let index = 0; index < 6; index += 1) fireEvent.click(next);
-    expect(container.querySelector(".dg-value")).toHaveTextContent("With your input: 00 00 00 00");
+    expect(memory.container.querySelector(".dg-value")).toHaveTextContent("With your question: 00 00 00 00");
     fireEvent.click(next);
-    expect(container.querySelector(".dg-value")).toHaveTextContent("aa bb cc dd read by the next owner");
-  });
-
-  it("offers the runtime diagram the same input and inspector", () => {
-    render(<RuntimeFlowDiagram caption="Figure 7.1" />);
-    expect(screen.getByLabelText("Your message")).toHaveValue("hi there");
+    expect(memory.container.querySelector(".dg-value")).toHaveTextContent("48 6f 77 20 read by the next owner");
+    expect(memory.container.querySelector(".dg-answer")).toHaveTextContent(journeyOf("text-shares").answer);
+    memory.unmount();
+    const runtime = render(<RuntimeFlowDiagram caption="Figure 7.1" />);
+    expect(screen.getByLabelText("Your question")).toHaveValue("text-shares");
+    expect(runtime.container.querySelector(".dg-answer")).toHaveTextContent(journeyOf("text-shares").answer);
     fireEvent.click(screen.getByRole("button", { name: "Workers" }));
     expect(screen.getByText("Workers holds").nextElementSibling).toHaveTextContent("never both");
   });
