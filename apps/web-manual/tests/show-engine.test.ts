@@ -50,8 +50,8 @@ describe("share arithmetic for the show", () => {
 describe("text shown by the show", () => {
   const texts = SHOW_MODELS.filter((entry) => entry.kind === "text");
 
-  it("offers three prepared prompts", () => {
-    expect(texts).toHaveLength(3);
+  it("offers six prepared prompts", () => {
+    expect(texts).toHaveLength(6);
   });
 
   it.each(texts.map((entry) => entry.id))("decodes %s token by token from the recombined products", (id) => {

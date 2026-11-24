@@ -2,52 +2,61 @@
 
 import { useMemo, useState } from "react";
 import { LabShell } from "@/components/LabShell";
-import { freivaldsCheck, mod } from "@/lib/simulation/fortress";
 import type { LiveStory } from "@/components/LiveIO";
+import { freivaldsCheck, mod } from "@/lib/simulation/fortress";
 import { freivaldsScene } from "@/lib/scene/builders";
+import { useJourney } from "@/lib/show/question";
 
 export function FreivaldsLab() {
+  // The workers' result for the chosen question: one score per prepared answer.
+  const journey = useJourney();
   const [tamper, setTamper] = useState(false);
-  const [challenge, setChallenge] = useState("11,13");
+  const [challenge, setChallenge] = useState("11,13,17,19,23,29");
   const state = useMemo(() => {
     const values = challenge.split(",").map((value) => Number(value.trim()));
-    if (values.length !== 2 || values.some((value) => !Number.isSafeInteger(value) || value < 0)) {
-      return { error: "Enter two nonnegative safe integers", valid: false, product: [19, 43], challenge: [0, 0] };
+    const product = journey.scores.map((score, index) => (tamper && index === 0 ? score + 1 : score));
+    if (values.length !== journey.scores.length || values.some((value) => !Number.isSafeInteger(value) || value < 0)) {
+      return { error: `Enter ${journey.scores.length} nonnegative safe integers`, valid: false, product, challenge: journey.scores.map(() => 0) };
     }
-    const product = tamper ? [20, 43] : [19, 43];
-    return { error: null, valid: freivaldsCheck([[1, 2], [3, 4]], [5, 7], product, values), product, challenge: values };
-  }, [challenge, tamper]);
-  const scene = useMemo(() => freivaldsScene({ x: [5, 7], product: state.product, challenge: state.challenge, expected: [19, 43], valid: state.valid }), [state]);
+    return { error: null, valid: freivaldsCheck(journey.weightRows, journey.counts, product, values), product, challenge: values };
+  }, [journey, challenge, tamper]);
+  const scene = useMemo(
+    () => freivaldsScene({ x: journey.counts.filter((count) => count > 0).slice(0, 6), product: state.product, challenge: state.challenge, expected: journey.scores, valid: state.valid }),
+    [journey, state],
+  );
+
   // Both sides of the test, as the device computes them: x·(Wᵀr) and (product)·r.
-  const [r0, r1] = state.challenge.map(BigInt) as [bigint, bigint];
-  const left = mod(5n * (r0 + 3n * r1) + 7n * (2n * r0 + 4n * r1)).toString();
-  const right = mod(BigInt(state.product[0]!) * r0 + BigInt(state.product[1]!) * r1).toString();
+  const r = state.challenge.map(BigInt);
+  const left = mod(journey.counts.reduce((sum, count, column) => sum + BigInt(count) * journey.weightRows.reduce((inner, row, index) => inner + BigInt(row[column]!) * r[index]!, 0n), 0n)).toString();
+  const right = mod(state.product.reduce((sum, value, index) => sum + BigInt(value) * r[index]!, 0n)).toString();
   const story: LiveStory = {
-    plain: "A worker sends back an answer. Instead of redoing the whole multiplication, your device tests the answer against a challenge, which is far cheaper.",
-    input: <p>The answer a worker returned: <code>{state.product.join(", ")}</code>{tamper ? " (one number was changed by one)" : ""}</p>,
+    plain: "The workers send back their result for your question. Instead of redoing all their work, your device tests the result against a challenge, which is far cheaper.",
+    stage: "check",
+    input: <p>The result the workers returned for it, one score per prepared answer: <code>{state.product.join(", ")}</code>{tamper ? " (one number was changed by one)" : ""}</p>,
     seenTitle: "The check your device runs",
     seen: (
       <>
         <p>Challenge: <code>{state.challenge.join(", ")}</code></p>
-        <p>Side computed from your own data: <code>{left}</code></p>
-        <p>Side computed from the answer: <code>{right}</code></p>
+        <p>Side computed from your own question: <code>{left}</code></p>
+        <p>Side computed from the workers&apos; result: <code>{right}</code></p>
       </>
     ),
-    output: state.valid ? <p>Accepted: the two sides agree.</p> : <p>Rejected: the two sides differ, so the answer is thrown away.</p>,
+    output: state.valid ? <p>Accepted: the two sides agree, so the result may be used.</p> : <p>Rejected: the two sides differ, so the result is thrown away.</p>,
+    released: state.valid,
     outputTone: state.valid ? "good" : "warn",
-    why: "A wrong answer makes the two sides of the test differ, so it is rejected before anything is built on it.",
-    relies: "The worker cannot predict the challenge, and the arithmetic is exact. In this lab you type the challenge yourself.",
-    limit: "It shows the answer is correct, not that the worker kept anything private. A wrong answer can pass only with a tiny probability.",
+    why: "A wrong result makes the two sides of the test differ, so it is rejected before an answer is built on it.",
+    relies: "The workers cannot predict the challenge, and the arithmetic is exact. In this lab the challenge is fixed, and you can change it below.",
+    limit: "It shows the result is correct, not that the workers kept anything private. A wrong result can pass only with a tiny probability.",
     attack: {
       label: "change one number by one",
       on: tamper,
       onToggle: () => setTamper(!tamper),
-      outcome: tamper ? (state.valid ? "Not caught with this challenge. Try another challenge." : "Caught: the sides no longer agree.") : "The answer is untouched and passes.",
+      outcome: tamper ? (state.valid ? "Not caught with this challenge. Try another challenge." : "Caught: the sides no longer agree.") : "The result is untouched and passes.",
     },
-    screens: { input: state.product.join(", "), seen: `${left}\nvs ${right}`, output: state.valid ? "accepted" : "rejected" },
+    screenSeen: `${left}\nvs ${right}`,
   };
   return (
-    <LabShell id="freivalds" scene={scene} story={story} title="Exact Freivalds verification" caption="The client checks x(Wᵀr) = (xWᵀ)r over the prime field. Exact products avoid the ring-to-prime reduction error demonstrated by this lab.">
+    <LabShell id="freivalds" plainTitle="Catching a wrong answer" scene={scene} story={story} title="Exact Freivalds verification" caption="The client checks x(Wᵀr) = (xWᵀ)r over the prime field. Exact products avoid the ring-to-prime reduction error demonstrated by this lab.">
       <div className="lab-controls">
         <label>Challenge vector r
           <input value={challenge} onChange={(event) => setChallenge(event.target.value)} />

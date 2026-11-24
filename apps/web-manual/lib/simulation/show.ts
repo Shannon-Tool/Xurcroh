@@ -131,15 +131,18 @@ export function freivalds(weight: Matrix, vector: Int32Array, product: Int32Arra
 
 export type ShowKind = "text" | "picture" | "clip";
 
-interface BaseModel {
+/** Anything one protected matrix product can be run on. */
+export interface Computable {
+  weight: Matrix;
+  units: number;
+  input(unit: number): Int32Array;
+}
+
+interface BaseModel extends Computable {
   id: string;
   kind: ShowKind;
   /** The request shown to the reader. */
   prompt: string;
-  weight: Matrix;
-  /** Number of matrix products the whole output takes. */
-  units: number;
-  input(unit: number): Int32Array;
   /** What the toy model does, when the input is the reader's own. */
   toy?: string;
 }
@@ -185,6 +188,21 @@ const TEXTS: Array<{ id: string; prompt: string; answer: string }> = [
     id: "text-tamper",
     prompt: "What if a worker returns a wrong answer?",
     answer: "Your device tests every returned product against a random challenge. A product that is wrong by even one fails the test, except with a tiny probability. The step is then rejected and the work is sent again. Press Tamper with a worker to watch that happen here.",
+  },
+  {
+    id: "text-worker-view",
+    prompt: "What does a worker actually see?",
+    answer: "A worker sees one random piece of your data, one random piece of the model, and the answer it computes from them. All three look like noise. It never sees your question, the other pieces, or the final result.",
+  },
+  {
+    id: "text-operators",
+    prompt: "Who runs the workers?",
+    answer: "The design calls for four workers run by independent operators, so that no single operator holds two pieces that fit together. In this manual the four workers are four roles inside the page. Real operators and hardware checks are still to come.",
+  },
+  {
+    id: "text-memory",
+    prompt: "What happens to my data in memory afterwards?",
+    answer: "The memory your request used is wiped, and the wipe is confirmed finished, before that memory is handed to anyone else. A software wipe cannot prove that every register inside the chip is cleared, and the manual says so.",
   },
   {
     id: "text-limits",
@@ -238,6 +256,59 @@ function buildText(entry: { id: string; prompt: string; answer: string }): TextM
       return vocabulary[best]!;
     },
   };
+}
+
+// ---- reading the question: a matching table from words to prepared answers
+
+export interface Matcher extends Computable {
+  /** Ids of the prepared questions, in row order. */
+  questions: string[];
+  vocabulary: string[];
+  wordsOf(id: string): string[];
+  /** The id whose row scored highest. */
+  pick(combined: Int32Array): string;
+}
+
+function wordsIn(text: string): string[] {
+  return text.toLowerCase().match(/[a-z]+/g) ?? [];
+}
+
+let matcher: Matcher | null = null;
+
+/**
+ * The first step of answering: the question becomes a list of word counts, and one matrix product scores
+ * it against every prepared question. Run on shares like any other step; the highest score picks the answer.
+ */
+export function getMatcher(): Matcher {
+  if (matcher) return matcher;
+  const words = TEXTS.map((entry) => wordsIn(entry.prompt));
+  const vocabulary = [...new Set(words.flat())].sort();
+  const rows = TEXTS.length;
+  const cols = vocabulary.length;
+  const data = new Int32Array(rows * cols);
+  words.forEach((list, row) => {
+    const distinct = new Set(list);
+    // Every question's own words add up to about the same total, so a short question is not outvoted.
+    for (const word of distinct) data[row * cols + vocabulary.indexOf(word)] = Math.floor(600 / distinct.size);
+  });
+  matcher = {
+    questions: TEXTS.map((entry) => entry.id),
+    vocabulary,
+    weight: { rows, cols, data },
+    units: rows,
+    wordsOf: (id) => words[Math.max(0, TEXTS.findIndex((entry) => entry.id === id))]!,
+    input(unit) {
+      const vector = new Int32Array(cols);
+      for (const word of words[unit]!) vector[vocabulary.indexOf(word)]! += 1;
+      return vector;
+    },
+    pick(combined) {
+      let best = 0;
+      for (let row = 1; row < rows; row += 1) if (combined[row]! > combined[best]!) best = row;
+      return TEXTS[best]!.id;
+    },
+  };
+  return matcher;
 }
 
 // ---- drawing the prepared pictures (formulas only; no image files)
@@ -576,7 +647,7 @@ export function workerBytes(values: Int32Array): Uint8ClampedArray {
 // ---------------------------------------------------------------- one protected step
 
 export interface ShowSession {
-  model: ShowModel;
+  model: Computable;
   /** The two weight shares, split once; workers hold them for the whole run. */
   weights: [Matrix, Matrix];
   rng: Rng;
@@ -598,7 +669,7 @@ export interface ShowStep {
   combined: Int32Array | null;
 }
 
-export function openSession(model: ShowModel, rng: Rng): ShowSession {
+export function openSession(model: Computable, rng: Rng): ShowSession {
   return { model, weights: splitMatrix(model.weight, rng), rng };
 }
 

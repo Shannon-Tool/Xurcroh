@@ -9,6 +9,7 @@ import { ProtectionTour } from "@/components/ProtectionTour";
 import { sections } from "@/lib/content";
 import { protectionScene } from "@/lib/scene/protection-scene";
 import { PROTECTION_LAYERS, PROTECTION_LIMITS } from "@/lib/show/protection";
+import { questionSetting } from "@/lib/show/question";
 
 function setReducedMotion(reduced: boolean) {
   vi.stubGlobal("matchMedia", (query: string) => ({ matches: reduced && query.includes("reduce"), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }));
@@ -63,11 +64,13 @@ describe("protection tour", () => {
     expect(screen.getByText("Where it stops", { selector: ".tour-facts dt" }).nextElementSibling).toHaveTextContent("matching pieces");
     expect(document.querySelector(".tour-evidence")).toHaveTextContent("Evidence: derived derived from the design, not measured, as tagged in chapter 05, System Architecture.");
     const strip = document.querySelector(".lab-embed") as HTMLElement;
-    expect(strip).toHaveAccessibleName("Additive share-grid laboratory");
-    fireEvent.change(within(strip).getByLabelText("Your two numbers"), { target: { value: "2, 3" } });
-    expect(strip.querySelector(".liveio-out")).toHaveTextContent("Result: 8, 18.");
+    expect(strip).toHaveAccessibleName("Splitting your question so no worker can read it");
+    fireEvent.change(within(strip).getByLabelText("Your question"), { target: { value: "text-memory" } });
+    expect(strip.querySelector(".liveio-answer")).toHaveTextContent("The memory your request used is wiped");
     fireEvent.click(within(strip).getByRole("button", { name: /^Try to break it/ }));
     expect(strip.querySelector(".liveio-out")).toHaveClass("warn");
+    expect(strip.querySelector(".liveio-answer")).toHaveTextContent("No answer is released.");
+    questionSetting.set("text-shares");
     // Embedded, the lab shows only its strip.
     expect(document.querySelector("section.lab")).toBeNull();
     expect(screen.getAllByTestId("view")).toHaveLength(1);
@@ -75,7 +78,7 @@ describe("protection tour", () => {
 
   it("lets the reader pick any layer, each with its own demonstration or the trace page", () => {
     render(<ProtectionTour />);
-    const expected = ["Additive share-grid laboratory", "Operation placement and epoch reshuffle", "Exact Freivalds verification", "Interactive onion-routing simulation", "GPU memory lifecycle"];
+    const expected = ["Splitting your question so no worker can read it", "Deciding who gets which piece", "Catching a wrong answer", "Hiding the route your question takes", "Wiping your question from memory afterwards"];
     PROTECTION_LAYERS.forEach((layer, index) => {
       fireEvent.click(screen.getByRole("button", { name: layer.name }));
       expect(screen.getByRole("button", { name: layer.name })).toHaveAttribute("aria-pressed", "true");

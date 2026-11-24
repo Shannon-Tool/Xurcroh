@@ -1,18 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fwht } from "@/lib/simulation/algebra";
 import { LabShell } from "@/components/LabShell";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
 import { fwhtScene } from "@/lib/scene/builders";
 import type { LiveStory } from "@/components/LiveIO";
+import { useJourney } from "@/lib/show/question";
 
 const short = (values: number[]) => values.map((value) => (Number.isInteger(value) ? String(value) : value.toFixed(2))).join(", ");
 
 export function FwhtLab() {
   const [dimension, setDimension] = useState(8);
-  const [text, setText] = useState("1,2,3,4,5,6,7,8");
+  // The first letters of the chosen question, as positions in the alphabet; they can still be edited below.
+  const journey = useJourney();
+  const lettersFor = (count: number) => Array.from({ length: count }, (_, index) => journey.letters[index % journey.letters.length]!).join(",");
+  const [text, setText] = useState(lettersFor(8));
+  useEffect(() => setText(Array.from({ length: dimension }, (_, index) => journey.letters[index % journey.letters.length]!).join(",")), [journey, dimension]);
   const playback = usePlayback(Math.log2(dimension));
   const result = useMemo<{ error?: string; stages: number[][]; output: number[] }>(() => {
     const values = text.split(",").map((value) => Number(value.trim()));
@@ -28,29 +33,27 @@ export function FwhtLab() {
   const stage = result.stages[playback.index] ?? [];
   const scene = useMemo(() => fwhtScene({ stages: result.stages, step: playback.index }), [result, playback.index]);
   const story: LiveStory = {
-    plain: "A fast way to mix a list of numbers so that every output depends on every input, using only additions and subtractions. Your device uses it to apply its transforms quickly.",
-    input: (
-      <>
-        <label>Your numbers <input value={text} onChange={(event) => setText(event.target.value)} /></label>
-        {result.error ? <p className="error">That is not a list of {dimension} numbers.</p> : <p className="small">{dimension} numbers, mixed in {Math.log2(dimension)} rounds.</p>}
-      </>
-    ),
+    plain: "A fast way to mix the numbers of your question so that every output depends on every input, using only additions and subtractions. Your device uses it to apply its disguises quickly.",
+    stage: "prepare",
+    input: result.error
+      ? <p className="error">The list below is not {dimension} numbers.</p>
+      : <p>Its first {dimension} letters as numbers (a = 1, b = 2, …): <code>{short(result.stages[0] ?? [])}</code>. They are mixed in {Math.log2(dimension)} rounds.</p>,
     seenTitle: `In between: round ${playback.index} of ${Math.log2(dimension)}`,
     seen: stage.length > 0 ? <p><code>{short(stage)}</code></p> : <p>Nothing yet.</p>,
-    output: result.output.length > 0 ? <p><code>{short(result.output)}</code>: every number now carries a part of every input.</p> : <p>Nothing yet.</p>,
-    why: "After mixing, no single position holds a single one of your numbers, which is what the secret transforms are built on.",
+    output: result.output.length > 0 ? <p><code>{short(result.output)}</code>: every number now carries a part of every letter.</p> : <p>Nothing yet.</p>,
+    why: "After mixing, no single position holds a single one of your letters, which is what the secret disguises are built on.",
     relies: "It is combined with secret choices on your device. The mixing step itself is public.",
     limit: "A public mixing step hides nothing by itself. It is a building block, not a protection.",
-    screens: { input: short(result.stages[0] ?? []), seen: short(stage), output: short(result.output) },
+    screenSeen: short(stage),
   };
   return (
-    <LabShell id="fwht" scene={scene} story={story} watch={playback.watch} title="Animated Fast Walsh–Hadamard Transform" caption="Every butterfly stage is computed from your vector. The final stage is orthonormal; complexity is O(d log d). Non-power-of-two dimensions are rejected, not silently padded.">
+    <LabShell id="fwht" plainTitle="Mixing the numbers quickly" scene={scene} story={story} watch={playback.watch} title="Animated Fast Walsh–Hadamard Transform" caption="Every butterfly stage is computed from your vector. The final stage is orthonormal; complexity is O(d log d). Non-power-of-two dimensions are rejected, not silently padded.">
       <div className="lab-controls">
         <label>Dimension
           <select value={dimension} onChange={(event) => {
             const next = Number(event.target.value);
             setDimension(next);
-            setText(Array.from({ length: next }, (_, i) => i + 1).join(","));
+            setText(lettersFor(next));
             playback.onReset();
           }}>
             {[4, 8, 16].map((value) => <option key={value} value={value}>{value}</option>)}

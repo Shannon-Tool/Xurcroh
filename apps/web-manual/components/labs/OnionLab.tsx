@@ -7,6 +7,7 @@ import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
 import { onionScene } from "@/lib/scene/builders";
 import type { LiveStory } from "@/components/LiveIO";
+import { useJourney } from "@/lib/show/question";
 
 export function OnionLab() {
   const [layers, setLayers] = useState<OnionLayer[]>([]);
@@ -14,7 +15,8 @@ export function OnionLab() {
   const [compromised, setCompromised] = useState(false);
   const [colluding, setColluding] = useState(false);
   const [result, setResult] = useState("Not verified");
-  const [message, setMessage] = useState("private tensor");
+  // The chosen question is the message that gets wrapped.
+  const message = useJourney().question;
   const [exit, setExit] = useState<string | null>(null);
   const [opens, setOpens] = useState(true);
   const playback = usePlayback(3);
@@ -77,17 +79,19 @@ export function OnionLab() {
 
   const sealed = layer ? Array.from(layer.ciphertext.slice(0, 10), (value) => value.toString(16).padStart(2, "0")).join(" ") : "";
   const story: LiveStory = {
-    plain: "Your message is wrapped in layers of encryption, one for each relay on the way. A relay can remove only its own layer, which tells it where to send the rest and nothing more.",
-    input: <label>Your message <input value={message} maxLength={40} onChange={(event) => setMessage(event.target.value)} /></label>,
+    plain: "Your question is wrapped in layers of encryption, one for each relay on the way. A relay can remove only its own layer, which tells it where to send the rest and nothing more.",
+    stage: "send",
+    input: <p>The whole question is wrapped three times, once for each relay it will pass.</p>,
     seenTitle: `What relay ${playback.index + 1} sees`,
     seen: layer
       ? <><p>Next stop: <code>{layer.nextHop}</code></p><p>Sealed bytes: <code>{sealed} …</code> ({layer.ciphertext.length} bytes it cannot read)</p></>
-      : <p>Wrapping the message…</p>,
+      : <p>Wrapping the question…</p>,
     output: opens
-      ? <p>{exit === null ? "…" : `“${exit}” comes out at the far end, unchanged.`}</p>
-      : <p>Refused. The altered layer failed its authenticity check, so nothing is passed on.</p>,
+      ? <p>{exit === null ? "…" : `“${exit}” reaches the far end unchanged, and the answer comes back the same way.`}</p>
+      : <p>Refused. The altered layer failed its authenticity check, so your question is not passed on.</p>,
+    released: opens,
     outputTone: opens ? "good" : "warn",
-    why: "Each relay learns only the next stop. It cannot read the message or see the whole route.",
+    why: "Each relay learns only the next stop. It cannot read your question or see the whole route.",
     relies: "Relays do not share what they see with one another. The layers here use real ECDH and AES-GCM.",
     limit: "Relays that work together can link the route, and encryption does not hide timing or how much is sent.",
     attack: {
@@ -96,10 +100,10 @@ export function OnionLab() {
       onToggle: () => setTamper(!tamper),
       outcome: opens ? "Untouched: every layer authenticates." : "Caught: one flipped bit and the layer no longer authenticates.",
     },
-    screens: { input: message, seen: layer ? `to ${layer.nextHop}\n${sealed.slice(0, 17)}` : "", output: opens ? (exit ?? "") : "refused" },
+    screenSeen: layer ? `to ${layer.nextHop}\n${sealed.slice(0, 17)}` : "",
   };
   return (
-    <LabShell id="onion" scene={layers.length > 0 ? scene : undefined} story={story} watch={playback.watch} title="Interactive onion-routing simulation" caption="Actual ECDH/AES-GCM layers with per-hop visibility, compromised-relay controls, authentication failure, and replay rejection. This is a protocol demonstration, not a traffic-analysis guarantee.">
+    <LabShell id="onion" plainTitle="Hiding the route your question takes" scene={layers.length > 0 ? scene : undefined} story={story} watch={playback.watch} title="Interactive onion-routing simulation" caption="Actual ECDH/AES-GCM layers with per-hop visibility, compromised-relay controls, authentication failure, and replay rejection. This is a protocol demonstration, not a traffic-analysis guarantee.">
       <div className="lab-controls">
         <label><input type="checkbox" checked={tamper} onChange={(event) => setTamper(event.target.checked)} /> Tamper current ciphertext</label>
         <label><input type="checkbox" checked={compromised} onChange={(event) => setCompromised(event.target.checked)} /> Compromised relay</label>

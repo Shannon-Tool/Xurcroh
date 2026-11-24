@@ -7,7 +7,7 @@ export interface Setting<T extends string> {
   subscribe(listener: () => void): () => void;
 }
 
-function createSetting<T extends string>(key: string, fallback: T, allowed: readonly T[]): Setting<T> {
+export function createSetting<T extends string>(key: string, fallback: T, allowed: readonly T[]): Setting<T> {
   const listeners = new Set<() => void>();
   let cached: T | null = null;
   return {

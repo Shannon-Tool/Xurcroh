@@ -6,13 +6,17 @@ import { Scene3DView } from "@/components/Scene3DView";
 import { withIOScreens } from "@/lib/scene/io-screens";
 import type { Scene3D } from "@/lib/scene/types";
 import { paintCard } from "@/lib/show/paint";
+import { useJourney, usePictureJourney } from "@/lib/show/question";
 
 /** Inside this context a lab shows only its live strip: used where a lab is quoted on another page. */
 export const LabEmbedContext = createContext(false);
 
-export function LabShell({ id, title, caption, onExport, scene, story, watch, children }: {
+export function LabShell({ id, title, plainTitle, caption, onExport, scene, story, watch, children }: {
   id: string;
+  /** The technical name of the lab. */
   title: string;
+  /** The everyday heading; when given, the technical name moves to the caption line. */
+  plainTitle?: string;
   caption: string;
   onExport?: () => void;
   /** 3D drawing of the current state; the children stay as the exact, readable view. */
@@ -30,10 +34,14 @@ export function LabShell({ id, title, caption, onExport, scene, story, watch, ch
 
   // The same three values the strip shows are drawn on screens inside the 3D view.
   const embedded = useContext(LabEmbedContext);
-  const hasScreens = story?.screens !== undefined && !embedded;
-  const inText = story?.screens?.input ?? "";
-  const seenText = story?.screens?.seen ?? "";
-  const outText = story?.screens?.output ?? "";
+  const journey = useJourney();
+  const picture = usePictureJourney();
+  const hasScreens = story?.screenSeen !== undefined && !embedded;
+  const pictures = story?.kind === "picture";
+  // The screens in the 3D view carry the same trip: the question, what others see, the start of the answer.
+  const inText = pictures ? picture.request : journey.question;
+  const seenText = story?.screenSeen ?? "";
+  const outText = story?.released === false ? "no answer" : pictures ? "the picture" : `${journey.tokens.slice(0, 5).join("").trim()}…`;
   const warn = story?.outputTone === "warn";
   useEffect(() => {
     if (!hasScreens) return;
@@ -47,15 +55,15 @@ export function LabShell({ id, title, caption, onExport, scene, story, watch, ch
 
   const staged = useMemo(() => (scene && hasScreens ? withIOScreens(scene, warn ? "warn" : "good") : scene), [scene, hasScreens, warn]);
 
-  if (embedded) return story ? <div className="lab-embed" role="group" aria-label={title}><LiveIO story={story} /></div> : null;
+  if (embedded) return story ? <div className="lab-embed" role="group" aria-label={plainTitle ?? title}><LiveIO story={story} /></div> : null;
 
   return (
     <section id={id} className={`lab ${fullscreen ? "lab-fullscreen" : ""}`} aria-labelledby={`${id}-title`}>
       <div className="lab-header">
         <div>
-          <h2 id={`${id}-title`}>{title}</h2>
+          <h2 id={`${id}-title`}>{plainTitle ?? title}</h2>
           {story ? <p className="lab-plain">{story.plain}</p> : null}
-          <p className="lab-caption">{caption}</p>
+          <p className="lab-caption">{plainTitle ? <><strong>{title}.</strong> </> : null}{caption}</p>
         </div>
         <div className="playback">
           {watch ? <button className="lab-watch" onClick={watch.onToggle}>{watch.playing ? "Stop" : "Watch"}</button> : null}

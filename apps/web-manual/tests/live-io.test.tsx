@@ -12,6 +12,8 @@ import { LabShell } from "@/components/LabShell";
 import type { LiveStory } from "@/components/LiveIO";
 import { withIOScreens } from "@/lib/scene/io-screens";
 import type { Scene3D } from "@/lib/scene/types";
+import { journeyOf } from "@/lib/show/journey";
+import { questionSetting } from "@/lib/show/question";
 
 const scene: Scene3D = {
   caption: "Two boxes.",
@@ -24,15 +26,16 @@ const scene: Scene3D = {
 
 function story(extra: Partial<LiveStory> = {}): LiveStory {
   return {
-    plain: "Your numbers are cut in two.",
-    input: <input aria-label="Your numbers" defaultValue="5, 7" />,
+    plain: "Your question is cut in two.",
+    stage: "split",
+    input: <p>Its words become numbers.</p>,
     seenTitle: "What one worker sees",
     seen: <code>81234, 99120</code>,
     output: <strong>19, 43</strong>,
     why: "One piece alone is random.",
     relies: "Workers do not pool pieces.",
     limit: "Two workers together can rebuild it.",
-    screens: { input: "5, 7", seen: "81234", output: "19, 43" },
+    screenSeen: "81234",
     ...extra,
   };
 }
@@ -55,12 +58,19 @@ describe("io screens", () => {
 describe("lab shell with a story", () => {
   it("tells the lab in plain words, shows in, seen and out, and keeps the exact numbers", async () => {
     const { container } = render(<LabShell id="demo" title="Demo lab" caption="Technical caption." scene={scene} story={story()}><p>exact table</p></LabShell>);
-    expect(screen.getByText("Your numbers are cut in two.")).toBeInTheDocument();
+    expect(screen.getByText("Your question is cut in two.")).toBeInTheDocument();
     expect(screen.getByText("Technical caption.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "What goes in" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "What one worker sees" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "What comes out" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Your numbers")).toHaveValue("5, 7");
+    // The question comes from the shared list of prepared questions, and the model's full answer comes out.
+    expect(screen.getByLabelText("Your question")).toHaveValue("text-shares");
+    expect(screen.getByRole("option", { name: "Who runs the workers?" })).toBeInTheDocument();
+    expect(document.querySelector(".liveio-answer")).toHaveTextContent(`The model's answer ${journeyOf("text-shares").answer}`);
+    expect(document.querySelector(".liveio-result")).toHaveTextContent("19, 43");
+    expect(document.querySelector(".trip [aria-current=step]")).toHaveTextContent("Split · this lab");
+    expect(screen.getAllByRole("listitem").filter((item) => item.closest(".trip")).map((item) => item.textContent)).toEqual(["Your question", "Prepare", "Split · this lab", "Place", "Send", "Compute", "Check", "Wipe", "Answer"]);
+    expect(document.querySelector(".liveio-honest")).toHaveTextContent("no language or image model runs in this manual");
     expect(screen.getByText("Why this protects you").nextElementSibling).toHaveTextContent("One piece alone is random.");
     expect(screen.getByText("Where it stops").nextElementSibling).toHaveTextContent("Two workers together can rebuild it.");
     expect(screen.getByText("exact table").closest("details")).toHaveAttribute("open");
@@ -80,6 +90,27 @@ describe("lab shell with a story", () => {
     rerender(<LabShell id="demo" title="Demo lab" caption="c" story={story({ outputTone: "warn", attack: { label: "tamper with a worker", on: true, onToggle, outcome: "Caught." } })}><p>x</p></LabShell>);
     expect(screen.getByRole("button", { name: "Try to break it: tamper with a worker" })).toHaveAttribute("aria-pressed", "true");
     expect(document.querySelector(".liveio-out")).toHaveClass("warn");
+  });
+
+  it("follows the shared question, withholds the answer when a step fails, and uses the everyday title", () => {
+    const { rerender } = render(<LabShell id="demo" title="Additive share grid" plainTitle="Splitting your question" caption="Technical." story={story()}><p>x</p></LabShell>);
+    expect(screen.getByRole("heading", { level: 2, name: "Splitting your question" })).toBeInTheDocument();
+    expect(document.querySelector(".lab-caption")).toHaveTextContent("Additive share grid. Technical.");
+    fireEvent.change(screen.getByLabelText("Your question"), { target: { value: "text-memory" } });
+    expect(questionSetting.get()).toBe("text-memory");
+    expect(document.querySelector(".liveio-answer")).toHaveTextContent(journeyOf("text-memory").answer);
+    rerender(<LabShell id="demo" title="Additive share grid" plainTitle="Splitting your question" caption="Technical." story={story({ released: false, outputTone: "warn" })}><p>x</p></LabShell>);
+    expect(document.querySelector(".liveio-answer")).toHaveTextContent("The model's answer No answer is released.");
+    expect(document.querySelector(".liveio-answer")).not.toHaveTextContent(journeyOf("text-memory").answer);
+    questionSetting.set("text-shares");
+  });
+
+  it("shows a finished picture as the answer to a picture request", () => {
+    render(<LabShell id="demo" title="Diffusion" caption="c" story={story({ kind: "picture" })}><p>x</p></LabShell>);
+    expect(screen.getByLabelText("Your picture request")).toHaveValue("picture-sunrise");
+    expect(screen.getByRole("img", { name: "The finished picture: A sunrise over the water" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Your picture request"), { target: { value: "picture-city" } });
+    expect(screen.getByRole("img", { name: "The finished picture: A city at night under the moon" })).toBeInTheDocument();
   });
 
   it("plays the lab from the header and leaves labs without a story as they were", () => {

@@ -273,7 +273,22 @@ input[type="checkbox"] { width: 1rem; height: 1rem; }
 .lab-plain { margin: 0.35rem 0 0.2rem; font-size: 1.03rem; line-height: 1.5; }
 .lab-watch { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 700; }
 .liveio { margin: 0.9rem 0 1rem; }
-.liveio-row { display: grid; grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr) 36px minmax(0, 1fr); align-items: stretch; }
+.trip { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.95rem; margin: 0 0 0.75rem; padding: 0; list-style: none; }
+.article .trip li, .trip li { position: relative; max-width: none; padding: 0.12rem 0.6rem; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 0.74rem; line-height: 1.5; }
+.trip li + li::before { content: "→"; position: absolute; left: -0.82rem; top: 0.1rem; color: var(--muted); font-size: 0.72rem; }
+.trip .trip-end { border-color: var(--good); color: var(--text); font-weight: 700; }
+.trip .trip-here { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 700; }
+.question-picker { display: grid; gap: 0.25rem; margin-bottom: 0.5rem; font-size: 0.85rem; font-weight: 700; }
+.question-picker select { width: 100%; font-size: 0.92rem; font-weight: 600; }
+.liveio-answer { margin: 0 0 0.5rem; font-size: 0.95rem; line-height: 1.5; }
+.liveio-answer > span { display: block; margin-bottom: 0.1rem; color: var(--good); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.liveio-answer.withheld { color: var(--warning); font-weight: 700; }
+.liveio-answer.withheld > span { color: var(--warning); }
+.liveio-picture { display: block; width: 100%; max-width: 280px; aspect-ratio: 8 / 5; border-radius: 6px; image-rendering: pixelated; }
+.liveio-result { padding-top: 0.45rem; border-top: 1px dashed var(--border); }
+.liveio-result p { color: var(--muted); font-size: 0.84rem; }
+.article .liveio-honest, .liveio-honest { max-width: none; margin: 0.65rem 0 0; color: var(--muted); font-size: 0.76rem; }
+.liveio-row { display: grid; grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr) 36px minmax(0, 1.25fr); align-items: stretch; }
 .liveio-card { min-width: 0; padding: 0.7rem 0.8rem; border: 1px solid var(--border); border-top-width: 3px; border-radius: 10px; background: var(--surface-alt); }
 .article .liveio-card h3, .liveio-card h3 { margin: 0 0 0.45rem; color: var(--muted); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 .liveio-in { border-top-color: var(--good); }

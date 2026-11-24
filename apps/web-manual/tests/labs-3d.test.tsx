@@ -50,6 +50,8 @@ describe("labs with a 3D view", () => {
 
   it("computes the rotated norm rather than repeating the input norm", () => {
     render(<ConjugationLab />);
-    expect(screen.getByText(/Rotated norm/)).toHaveTextContent("2.236068");
+    // The lab works on the first two letters of the default question, H and o: 8 and 15, of length 17.
+    expect(screen.getByText(/Rotated norm/)).toHaveTextContent("17.000000");
+    expect(screen.getByText(/Input norm/)).toHaveTextContent("17.000000");
   });
 });

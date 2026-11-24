@@ -18,6 +18,9 @@ function shares(values: number[], epoch: number): bigint[][] {
   return [first, second];
 }
 
+/** Fixed teaching challenge, one entry per output row. Production draws it at random for every check. */
+const CHALLENGE = [11n, 13n, 17n, 19n, 23n, 29n, 31n, 37n, 41n, 43n, 47n, 53n];
+
 export interface GridRole {
   activationShare: number;
   weightShare: number;
@@ -36,7 +39,7 @@ export function executeShareGrid(weight: number[][], activation: number[], epoch
           sum + weightShares[rowIndex]![w]![column]! * activationShares[a]![column]!, 0n);
         return tamper === `${a}:${w}` && rowIndex === 0 ? exact + 1n : exact;
       });
-      const challenge = [11n, 13n, 17n, 19n].slice(0, weight.length);
+      const challenge = CHALLENGE.slice(0, weight.length);
       const weightShare = weight.map((row, rowIndex) => weightShares[rowIndex]![w]!);
       const valid = freivaldsCheck(weightShare, activationShares[a]!, product, challenge);
       if (!valid) throw new Error(`role ${a}:${w} failed exact Freivalds verification`);

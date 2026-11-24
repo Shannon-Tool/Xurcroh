@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { journeyOf } from "@/lib/show/journey";
 import { describe, expect, it } from "vitest";
 import { axe } from "jest-axe";
 import { ConjugationLab } from "@/components/labs/ConjugationLab";
@@ -63,7 +64,7 @@ describe("interactive manual", () => {
     fireEvent.click(tamper);
     fireEvent.click(tamper);
     fireEvent.click(screen.getByRole("button", { name: "Decrypt / verify" }));
-    await waitFor(() => expect(document.querySelector(".state-inspector")).toHaveTextContent(/"result": "private tensor"/));
+    await waitFor(() => expect(document.querySelector(".state-inspector")).toHaveTextContent(/"result": "How is my prompt kept from the workers\?"/));
   });
 
   it("updates the diffusion computation and preserves recovery", () => {
@@ -93,7 +94,8 @@ describe("Fortress laboratories", () => {
   it("rejects a tampered share-grid role and preserves exact output", async () => {
     const { ShareGridLab } = await import("@/components/labs/ShareGridLab");
     render(<ShareGridLab />);
-    expect(screen.getByText("19, 43")).toBeInTheDocument();
+    // The grid runs on the default question; its six scores come out exactly.
+    expect(screen.getByText(journeyOf("text-shares").scores.join(", "), { selector: "pre" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("checkbox", { name: "Tamper role (0,0)" }));
     expect(screen.getByRole("alert")).toHaveTextContent("role 0:0");
     fireEvent.click(screen.getByRole("button", { name: "Step forward" }));
@@ -107,14 +109,15 @@ describe("Fortress laboratories", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Add one to the first product" }));
     expect(screen.getByText("rejected")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Challenge vector r"), { target: { value: "invalid" } });
-    expect(screen.getByRole("alert")).toHaveTextContent("Enter two nonnegative safe integers");
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter 6 nonnegative safe integers");
   });
 
   it("reshuffles actual operation placement", async () => {
     const { PlacementLab } = await import("@/components/labs/PlacementLab");
     render(<PlacementLab />);
-    expect(screen.getByText(/Current epoch:/)).toHaveTextContent("Current epoch: 0; assignments: 16");
+    const start = journeyOf("text-shares").hash % 21;
+    expect(screen.getByText(/Current epoch:/)).toHaveTextContent(`Current epoch: ${start}; assignments: 16`);
     fireEvent.click(screen.getByRole("button", { name: "Reshuffle" }));
-    expect(screen.getByText(/Current epoch:/)).toHaveTextContent("Current epoch: 1; assignments: 16");
+    expect(screen.getByText(/Current epoch:/)).toHaveTextContent(`Current epoch: ${start + 1}; assignments: 16`);
   });
 });
