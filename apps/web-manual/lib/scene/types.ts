@@ -7,8 +7,9 @@ export type Vec3 = readonly [number, number, number];
  * cylinder: size[0] is the diameter, size[1] the height.
  * ring: size[0] is the diameter; it lies flat.
  * arrow: runs from `position` to `tip`; size[0] is the shaft thickness.
+ * screen: a flat panel that turns to face the viewer; size is width, height. It shows the picture named by `screen`.
  */
-export type SceneNodeKind = "box" | "slab" | "sphere" | "shell" | "orb" | "cylinder" | "ring" | "arrow";
+export type SceneNodeKind = "box" | "slab" | "sphere" | "shell" | "orb" | "cylinder" | "ring" | "arrow" | "screen";
 
 export interface SceneNode {
   id: string;
@@ -28,6 +29,10 @@ export interface SceneNode {
   tilt?: number;
   /** Slowly throbs to draw the eye (still under reduced motion). */
   pulse?: boolean;
+  /** Name of the picture a screen shows; the viewer is handed the picture separately. */
+  screen?: string;
+  /** A counter: each time it changes, the node flashes once (not under reduced motion). */
+  flash?: number;
 }
 
 export interface SceneLink {

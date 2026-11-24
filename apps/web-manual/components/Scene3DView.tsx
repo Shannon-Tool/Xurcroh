@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { declutter, type LabelPoint } from "@/lib/scene/labels";
-import { DEFAULT_ORBIT, orbitMoving, restingMotion, rotateOrbit, stepOrbit, zoomOrbit, type Orbit, type OrbitMotion } from "@/lib/scene/orbit";
+import { DEFAULT_ORBIT, followDirection, orbitMoving, restingMotion, rotateOrbit, stepOrbit, zoomOrbit, type Direction, type Orbit, type OrbitMotion } from "@/lib/scene/orbit";
+import { blendFactor } from "@/lib/scene/motion";
 import { isSlow, pickQuality, type EffectsPreference } from "@/lib/scene/quality";
 import { effectsSetting, motionSetting } from "@/lib/scene/settings";
 import type { Palette, Stage } from "@/lib/scene/stage";
@@ -15,8 +16,9 @@ const FALLBACK = { plain: "#8a99a8", accent: "#075985", good: "#15803d", warn: "
 const TONE_TOKENS: Record<SceneTone, string> = { plain: "--muted", accent: "--accent", good: "--good", warn: "--warning", muted: "--border" };
 const NEXT_EFFECTS: Record<EffectsPreference, EffectsPreference> = { auto: "on", on: "off", off: "auto" };
 
-function readPalette(): Palette {
-  const style = getComputedStyle(document.documentElement);
+/** Colours come from the frame's own CSS tokens, so a view inside a dark band is dark in either theme. */
+function readPalette(frame: Element | null): Palette {
+  const style = getComputedStyle(frame ?? document.documentElement);
   const token = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
   return {
     plain: token("--muted", FALLBACK.plain),
@@ -28,7 +30,7 @@ function readPalette(): Palette {
     grid: token("--border", FALLBACK.grid),
     backdropTop: token("--surface-alt", FALLBACK.top),
     backdropBottom: token("--bg", FALLBACK.bottom),
-    dark: document.documentElement.dataset.theme === "dark",
+    dark: document.documentElement.dataset.theme === "dark" || frame?.closest(".theater") != null,
   };
 }
 
@@ -40,7 +42,18 @@ function prefersReducedMotion(): boolean {
  * Interactive 3D drawing of a lab's current state. It animates between states, but the lab's own
  * text and tables remain the exact view, and everything here works without WebGL or motion.
  */
-export function Scene3DView({ scene, autoRotate = true, variant = "lab" }: { scene: Scene3D; autoRotate?: boolean; variant?: "lab" | "hero" }) {
+export function Scene3DView({ scene, autoRotate = true, variant = "lab", direct, screens, screensVersion = 0, overlay }: {
+  scene: Scene3D;
+  autoRotate?: boolean;
+  variant?: "lab" | "hero" | "show";
+  /** A shot the view settles on until the reader steers it; "Reset view" hands control back. */
+  direct?: Direction;
+  /** Pictures for the scene's screens, by name. Bump `screensVersion` after redrawing them. */
+  screens?: Record<string, HTMLCanvasElement | null>;
+  screensVersion?: number;
+  /** Panels laid over the view (or under it on small screens). */
+  overlay?: React.ReactNode;
+}) {
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelLayerRef = useRef<HTMLDivElement>(null);
@@ -69,6 +82,9 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab" }: { sce
   const motion = useSyncExternalStore(motionSetting.subscribe, motionSetting.get, () => "on" as const);
   const effectsRef = useRef(effects);
   effectsRef.current = effects;
+  const directRef = useRef(direct);
+  directRef.current = direct;
+  const directKey = direct ? `${direct.theta}|${direct.phi}|${direct.zoom}|${direct.focusId}|${direct.sway}` : "";
   const motionOnRef = useRef(motion === "on");
   motionOnRef.current = motion === "on";
 
@@ -167,15 +183,25 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab" }: { sce
       last = now;
       if (!still) timeRef.current += elapsed;
       liveRef.current = advanceScene(liveRef.current, sceneRef.current, still ? Infinity : elapsed);
-      const turning = autoRotate && !still && !touchedRef.current;
-      motionRef.current = still ? restingMotion(motionRef.current.orbit) : stepOrbit(motionRef.current, elapsed, turning);
+      // The director only moves the camera while motion is on; otherwise the view stays where it is.
+      const directed = touchedRef.current || still ? undefined : directRef.current;
+      const turning = !still && !touchedRef.current && (directed ? directed.sway > 0 : autoRotate);
+      let settling = false;
+      if (directed) {
+        const before = motionRef.current.orbit;
+        const orbit = followDirection(before, directed, timeRef.current, blendFactor(elapsed, 1.8));
+        settling = Math.abs(orbit.theta - before.theta) + Math.abs(orbit.phi - before.phi) + Math.abs(orbit.zoom - before.zoom) > 0.0004;
+        motionRef.current = restingMotion(orbit);
+      } else {
+        motionRef.current = still ? restingMotion(motionRef.current.orbit) : stepOrbit(motionRef.current, elapsed, turning);
+      }
       const result = stage.draw(liveRef.current, {
         orbit: motionRef.current.orbit,
         width: sizeRef.current.width,
         height: sizeRef.current.height,
         time: still ? 0 : timeRef.current,
         dt: still ? Infinity : elapsed,
-        focusId: focusRef.current,
+        focusId: directed ? directed.focusId : focusRef.current,
       });
       paintLabels(result.labels);
       if (!still && elapsed > 0 && !slowRef.current) {
@@ -186,7 +212,7 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab" }: { sce
           stage.setQuality(pickQuality({ preference: effectsRef.current, rendererName: stage.rendererName, slow: true }));
         }
       }
-      const more = !still && nearRef.current && !document.hidden && (result.animating || !liveRef.current.settled || turning || orbitMoving(motionRef.current));
+      const more = !still && nearRef.current && !document.hidden && (result.animating || !liveRef.current.settled || turning || settling || orbitMoving(motionRef.current));
       if (more) handle = window.requestAnimationFrame(frame);
       else last = 0;
     };
@@ -211,7 +237,7 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab" }: { sce
     if (status !== "ready" || !stageRef.current) return;
     const stage = stageRef.current;
     const apply = () => {
-      stage.setPalette(readPalette());
+      stage.setPalette(readPalette(frameRef.current));
       requestRef.current();
     };
     apply();
@@ -228,13 +254,21 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab" }: { sce
 
   useEffect(() => {
     requestRef.current();
-  }, [sceneKey, motion]);
+  }, [sceneKey, motion, directKey]);
+
+  // Pictures for the scene's screens: hand them over, and again whenever they were redrawn.
+  useEffect(() => {
+    if (status !== "ready" || !stageRef.current || !screens) return;
+    for (const [id, source] of Object.entries(screens)) if (source) stageRef.current.setScreen(id, source);
+    requestRef.current();
+  }, [status, screens, screensVersion]);
 
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame) return;
     const measure = () => {
-      const box = frame.getBoundingClientRect();
+      // In the show the frame also holds panels, so the drawing area is the canvas itself.
+      const box = ((variant === "show" ? frame.querySelector("canvas:not([hidden])") : null) ?? frame).getBoundingClientRect();
       if (box.width > 0 && box.height > 0) sizeRef.current = { width: Math.round(box.width), height: Math.round(box.height) };
       requestRef.current();
     };
@@ -252,7 +286,7 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab" }: { sce
       resize?.disconnect();
       frame.removeEventListener("wheel", onWheel);
     };
-  }, []);
+  }, [variant, status]);
 
   function turn(change: (orbit: Orbit) => Orbit, spin?: { theta: number; phi: number }) {
     touchedRef.current = true;
@@ -262,6 +296,13 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab" }: { sce
 
   function resetView() {
     focusRef.current = null;
+    if (directRef.current) {
+      // Hand the camera back to the scene's director.
+      touchedRef.current = false;
+      motionRef.current = restingMotion(motionRef.current.orbit);
+      requestRef.current();
+      return;
+    }
     turn(() => DEFAULT_ORBIT);
   }
 
@@ -353,7 +394,7 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab" }: { sce
   const ready = status === "ready";
 
   return (
-    <div className={variant === "hero" ? "scene3d scene3d-hero" : "scene3d"}>
+    <div className={variant === "lab" ? "scene3d" : `scene3d scene3d-${variant}`}>
       <div
         ref={frameRef}
         className="scene3d-frame"
@@ -378,6 +419,7 @@ export function Scene3DView({ scene, autoRotate = true, variant = "lab" }: { sce
           hidden={status === "unsupported" || status === "lost"}
         />
         <div ref={labelLayerRef} className="scene3d-labels" aria-hidden="true" />
+        {overlay}
         {ready && hovered && (hovered.label || hovered.detail) ? (
           <div className="scene3d-tip" aria-hidden="true" style={{ left: Math.min(hover!.x + 14, sizeRef.current.width - 250), top: hover!.y + 16 }}>
             {hovered.label ? <strong>{hovered.label}</strong> : null}

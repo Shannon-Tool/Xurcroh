@@ -39,10 +39,13 @@ export interface Stage {
   draw(live: LiveScene, view: StageView): StageResult;
   /** Id of the node under a point given in canvas pixels, from the last drawn frame. */
   pick(x: number, y: number): string | null;
+  /** Gives a named screen its picture, or tells the stage that the picture has been redrawn. */
+  setScreen(id: string, source: HTMLCanvasElement): void;
   dispose(): void;
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
+const FLASH_SECONDS = 0.75;
 const MAX_FLOW_ORBS = 256;
 
 const SHELL_VERTEX = /* glsl */ `
@@ -132,6 +135,9 @@ interface NodeVisual {
   color: THREE.Color;
   built: Vec3 | null;
   lastSize: Vec3;
+  burst: THREE.Mesh | null;
+  flashSeen: number;
+  flashAt: number;
 }
 
 interface LinkVisual {
@@ -169,6 +175,7 @@ function halfExtent(node: LiveNode): THREE.Vector3 {
   if (node.kind === "cylinder") return new THREE.Vector3(node.size[0] / 2, node.size[1] / 2, node.size[0] / 2);
   if (node.kind === "ring") return new THREE.Vector3(node.size[0] / 2, 0.05, node.size[0] / 2);
   if (node.kind === "arrow") return new THREE.Vector3(0.05, 0.05, 0.05);
+  if (node.kind === "screen") return new THREE.Vector3(node.size[0] / 2, node.size[1] / 2, node.size[0] / 2);
   return new THREE.Vector3(node.size[0] / 2, node.size[0] / 2, node.size[0] / 2);
 }
 
@@ -217,7 +224,9 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
   const ringGeometry = new THREE.TorusGeometry(0.5, 0.03, 12, 72).rotateX(Math.PI / 2);
   const coneGeometry = new THREE.ConeGeometry(0.5, 1, 24);
   const haloGeometry = new THREE.RingGeometry(0.42, 0.5, 64).rotateX(-Math.PI / 2);
-  const shared = [sphereGeometry, cylinderGeometry, ringGeometry, coneGeometry, haloGeometry];
+  const panelGeometry = new THREE.PlaneGeometry(1, 1);
+  const shared = [sphereGeometry, cylinderGeometry, ringGeometry, coneGeometry, haloGeometry, panelGeometry];
+  const screens = new Map<string, THREE.CanvasTexture>();
 
   const floorGeometry = new THREE.PlaneGeometry(240, 240).rotateX(-Math.PI / 2);
   const gridMaterial = new THREE.ShaderMaterial({
@@ -282,6 +291,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
       });
     }
     if (kind === "orb") return new THREE.MeshBasicMaterial({ toneMapped: false });
+    if (kind === "screen") return new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true, side: THREE.DoubleSide });
     return new THREE.MeshPhysicalMaterial({ roughness: 0.38, metalness: 0.08, clearcoat: 0.7, clearcoatRoughness: 0.28, transparent: true });
   }
 
@@ -290,9 +300,9 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
     const material = makeMaterial(node.kind);
     const geometry = node.kind === "box" || node.kind === "slab"
       ? new THREE.BufferGeometry()
-      : node.kind === "cylinder" || node.kind === "arrow" ? cylinderGeometry : node.kind === "ring" ? ringGeometry : sphereGeometry;
+      : node.kind === "cylinder" || node.kind === "arrow" ? cylinderGeometry : node.kind === "ring" ? ringGeometry : node.kind === "screen" ? panelGeometry : sphereGeometry;
     const mesh = new THREE.Mesh(geometry, material);
-    const solid = node.kind !== "shell" && node.kind !== "slab" && node.kind !== "orb";
+    const solid = node.kind !== "shell" && node.kind !== "slab" && node.kind !== "orb" && node.kind !== "screen";
     mesh.castShadow = solid;
     mesh.receiveShadow = solid || node.kind === "slab";
     mesh.userData.nodeId = node.id;
@@ -304,16 +314,28 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
       head.userData.nodeId = node.id;
       group.add(head);
     }
+    if (node.kind === "screen") {
+      // A coloured border behind the picture, so the panel reads as a lit screen.
+      head = new THREE.Mesh(panelGeometry, new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true, side: THREE.DoubleSide }));
+      head.position.z = -0.012;
+      head.userData.nodeId = node.id;
+      group.add(head);
+    }
     const halo = new THREE.Mesh(haloGeometry, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, toneMapped: false }));
     halo.visible = false;
     halo.renderOrder = -1;
     content.add(group, halo);
     const color = new THREE.Color().copy(toneColor(node.tone));
-    return { kind: node.kind, group, mesh, head, halo, color, built: null, lastSize: node.size };
+    return { kind: node.kind, group, mesh, head, halo, color, built: null, lastSize: node.size, burst: null, flashSeen: node.flash, flashAt: -Infinity };
   }
 
   function removeNode(visual: NodeVisual): void {
     content.remove(visual.group, visual.halo);
+    if (visual.burst) {
+      content.remove(visual.burst);
+      (visual.burst.material as THREE.Material).dispose();
+    }
+    if (visual.kind === "screen" && visual.head) (visual.head.material as THREE.Material).dispose();
     if (visual.built) visual.mesh.geometry.dispose();
     (visual.mesh.material as THREE.Material).dispose();
     (visual.halo.material as THREE.Material).dispose();
@@ -329,13 +351,22 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
     }
     const throb = node.pulse ? 0.5 + 0.5 * Math.sin(time * 4.2) : 0;
     const presence = ease(node.presence);
-    const glow = node.emphasis * 0.3 + throb * 0.35;
+
+    // A change of the flash counter plays one short burst; never while motion is off (colorFactor 1).
+    if (node.flash !== visual.flashSeen) {
+      visual.flashSeen = node.flash;
+      visual.flashAt = colorFactor === 1 ? -Infinity : time;
+    }
+    const flashAge = time - visual.flashAt;
+    const flash = flashAge >= 0 && flashAge < FLASH_SECONDS ? 1 - flashAge / FLASH_SECONDS : 0;
+    if (flash > 0) moving = true;
+    const glow = node.emphasis * 0.3 + throb * 0.35 + flash * 0.9;
 
     const { group, mesh } = visual;
     group.visible = presence > 0.001;
     group.position.set(node.position[0], node.position[1], node.position[2]);
-    group.rotation.z = node.tilt;
-    group.scale.setScalar(Math.max(presence, 0.001) * (1 + 0.05 * node.emphasis + 0.04 * throb));
+    group.rotation.set(0, 0, node.tilt);
+    group.scale.setScalar(Math.max(presence, 0.001) * (1 + 0.05 * node.emphasis + 0.04 * throb + 0.07 * flash));
 
     if (node.kind === "box" || node.kind === "slab") {
       // Rebuild the rounded box only once its size has come to rest; stretch the old one meanwhile.
@@ -366,6 +397,11 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
         visual.head.scale.set(thickness * 2.6, headLength, thickness * 2.6);
         visual.head.position.copy(scratch).multiplyScalar(length - headLength / 2);
       }
+    } else if (node.kind === "screen") {
+      // Turn about the vertical axis to face the camera, so the picture is always readable.
+      group.rotation.set(0, Math.atan2(camera.position.x - node.position[0], camera.position.z - node.position[2]), 0);
+      mesh.scale.set(node.size[0], node.size[1], 1);
+      visual.head?.scale.set(node.size[0] + 0.14, node.size[1] + 0.14, 1);
     } else {
       mesh.scale.setScalar(Math.max(node.size[0], 0.001));
     }
@@ -383,13 +419,44 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
       material.opacity = node.opacity;
       material.depthWrite = node.opacity > 0.95;
       mesh.renderOrder = node.opacity > 0.95 ? 0 : 1;
+    } else if (material instanceof THREE.MeshBasicMaterial && node.kind === "screen") {
+      const picture = (node.screen ? screens.get(node.screen) : undefined) ?? null;
+      if (material.map !== picture) {
+        material.map = picture;
+        material.needsUpdate = true;
+      }
+      material.color.setScalar(picture ? 1 + 0.5 * flash : 0.08);
+      material.opacity = presence;
+      const border = visual.head!.material as THREE.MeshBasicMaterial;
+      border.color.copy(visual.color).multiplyScalar((palette?.dark ? 1.25 : 1) + 0.9 * flash + 0.3 * throb);
+      border.opacity = presence;
+      mesh.renderOrder = 2;
+      visual.head!.renderOrder = 2;
     } else if (material instanceof THREE.MeshBasicMaterial) {
       material.color.copy(visual.color).multiplyScalar(palette?.dark ? 1.9 + throb : 1.15);
     }
 
+    // The burst: a ring on the floor that runs outwards once.
+    if (flash > 0 && node.kind !== "screen") {
+      if (!visual.burst) {
+        visual.burst = new THREE.Mesh(haloGeometry, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, toneMapped: false }));
+        visual.burst.renderOrder = -1;
+        content.add(visual.burst);
+      }
+      const footprint = Math.max(node.size[0], node.size[2] || node.size[0]);
+      visual.burst.visible = true;
+      visual.burst.position.set(node.position[0], floorY + 0.016, node.position[2]);
+      visual.burst.scale.setScalar(footprint * (1.4 + 4.2 * (1 - flash)));
+      const burstMaterial = visual.burst.material as THREE.MeshBasicMaterial;
+      burstMaterial.color.copy(visual.color).multiplyScalar(palette?.dark ? 1.8 : 1);
+      burstMaterial.opacity = flash;
+    } else if (visual.burst) {
+      visual.burst.visible = false;
+    }
+
     // A ring on the floor marks the active node; it ripples outwards while motion is on.
     const halo = visual.halo;
-    const marked = node.emphasis > 0.02 && node.kind !== "ring" && node.kind !== "arrow" && node.kind !== "orb" && !node.leaving;
+    const marked = node.emphasis > 0.02 && node.kind !== "ring" && node.kind !== "arrow" && node.kind !== "orb" && node.kind !== "screen" && !node.leaving;
     halo.visible = marked;
     if (marked) {
       const ripple = time * 0.7 - Math.floor(time * 0.7);
@@ -662,7 +729,23 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
       const hit = raycaster.intersectObjects(pickable, false)[0];
       return hit ? String(hit.object.userData.nodeId) : null;
     },
+    setScreen(id, source) {
+      const current = screens.get(id);
+      if (current && current.image === source) {
+        current.needsUpdate = true;
+        return;
+      }
+      current?.dispose();
+      const texture = new THREE.CanvasTexture(source);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.magFilter = THREE.NearestFilter;
+      texture.minFilter = THREE.LinearFilter;
+      texture.generateMipmaps = false;
+      screens.set(id, texture);
+    },
     dispose() {
+      for (const texture of screens.values()) texture.dispose();
+      screens.clear();
       for (const visual of nodes.values()) removeNode(visual);
       for (const visual of links.values()) removeLink(visual);
       nodes.clear();

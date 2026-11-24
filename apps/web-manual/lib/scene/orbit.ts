@@ -56,3 +56,25 @@ export function stepOrbit(motion: OrbitMotion, dt: number, autoRotate: boolean):
   const orbit = turn === 0 && motion.spinPhi === 0 ? motion.orbit : rotateOrbit(motion.orbit, turn, motion.spinPhi * dt);
   return { orbit, spinTheta: settle(motion.spinTheta), spinPhi: settle(motion.spinPhi) };
 }
+
+/** A shot chosen by a scene's director: where the view should settle while the reader is not steering. */
+export interface Direction {
+  theta: number;
+  phi: number;
+  zoom: number;
+  /** Node to centre on, or null for the whole scene. */
+  focusId: string | null;
+  /** How far, in radians, the view drifts either side of `theta`. */
+  sway: number;
+}
+
+/** Moves `orbit` a fraction of the way to the director's shot; `factor` 1 lands on it. */
+export function followDirection(orbit: Orbit, direction: Direction, time: number, factor: number): Orbit {
+  const theta = direction.theta + direction.sway * Math.sin(time * 0.35);
+  if (factor >= 1) return { theta, phi: direction.phi, zoom: direction.zoom };
+  return {
+    theta: orbit.theta + (theta - orbit.theta) * factor,
+    phi: orbit.phi + (direction.phi - orbit.phi) * factor,
+    zoom: orbit.zoom + (direction.zoom - orbit.zoom) * factor,
+  };
+}

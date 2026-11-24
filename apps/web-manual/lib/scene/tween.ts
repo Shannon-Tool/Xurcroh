@@ -14,6 +14,8 @@ export interface LiveNode {
   opacity: number;
   tilt: number;
   pulse: boolean;
+  screen?: string;
+  flash: number;
   /** 0 = not there yet / gone, 1 = fully present. May start below 0 so that nodes arrive one after another. */
   presence: number;
   /** 0 = ordinary, 1 = the active element of the current step. */
@@ -76,6 +78,8 @@ function moveNode(current: LiveNode, node: SceneNode, factor: number): LiveNode 
     opacity: approach(current.opacity, target.opacity, factor),
     tilt: approach(current.tilt, target.tilt, factor),
     pulse: node.pulse === true,
+    screen: node.screen,
+    flash: node.flash ?? 0,
     presence: approach(current.presence, 1, factor),
     emphasis: approach(current.emphasis, target.emphasis, factor),
     leaving: false,
@@ -96,6 +100,8 @@ function enterNode(node: SceneNode, order: number, factor: number): LiveNode {
     opacity: target.opacity,
     tilt: target.tilt,
     pulse: node.pulse === true,
+    screen: node.screen,
+    flash: node.flash ?? 0,
     presence: -Math.min(order * STAGGER, 0.6),
     emphasis: target.emphasis,
     leaving: false,

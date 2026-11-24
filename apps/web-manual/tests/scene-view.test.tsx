@@ -13,6 +13,7 @@ const stage = {
   setQuality: vi.fn((quality: string) => { void quality; }),
   draw: vi.fn((live: LiveScene, view: StageView) => { void live; void view; return { labels: [{ id: "a", text: "Worker A", x: 40, y: 30, depth: 0.5, visible: true, active: true }], animating: false }; }),
   pick: vi.fn((x: number, y: number): string | null => { void x; void y; return null; }),
+  setScreen: vi.fn((id: string, source: HTMLCanvasElement) => { void id; void source; }),
   dispose: vi.fn(),
 };
 const createStage = vi.fn((canvas: HTMLCanvasElement) => { void canvas; return stage; });
@@ -128,6 +129,42 @@ describe("Scene3DView", () => {
     await waitFor(() => expect(lastView().orbit.zoom).toBeLessThan(1));
     fireEvent.click(screen.getByRole("button", { name: "Reset view" }));
     await waitFor(() => expect(lastView().orbit).toEqual(DEFAULT_ORBIT));
+  });
+
+  it("hands the scene's screens their pictures, and again after they are redrawn", async () => {
+    const picture = document.createElement("canvas");
+    const { rerender } = render(<Scene3DView scene={scene} screens={{ device: picture, spare: null }} screensVersion={1} />);
+    await waitFor(() => expect(stage.setScreen).toHaveBeenCalledWith("device", picture));
+    expect(stage.setScreen).toHaveBeenCalledTimes(1);
+    rerender(<Scene3DView scene={scene} screens={{ device: picture, spare: null }} screensVersion={2} />);
+    await waitFor(() => expect(stage.setScreen).toHaveBeenCalledTimes(2));
+  });
+
+  it("follows the director's shot until the reader steers, and hands it back on reset", async () => {
+    setReducedMotion(false);
+    const shot = { theta: 1.4, phi: 0.9, zoom: 0.8, focusId: "a", sway: 0 };
+    render(<Scene3DView scene={scene} variant="show" direct={shot} overlay={<p>panel over the view</p>} />);
+    expect(screen.getByText("panel over the view")).toBeInTheDocument();
+    await waitFor(() => expect(lastView().orbit.theta).toBeGreaterThan(0.9));
+    expect(lastView().focusId).toBe("a");
+    fireEvent.keyDown(screen.getByRole("img"), { key: "ArrowLeft" });
+    fireEvent.keyDown(screen.getByRole("img"), { key: "ArrowLeft" });
+    fireEvent.keyDown(screen.getByRole("img"), { key: "ArrowLeft" });
+    await waitFor(() => expect(lastView().focusId).toBeNull());
+    const steered = lastView().orbit.theta;
+    expect(steered).toBeLessThan(1.4);
+    await pause(120);
+    expect(lastView().orbit.theta).toBeCloseTo(steered);
+    fireEvent.click(screen.getByRole("button", { name: "Reset view" }));
+    await waitFor(() => expect(lastView().orbit.theta).toBeGreaterThan(steered + 0.05));
+    expect(lastView().focusId).toBe("a");
+  });
+
+  it("leaves the camera alone under reduced motion even when a shot is given", async () => {
+    render(<Scene3DView scene={scene} direct={{ theta: 1.4, phi: 0.9, zoom: 0.8, focusId: "a", sway: 0.2 }} />);
+    await waitFor(() => expect(stage.draw).toHaveBeenCalled());
+    expect(lastView().orbit).toEqual(DEFAULT_ORBIT);
+    expect(lastView().focusId).toBeNull();
   });
 
   it("lets the reader choose the effects level and remembers it", async () => {

@@ -1,0 +1,112 @@
+import type { Direction } from "@/lib/scene/orbit";
+import type { Scene3D, SceneLink, SceneNode, Vec3 } from "@/lib/scene/types";
+import type { Beat } from "@/lib/show/timeline";
+import type { ShowKind } from "@/lib/simulation/show";
+
+export interface ShowSceneInput {
+  kind: ShowKind;
+  beat: Beat;
+  /** Units whose output is already on the device's screen. */
+  revealed: number;
+  units: number;
+  rejections: number;
+  /** Role (2·activation share + weight share) whose product was tampered with, while a rejection is on stage. */
+  tamperRole: number | null;
+}
+
+const THING: Record<ShowKind, string> = { text: "token", picture: "step of the picture", clip: "frame of the clip" };
+
+export function workerName(role: number): string {
+  return `Worker (${role >> 1},${role & 1})`;
+}
+
+function progress(input: ShowSceneInput): string {
+  if (input.kind === "text") return `Token ${input.revealed} of ${input.units}`;
+  if (input.kind === "picture") return `Step ${input.revealed} of ${input.units}`;
+  return `Frame ${Math.ceil(input.revealed / 2)} of ${input.units / 2}`;
+}
+
+function caption(input: ShowSceneInput): string {
+  const thing = THING[input.kind];
+  switch (input.beat) {
+    case "split": return `Split: your device splits its input for the first ${thing} into two random shares.`;
+    case "send": return "Send: each of the four workers receives one share. It already holds one share of the weights.";
+    case "compute": return "Compute: each worker multiplies the two shares it holds. Its screen shows what it sees: random numbers.";
+    case "return": return "Return: the four products travel back to your device.";
+    case "verify": return "Verify: your device tests every product against a random challenge.";
+    case "combine": return `Combine: the four verified products add up to the first ${thing}, which appears only on your device.`;
+    case "stream": return `${progress(input)}. The same six steps repeat for every ${thing}.`;
+    case "rejected": return `${workerName(input.tamperRole ?? 0)} returned a product that fails the check. The step is rejected and sent again.`;
+    case "done": return `Complete. Every ${thing} was computed on shares, checked and combined on your device.`;
+  }
+}
+
+/** The stage for the live demonstration: the architecture overview with a screen on every machine. */
+export function showScene(input: ShowSceneInput): Scene3D {
+  const { beat } = input;
+  const sending = beat === "send" || beat === "stream";
+  const returning = beat === "return" || beat === "stream";
+  const sealed = beat === "verify" || beat === "combine" || beat === "stream" || beat === "done" || beat === "rejected";
+  const nodes: SceneNode[] = [
+    {
+      id: "device", kind: "box", position: [-4.6, 0.75, 0], size: [1.7, 1.5, 1.7], tone: "good", label: "Your device", flash: input.revealed,
+      detail: "The only place where the input, both shares together, and the output exist in the clear.",
+      active: beat === "split" || beat === "verify" || beat === "combine" || beat === "stream" || beat === "done",
+    },
+    {
+      id: "screen-device", kind: "screen", screen: "device", position: [-4.6, 3.05, 0], size: [3, 1.88, 0], tone: "good", flash: input.revealed,
+      detail: "The output as it forms. It is decoded from the four recombined products.",
+    },
+    { id: "controller", kind: "cylinder", position: [0, 0.35, -4.6], size: [1.7, 0.7, 1.7], tone: "plain", label: "Controller: sees ciphertext only", detail: "A signed directory of workers. It routes encrypted messages and cannot read them." },
+    { id: "zone", kind: "slab", position: [4.4, 0.04, 0], size: [5.6, 0.08, 5.6], tone: "accent", opacity: 0.16, label: "Four independent operators" },
+  ];
+  const links: SceneLink[] = [{ id: "lookup", from: "device", to: "controller", tone: "plain", dashed: true, arc: 0.6 }];
+  for (let role = 0; role < 4; role += 1) {
+    const id = `worker-${role}`;
+    const at: Vec3 = [3.1 + (role >> 1) * 2.6, 0.55, -1.3 + (role & 1) * 2.6];
+    const bad = beat === "rejected" && input.tamperRole === role;
+    nodes.push({
+      id, kind: "box", position: at, size: [1.2, 1.1, 1.2], tone: bad ? "warn" : "accent", label: bad ? `${workerName(role)}: failed the check` : workerName(role),
+      detail: `Holds activation share ${role >> 1} and weight share ${role & 1}.`,
+      active: beat === "compute" || bad, pulse: beat === "compute" || beat === "stream" || bad, flash: bad ? input.rejections : 0,
+    });
+    nodes.push({
+      id: `screen-${id}`, kind: "screen", screen: id, position: [at[0], 1.85, at[2]], size: [1.2, 0.75, 0], tone: bad ? "warn" : "accent",
+      detail: `What ${workerName(role)} sees: its shares and its product, which are random numbers.`,
+    });
+    links.push({ id: `out-${role}`, from: "device", to: id, arc: 2.3 + role * 0.25, tone: "accent", active: sending, flow: sending ? "forward" : undefined });
+    links.push({ id: `back-${role}`, from: id, to: "device", arc: 0.7 + role * 0.14, tone: bad ? "warn" : "good", dashed: bad, active: returning || bad, flow: returning ? "forward" : undefined });
+    if (sealed) nodes.push({ id: `seal-${role}`, kind: "ring", position: [at[0], 0.1, at[2]], size: [2.1, 0, 0], tone: bad ? "warn" : "good", detail: bad ? "Product failed its check." : "Product verified." });
+  }
+  if (beat === "split" || beat === "send") {
+    nodes.push({ id: "share-0", kind: "orb", position: [-5.1, 1.85, 0.9], size: [0.34, 0.34, 0.34], tone: "accent", label: beat === "split" ? "share 0" : undefined, detail: "One additive share of the input." });
+    nodes.push({ id: "share-1", kind: "orb", position: [-4.1, 1.85, 0.9], size: [0.34, 0.34, 0.34], tone: "accent", label: beat === "split" ? "share 1" : undefined, detail: "The other additive share of the input." });
+  }
+  return {
+    caption: caption(input),
+    nodes, links,
+    legend: [
+      { tone: "good", text: "your device and verified products" },
+      { tone: "accent", text: "shares and the workers that hold them" },
+      { tone: "warn", text: "a product that failed its check" },
+      { tone: "plain", text: "controller (ciphertext only)" },
+    ],
+  };
+}
+
+const WIDE: Direction = { theta: 0.5, phi: 1.1, zoom: 0.92, focusId: null, sway: 0.22 };
+
+/** Where the camera goes for each beat while the reader is not steering it. */
+export function showCamera(beat: Beat, tamperRole: number | null): Direction {
+  switch (beat) {
+    case "split": return { theta: 0.15, phi: 1.15, zoom: 0.95, focusId: "device", sway: 0 };
+    case "send": return { ...WIDE, sway: 0 };
+    case "compute": return { theta: 0.95, phi: 1.05, zoom: 0.95, focusId: "zone", sway: 0 };
+    case "return": return { ...WIDE, theta: 0.4, sway: 0 };
+    case "verify": return { theta: 0.3, phi: 1.1, zoom: 1, focusId: "device", sway: 0 };
+    case "combine": return { theta: 0.12, phi: 1.2, zoom: 0.9, focusId: "screen-device", sway: 0 };
+    case "rejected": return { theta: 0.9, phi: 1.05, zoom: 0.9, focusId: `worker-${tamperRole ?? 0}`, sway: 0 };
+    case "done": return { theta: 0.15, phi: 1.2, zoom: 0.95, focusId: "screen-device", sway: 0.1 };
+    case "stream": return WIDE;
+  }
+}
