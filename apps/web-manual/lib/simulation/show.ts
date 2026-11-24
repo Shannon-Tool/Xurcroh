@@ -726,3 +726,76 @@ export async function sealForWire(values: Int32Array): Promise<Uint8Array> {
   const plain = new Uint8Array(new Uint16Array(values).buffer);
   return new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, plain));
 }
+
+// ---------------------------------------------------------------- disguise and sealed routing
+
+/** A model whose input order has been shuffled with a secret order, and its table shuffled to match. */
+export interface Shuffled extends Computable {
+  /** `order[k]` is the original position of what now sits at position `k`. */
+  order: Int32Array;
+}
+
+/**
+ * Disguise, not encryption: the numbers keep their values and only change places. Because the model's
+ * columns move with them, every product comes out exactly as before.
+ */
+export function shuffled(model: Computable, rng: Rng): Shuffled {
+  const { rows, cols, data } = model.weight;
+  const order = Int32Array.from({ length: cols }, (_, index) => index);
+  for (let index = cols - 1; index > 0; index -= 1) {
+    const other = rng() % (index + 1);
+    [order[index], order[other]] = [order[other]!, order[index]!];
+  }
+  const moved = new Int32Array(rows * cols);
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) moved[row * cols + col] = data[row * cols + order[col]!]!;
+  }
+  return {
+    weight: { rows, cols, data: moved },
+    units: model.units,
+    order,
+    input(unit) {
+      const plain = model.input(unit);
+      return Int32Array.from(order, (from) => plain[from]!);
+    },
+  };
+}
+
+export interface SealedRoute {
+  /** What each relay receives, in order. A relay that receives a bad packet is the last entry. */
+  views: Uint8Array[];
+  /** The bytes that come out after the last relay, or null if a relay refused the packet. */
+  delivered: Uint8Array | null;
+  /** Index of the relay whose authenticity check failed, if any. */
+  failedAt: number | null;
+}
+
+const RELAYS = 3;
+
+/**
+ * Wraps a piece in three layers of AES-GCM, one per relay, then really sends it through: every relay
+ * removes its own layer and forwards the rest. `alterAt` flips one bit of what that relay receives.
+ */
+export async function sealRoute(values: Int32Array, alterAt?: number): Promise<SealedRoute> {
+  const keys = await Promise.all(Array.from({ length: RELAYS }, () => crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])));
+  const nonces = keys.map(() => crypto.getRandomValues(new Uint8Array(12)));
+  let packet = new Uint8Array(new Uint16Array(values).buffer);
+  // Innermost layer last: the first relay's layer is the outermost.
+  for (let hop = RELAYS - 1; hop >= 0; hop -= 1) {
+    packet = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonces[hop]! as unknown as BufferSource }, keys[hop]!, packet as unknown as BufferSource));
+  }
+  const views: Uint8Array[] = [];
+  for (let hop = 0; hop < RELAYS; hop += 1) {
+    if (alterAt === hop) {
+      packet = new Uint8Array(packet);
+      packet[0]! ^= 1;
+    }
+    views.push(packet);
+    try {
+      packet = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: nonces[hop]! as unknown as BufferSource }, keys[hop]!, packet as unknown as BufferSource));
+    } catch {
+      return { views, delivered: null, failedAt: hop };
+    }
+  }
+  return { views, delivered: packet, failedAt: null };
+}
