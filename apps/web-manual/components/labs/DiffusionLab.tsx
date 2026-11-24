@@ -7,6 +7,9 @@ import { MatrixView } from "@/components/MatrixView";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
 import { diffusionScene } from "@/lib/scene/builders";
+import type { LiveStory } from "@/components/LiveIO";
+
+const short = (rows: number[][]) => rows.slice(0, 2).map((row) => row.map((value) => value.toFixed(2)).join(", ")).join(" | ");
 
 const initial = [[0.2, -0.4], [0.8, 0.1], [-0.5, 0.7], [1.0, -0.2]];
 const velocity = [[0.1, 0.3], [-0.2, 0.4], [0.5, -0.1], [-0.3, 0.2]];
@@ -35,8 +38,24 @@ export function DiffusionLab() {
     { title: "Recovered client latent", matrix: state.recovered },
   ];
   const scene = diffusionScene({ stages: stages.map((stage) => ({ title: stage.title, points: stage.matrix })), step: playback.index });
+  const story: LiveStory = {
+    plain: "Pictures and video are made by cleaning up a grid of noisy numbers, step by step. The grid is turned and shuffled before it leaves your device, the worker does the clean-up step without knowing the real arrangement, and your device undoes the shuffle.",
+    input: (
+      <>
+        <p>A small grid of numbers: <code>{short(initial)} …</code></p>
+        <label>Clean-up steps <input type="range" min="1" max="4" value={steps} onChange={(event) => setSteps(Number(event.target.value))} /></label>
+      </>
+    ),
+    seenTitle: "What the worker sees",
+    seen: <p><code>{short(state.transformedInitial)} …</code>: the grid turned and in a different order.</p>,
+    output: <p><code>{short(state.recovered)} …</code> after undoing the shuffle: the same as cleaning up directly, to within {state.error.toExponential(1)}.</p>,
+    why: "The worker does the heavy step on a grid whose arrangement it does not know.",
+    relies: "The rotation and the shuffle order stay secret on your device.",
+    limit: "Turning and shuffling are disguise, not encryption; the random pieces are the real protection. No picture model runs here.",
+    screens: { input: short(initial), seen: short(state.transformedInitial), output: short(state.recovered) },
+  };
   return (
-    <LabShell id="diffusion" scene={scene} title="Diffusion and video inference" caption="Synthetic latent demonstration. Secret channel rotation and spatial permutation precede Euler denoising; client recovery is checked against the original latent. No model-quality image or video is implied.">
+    <LabShell id="diffusion" scene={scene} story={story} watch={playback.watch} title="Diffusion and video inference" caption="Synthetic latent demonstration. Secret channel rotation and spatial permutation precede Euler denoising; client recovery is checked against the original latent. No model-quality image or video is implied.">
       <div className="lab-controls">
         <label>Rotation {(angle / Math.PI).toFixed(2)}π <input type="range" min="0" max={2 * Math.PI} step={Math.PI / 16} value={angle} onChange={(event) => setAngle(Number(event.target.value))} /></label>
         <label>Euler steps {steps} <input type="range" min="1" max="4" value={steps} onChange={(event) => setSteps(Number(event.target.value))} /></label>

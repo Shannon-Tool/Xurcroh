@@ -79,3 +79,38 @@ export function paintText(canvas: HTMLCanvasElement, prompt: string, answer: str
   // Keep the newest lines in view once the screen is full.
   lines.slice(-8).forEach((text, index) => context.fillText(text, 24, 64 + index * 40));
 }
+
+/** A titled card of text for a screen in a lab's 3D view. */
+export function paintCard(canvas: HTMLCanvasElement, title: string, text: string, tone: "good" | "accent" | "warn"): void {
+  const width = 512;
+  const height = 320;
+  const context = resize(canvas, width, height);
+  if (!context) return;
+  context.fillStyle = PAPER;
+  context.fillRect(0, 0, width, height);
+  context.textBaseline = "top";
+  context.font = "700 30px system-ui, sans-serif";
+  context.fillStyle = tone === "good" ? "#86efac" : tone === "warn" ? "#fdba74" : "#7dd3fc";
+  context.fillText(title.toUpperCase(), 22, 20, width - 44);
+  // Short values are drawn large; long ones shrink, then wrap.
+  const longest = Math.max(1, ...text.split("\n").map((line) => line.length));
+  const size = Math.max(36, Math.min(72, Math.floor((width - 44) / (0.62 * longest))));
+  context.font = `600 ${size}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  context.fillStyle = INK;
+  const lines: string[] = [];
+  for (const paragraph of text.split("\n")) {
+    let line = "";
+    for (const word of paragraph.split(" ")) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && context.measureText(next).width > width - 44) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    lines.push(line);
+  }
+  const pitch = Math.round(size * 1.25);
+  lines.slice(0, Math.max(1, Math.floor(236 / pitch))).forEach((entry, index) => context.fillText(entry, 22, 76 + index * pitch, width - 44));
+}

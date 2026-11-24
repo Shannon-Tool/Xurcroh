@@ -259,6 +259,40 @@ input[type="checkbox"] { width: 1rem; height: 1rem; }
 .scene3d-legend li { display: inline-flex; align-items: center; gap: 0.35rem; }
 .scene3d-swatch { width: 0.7rem; height: 0.7rem; border-radius: 3px; display: inline-block; }
 .scene3d-bar .playback button { font-size: 0.8rem; padding: 0.3rem 0.55rem; }
+/* ---- a lab as a live story: in, what others see, out */
+.lab-plain { margin: 0.35rem 0 0.2rem; font-size: 1.03rem; line-height: 1.5; }
+.lab-watch { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 700; }
+.liveio { margin: 0.9rem 0 1rem; }
+.liveio-row { display: grid; grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr) 36px minmax(0, 1fr); align-items: stretch; }
+.liveio-card { min-width: 0; padding: 0.7rem 0.8rem; border: 1px solid var(--border); border-top-width: 3px; border-radius: 10px; background: var(--surface-alt); }
+.article .liveio-card h3, .liveio-card h3 { margin: 0 0 0.45rem; color: var(--muted); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.liveio-in { border-top-color: var(--good); }
+.liveio-seen { border-top-color: var(--accent); }
+.liveio-out { border-color: var(--good); background: var(--good-soft); }
+.liveio-out.warn { border-color: var(--warning); background: var(--warning-soft); }
+.liveio-body p { margin: 0 0 0.3rem; font-size: 0.9rem; line-height: 1.45; }
+.liveio-body p:last-child { margin-bottom: 0; }
+.liveio-body code { word-break: break-all; }
+.liveio-body label { display: grid; gap: 0.25rem; margin-bottom: 0.3rem; font-size: 0.85rem; font-weight: 600; }
+.liveio-body input:not([type="range"]), .liveio-body select { width: 100%; }
+.liveio-arrow { position: relative; align-self: center; height: 2px; margin: 0 3px; background: repeating-linear-gradient(90deg, var(--accent) 0 6px, transparent 6px 11px); animation: liveio-march 0.7s linear infinite; }
+.liveio-arrow::after { content: ""; position: absolute; right: -3px; top: -4px; border-left: 7px solid var(--accent); border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+@keyframes liveio-march { to { background-position: 11px 0; } }
+.liveio-attack { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; margin-top: 0.6rem; padding: 0.5rem 0.7rem; border: 1px dashed var(--border); border-radius: 10px; }
+.liveio-attack.on { border-color: var(--warning); background: var(--warning-soft); }
+.liveio-attack button[aria-pressed="true"] { border-color: var(--warning); color: var(--warning); font-weight: 700; }
+.liveio-attack p { margin: 0; font-size: 0.9rem; }
+.liveio-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem 1.2rem; margin: 0.75rem 0 0; }
+.liveio-facts dt { color: var(--muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.liveio-facts dd { margin: 0.1rem 0 0; font-size: 0.88rem; line-height: 1.45; }
+.lab-exact { margin-top: 0.9rem; }
+.lab-exact > summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; font-weight: 600; }
+@media (max-width: 760px) {
+  .liveio-row { grid-template-columns: 1fr; }
+  .liveio-arrow { justify-self: center; width: 2px; height: 20px; margin: 3px 0; background: repeating-linear-gradient(180deg, var(--accent) 0 6px, transparent 6px 11px); animation: none; }
+  .liveio-arrow::after { right: -4px; top: auto; bottom: -3px; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--accent); border-bottom: 0; }
+  .liveio-facts { grid-template-columns: 1fr; }
+}
 /* ---- live demonstration: a dark band in either theme */
 .article-wide { max-width: 1280px; padding: clamp(1rem, 2.4vw, 2.2rem); }
 .hero-compact { padding-bottom: 1rem; border-bottom: 0; }

@@ -7,6 +7,9 @@ import { MatrixView } from "@/components/MatrixView";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
 import { conjugationScene } from "@/lib/scene/builders";
+import type { LiveStory } from "@/components/LiveIO";
+
+const short = (values: number[]) => values.map((value) => value.toFixed(2)).join(", ");
 
 const weights: Record<number, number[][]> = {
   2: [[1, 2], [3, 4]],
@@ -51,8 +54,24 @@ export function ConjugationLab() {
     { title: "Conjugated computation", matrix: state.transformedOutput },
     { title: "Recovered output", matrix: state.recovered },
   ];
+  const story: LiveStory = {
+    plain: "Before a list of numbers leaves your device it is turned by a secret rotation. The worker computes on the turned version, and your device turns the answer back.",
+    input: (
+      <>
+        <p>Your numbers: <code>{short(state.x[0]!)}</code></p>
+        <label>Secret rotation <input type="range" min="0" max={2 * Math.PI} step={Math.PI / 16} value={angle} onChange={(event) => setAngle(Number(event.target.value))} /></label>
+      </>
+    ),
+    seenTitle: "What the worker sees",
+    seen: <p><code>{short(state.rotatedInput[0]!)}</code>: your numbers after the rotation. Their overall size, {state.rotatedNorm.toFixed(3)}, is unchanged.</p>,
+    output: <p><code>{short(state.recovered[0]!)}</code> after turning back: the same as computing directly (<code>{short(state.expected[0]!)}</code>).</p>,
+    why: "The worker never handles your numbers in their original orientation, which removes the easy reading of them.",
+    relies: "The rotation stays secret on your device.",
+    limit: "This is disguise, not encryption. The overall size of the numbers is still visible, so it is only an inner layer underneath the random pieces.",
+    screens: { input: short(state.x[0]!), seen: short(state.rotatedInput[0]!), output: short(state.recovered[0]!) },
+  };
   return (
-    <LabShell id="conjugation" scene={scene} title="Orthogonal conjugation laboratory" caption="Adjust basis and dimension. Error measures recovered output against the original computation; equal norms demonstrate structural leakage, not semantic secrecy.">
+    <LabShell id="conjugation" scene={scene} story={story} watch={playback.watch} title="Orthogonal conjugation laboratory" caption="Adjust basis and dimension. Error measures recovered output against the original computation; equal norms demonstrate structural leakage, not semantic secrecy.">
       <div className="lab-controls">
         <label>Dimension
           <select value={dimension} onChange={(event) => { setDimension(Number(event.target.value)); playback.onReset(); }}>

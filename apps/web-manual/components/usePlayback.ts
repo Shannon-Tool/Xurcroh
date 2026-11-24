@@ -25,5 +25,14 @@ export function usePlayback(maxIndex: number) {
     setIndex(0);
   }
 
-  return { index: Math.max(0, Math.min(maxIndex, index)), playing, setPlaying, speed, onSpeed: setSpeed, onStep: step, onReset: reset };
+  /** For a lab's Watch button: plays from the start when the lab is already at its end. */
+  const watch = {
+    playing,
+    onToggle: () => {
+      if (!playing && index >= maxIndex) setIndex(0);
+      setPlaying(!playing);
+    },
+  };
+
+  return { index: Math.max(0, Math.min(maxIndex, index)), playing, setPlaying, speed, onSpeed: setSpeed, onStep: step, onReset: reset, watch };
 }

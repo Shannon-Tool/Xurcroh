@@ -58,6 +58,11 @@ export function modField(value: bigint): bigint {
   return remainder < 0n ? remainder + FIELD_MODULUS : remainder;
 }
 
+/** Reads a field element as a signed integer: values above half the modulus stand for negatives. */
+export function signedField(value: bigint): number {
+  return Number(value > FIELD_MODULUS / 2n ? value - FIELD_MODULUS : value);
+}
+
 export function combineShares(shares: bigint[][]): bigint[] {
   if (shares.length < 2) throw new Error("cannot combine fewer than two shares");
   return shares[0]!.map((_, index) =>

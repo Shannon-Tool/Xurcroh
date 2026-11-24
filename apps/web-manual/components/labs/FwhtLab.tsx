@@ -6,6 +6,9 @@ import { LabShell } from "@/components/LabShell";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
 import { fwhtScene } from "@/lib/scene/builders";
+import type { LiveStory } from "@/components/LiveIO";
+
+const short = (values: number[]) => values.map((value) => (Number.isInteger(value) ? String(value) : value.toFixed(2))).join(", ");
 
 export function FwhtLab() {
   const [dimension, setDimension] = useState(8);
@@ -24,8 +27,24 @@ export function FwhtLab() {
   }, [text, dimension]);
   const stage = result.stages[playback.index] ?? [];
   const scene = useMemo(() => fwhtScene({ stages: result.stages, step: playback.index }), [result, playback.index]);
+  const story: LiveStory = {
+    plain: "A fast way to mix a list of numbers so that every output depends on every input, using only additions and subtractions. Your device uses it to apply its transforms quickly.",
+    input: (
+      <>
+        <label>Your numbers <input value={text} onChange={(event) => setText(event.target.value)} /></label>
+        {result.error ? <p className="error">That is not a list of {dimension} numbers.</p> : <p className="small">{dimension} numbers, mixed in {Math.log2(dimension)} rounds.</p>}
+      </>
+    ),
+    seenTitle: `In between: round ${playback.index} of ${Math.log2(dimension)}`,
+    seen: stage.length > 0 ? <p><code>{short(stage)}</code></p> : <p>Nothing yet.</p>,
+    output: result.output.length > 0 ? <p><code>{short(result.output)}</code>: every number now carries a part of every input.</p> : <p>Nothing yet.</p>,
+    why: "After mixing, no single position holds a single one of your numbers, which is what the secret transforms are built on.",
+    relies: "It is combined with secret choices on your device. The mixing step itself is public.",
+    limit: "A public mixing step hides nothing by itself. It is a building block, not a protection.",
+    screens: { input: short(result.stages[0] ?? []), seen: short(stage), output: short(result.output) },
+  };
   return (
-    <LabShell id="fwht" scene={scene} title="Animated Fast Walsh–Hadamard Transform" caption="Every butterfly stage is computed from your vector. The final stage is orthonormal; complexity is O(d log d). Non-power-of-two dimensions are rejected, not silently padded.">
+    <LabShell id="fwht" scene={scene} story={story} watch={playback.watch} title="Animated Fast Walsh–Hadamard Transform" caption="Every butterfly stage is computed from your vector. The final stage is orthonormal; complexity is O(d log d). Non-power-of-two dimensions are rejected, not silently padded.">
       <div className="lab-controls">
         <label>Dimension
           <select value={dimension} onChange={(event) => {

@@ -6,6 +6,7 @@ import { LabShell } from "@/components/LabShell";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
 import { moeScene } from "@/lib/scene/builders";
+import type { LiveStory } from "@/components/LiveIO";
 
 const hidden = [[1, 0], [0, 1], [1, 1], [2, 0], [0, 2], [2, 2]];
 const router = [[1, 0], [0, 1], [1, 1], [2, 0.5]];
@@ -29,8 +30,33 @@ export function MoeLab() {
   const state = calculation.state;
   const loads = useMemo(() => (state ? (protectedMode ? state.plan.loads : state.realLoads) : []), [state, protectedMode]);
   const scene = useMemo(() => moeScene({ tokens: hidden.length, plan: state ? state.plan : null, loads, protectedMode, step: playback.index }), [state, loads, protectedMode, playback.index]);
+  const even = loads.every((load) => load === loads[0]);
+  const story: LiveStory = {
+    plain: "Different parts of a prompt are sent to different experts inside the model. Dummy work is added so that every expert always receives the same amount, and a watcher cannot tell which experts your prompt needed.",
+    input: (
+      <>
+        <p>{hidden.length} tokens of a prompt.</p>
+        <label>Experts used per token
+          <select value={topK} onChange={(event) => { setTopK(Number(event.target.value)); playback.onReset(); }}>{[1, 2, 3].map((value) => <option key={value}>{value}</option>)}</select>
+        </label>
+      </>
+    ),
+    seenTitle: "What someone counting each expert's work sees",
+    seen: state ? <p><code>{loads.join(", ")}</code> {even ? "— the same for every expert." : "— uneven: the busy experts stand out."}</p> : <p>Nothing: this setting does not fit. Raise the capacity.</p>,
+    output: state ? <p>{state.combined.length} token results, each built from its experts&apos; answers. Dummy work counts for nothing.</p> : <p>Nothing yet.</p>,
+    why: "Which experts a prompt uses says something about the prompt. Equal loads take that signal away.",
+    relies: "Dummy work looks the same as real work to whoever is counting.",
+    limit: "Padding hides how much each expert does. It does not hide timing, cache or power side channels.",
+    attack: {
+      label: "turn the padding off",
+      on: !protectedMode,
+      onToggle: () => setProtectedMode(!protectedMode),
+      outcome: protectedMode ? "With padding on, every expert receives the same number of slots." : `Without padding the loads are ${loads.join(", ")}: they show where your tokens went.`,
+    },
+    screens: { input: `${hidden.length} tokens`, seen: loads.join(", "), output: state ? `${state.combined.length} results` : "" },
+  };
   return (
-    <LabShell id="moe" scene={scene} title="Mixture-of-Experts routing simulator" caption="Real router logits, top-k dispatch, dummy padding, and weighted combination. Constant loads hide volume, not timing, cache, TLB, power, or co-residency channels.">
+    <LabShell id="moe" scene={scene} story={story} watch={playback.watch} title="Mixture-of-Experts routing simulator" caption="Real router logits, top-k dispatch, dummy padding, and weighted combination. Constant loads hide volume, not timing, cache, TLB, power, or co-residency channels.">
       <div className="lab-controls">
         <label>Top-k <select value={topK} onChange={(event) => { setTopK(Number(event.target.value)); playback.onReset(); }}>{[1, 2, 3].map((value) => <option key={value}>{value}</option>)}</select></label>
         <label>Capacity {constantLoad} <input type="range" min="2" max="8" value={constantLoad} onChange={(event) => setConstantLoad(Number(event.target.value))} /></label>

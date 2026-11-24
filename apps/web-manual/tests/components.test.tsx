@@ -63,7 +63,7 @@ describe("interactive manual", () => {
     fireEvent.click(tamper);
     fireEvent.click(tamper);
     fireEvent.click(screen.getByRole("button", { name: "Decrypt / verify" }));
-    await waitFor(() => expect(screen.getByText(/private tensor/)).toBeInTheDocument());
+    await waitFor(() => expect(document.querySelector(".state-inspector")).toHaveTextContent(/"result": "private tensor"/));
   });
 
   it("updates the diffusion computation and preserves recovery", () => {

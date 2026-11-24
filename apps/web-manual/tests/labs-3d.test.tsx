@@ -5,7 +5,7 @@ import type { LiveScene } from "@/lib/scene/tween";
 
 const draw = vi.fn((live: LiveScene) => { void live; return { labels: [], animating: false }; });
 vi.mock("@/lib/scene/stage", () => ({
-  createStage: () => ({ rendererName: "Test GPU", setPalette: () => undefined, setQuality: () => undefined, draw, pick: () => null, dispose: () => undefined }),
+  createStage: () => ({ rendererName: "Test GPU", setPalette: () => undefined, setQuality: () => undefined, draw, pick: () => null, setScreen: () => undefined, dispose: () => undefined }),
 }));
 
 import LaboratoryPage from "@/app/laboratory/page";

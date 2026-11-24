@@ -33,3 +33,13 @@ describe("quantized format laboratory", () => {
     expect(Number.isFinite(procedural3inst(731))).toBe(true);
   });
 });
+
+describe("signed values in the field", () => {
+  it("recombines shares of negative integers to the same negative integers", async () => {
+    const { additiveShares, combineShares, signedField, FIELD_MODULUS } = await import("@/lib/simulation/quantized");
+    const values = [-4, -6, 0, 7];
+    expect(combineShares(additiveShares(values, 2, 99)).map(signedField)).toEqual(values);
+    expect(signedField(FIELD_MODULUS - 1n)).toBe(-1);
+    expect(signedField(5n)).toBe(5);
+  });
+});
