@@ -24,7 +24,8 @@ describe("gallery of every animation", () => {
     expect(container.querySelectorAll(".gallery-item")).toHaveLength(14);
     // Two pipeline stages, eleven lab stages and the tour's stage.
     expect(container.querySelectorAll(".stage")).toHaveLength(14);
-    expect(container.querySelectorAll(".gallery-item .ribbon")).toHaveLength(14);
+    // Every stage shows its data along the bottom: a ribbon of forms, or a lab's row of steps.
+    expect(container.querySelectorAll(".gallery-item .stage .ribbon, .gallery-item .stage .track")).toHaveLength(14);
     const index = [...container.querySelectorAll(".lab-nav a")].map((link) => link.getAttribute("href"));
     expect(index).toEqual(GALLERY.map((item) => `#g-${item.id}`));
     for (const target of index) expect(container.querySelector(target!)).not.toBeNull();

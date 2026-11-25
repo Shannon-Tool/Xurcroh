@@ -34,10 +34,11 @@ describe("labs with a 3D view", () => {
   it("redraws the share grid when the reader steps the playback", async () => {
     const { container } = render(<ShareGridLab />);
     await waitFor(() => expect(draw).toHaveBeenCalled());
-    const caption = () => container.querySelector(".stage-caption p")!.textContent;
+    const caption = () => container.querySelector(".track-now [role=status]")!.textContent;
     const before = caption();
     const activeBefore = draw.mock.calls.at(-1)![0].nodes.find((node) => node.emphasis > 0)?.id;
-    fireEvent.click(screen.getByRole("button", { name: "Step forward" }));
+    // On to the first worker: the step sentence and the lit part of the scene both change.
+    for (let step = 0; step < 3; step += 1) fireEvent.click(screen.getByRole("button", { name: "Step forward" }));
     await waitFor(() => expect(caption()).not.toBe(before));
     await waitFor(() => expect(draw.mock.calls.at(-1)![0].nodes.some((node) => node.id !== activeBefore && node.emphasis > 0)).toBe(true));
   });

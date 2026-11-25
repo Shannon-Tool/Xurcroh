@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState } from "react";
 import { LiveIO, LiveNotes, useLabPanels, type LiveStory } from "@/components/LiveIO";
+import { ProcessTrack } from "@/components/ProcessTrack";
 import { Scene3DView } from "@/components/Scene3DView";
 import { StageBox } from "@/components/StageBox";
 import type { Scene3D } from "@/lib/scene/types";
@@ -25,9 +26,10 @@ function LabStage({ title, scene, story }: { title: string; scene: Scene3D; stor
       right={panels.output}
       caption={scene.caption || story.plain}
       why={story.why}
-      forms={panels.forms}
+      forms={story.steps ? undefined : panels.forms}
       current={panels.current}
       ribbonLabel="The trip from your question to the answer"
+      foot={story.steps ? <ProcessTrack steps={story.steps} step={story.step ?? 0} why={story.why} onStep={story.onStep} /> : undefined}
     />
   );
 }

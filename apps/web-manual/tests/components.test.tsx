@@ -98,7 +98,8 @@ describe("Fortress laboratories", () => {
     expect(screen.getByText(journeyOf("text-shares").scores.join(", "), { selector: "pre" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("checkbox", { name: "Tamper role (0,0)" }));
     expect(screen.getByRole("alert")).toHaveTextContent("role 0:0");
-    fireEvent.click(screen.getByRole("button", { name: "Step forward" }));
+    // Numbers, piece A, piece B, worker (0,0), then worker (0,1).
+    for (let step = 0; step < 4; step += 1) fireEvent.click(screen.getByRole("button", { name: "Step forward" }));
     expect(screen.getByText("Role (0,1) exact signed product")).toBeInTheDocument();
   });
 

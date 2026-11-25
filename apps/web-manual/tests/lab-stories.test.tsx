@@ -32,29 +32,36 @@ describe("every lab as a trip from the question to the answer", () => {
   it("gives all eleven labs an everyday title, the trip bar, the shared question and the model's full answer", () => {
     const { container } = render(<LaboratoryPage />);
     expect(container.querySelectorAll("section.lab .stage")).toHaveLength(11);
-    // Every lab marks its own stop on the ribbon, between the question and the answer.
-    expect(container.querySelectorAll("section.lab .ribbon")).toHaveLength(11);
+    // Every lab shows its data along the bottom of its stage: its row of steps, or the trip ribbon.
+    expect(container.querySelectorAll("section.lab .ribbon, section.lab .track")).toHaveLength(11);
     expect([...container.querySelectorAll("section.lab .ribbon")].every((ribbon) => ribbon.querySelectorAll("[aria-current=step]").length === 3)).toBe(true);
+    expect([...container.querySelectorAll("section.lab .track")].every((track) => track.querySelectorAll("[aria-current=step]").length === 1)).toBe(true);
     expect(screen.getAllByLabelText("Your question")).toHaveLength(10);
     expect(screen.getAllByLabelText("Your picture request")).toHaveLength(1);
     const answers = [...container.querySelectorAll(".liveio-answer")];
     expect(answers).toHaveLength(11);
-    expect(answers.filter((node) => node.textContent!.includes(shares.answer))).toHaveLength(10);
+    // A lab that shows its steps has written nothing yet; the others show the answer.
+    const waiting = () => container.querySelectorAll(".liveio-answer.waiting").length;
+    expect(answers.filter((node) => node.textContent!.includes(shares.answer)).length + waiting()).toBe(10);
     for (const heading of [...container.querySelectorAll("section.lab h2")]) expect(heading.textContent).toMatch(/your|model|numbers|picture|piece|answer/i);
     expect(screen.getByRole("heading", { level: 2, name: "Splitting your question so no worker can read it" })).toBeInTheDocument();
     // One choice moves every lab.
     choose("text-tamper");
     expect(screen.getAllByLabelText("Your question").every((select) => (select as HTMLSelectElement).value === "text-tamper")).toBe(true);
-    expect([...container.querySelectorAll(".liveio-answer")].filter((node) => node.textContent!.includes(tamper.answer))).toHaveLength(10);
+    expect([...container.querySelectorAll(".liveio-answer")].filter((node) => node.textContent!.includes(tamper.answer)).length + waiting()).toBe(10);
   });
 
   it("share grid: runs the real first step on the question, shows a worker only random pieces, withholds the answer on tampering", () => {
     render(<ShareGridLab />);
-    expect(answer()).toHaveTextContent(shares.answer);
+    const last = () => fireEvent.click(screen.getByRole("button", { name: "Step 5: Added up" }));
+    expect(answer()).toHaveTextContent("Nothing yet.");
     expect(card("in")).toHaveTextContent(`Its ${shares.words.length} words become a list of ${shares.counts.length} numbers`);
-    expect(card("out")).toHaveTextContent(`one score for each prepared answer: ${shares.scores.join(", ")}.`);
-    expect(card("seen")).toHaveTextContent(/\d{6,}/);
+    fireEvent.click(screen.getByRole("button", { name: "Step 4: Four workers" }));
+    expect(card("seen")).toHaveTextContent(/\d{3} \d{3} \d{3}/);
     expect(card("seen")).not.toHaveTextContent(shares.words[3]!);
+    last();
+    expect(answer()).toHaveTextContent(shares.answer);
+    expect(card("out")).toHaveTextContent(`one score for each prepared answer: ${shares.scores.join(", ")}.`);
     choose("text-tamper");
     expect(answer()).toHaveTextContent(tamper.answer);
     expect(card("out")).toHaveTextContent(tamper.scores.join(", "));

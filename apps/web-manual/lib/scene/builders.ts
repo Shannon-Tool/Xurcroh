@@ -17,14 +17,20 @@ function short(value: number): string {
 
 // ---------------------------------------------------------------- share grid
 
-export function shareGridScene(input: { roles: { activationShare: number; weightShare: number }[]; step: number; tampered: boolean }): Scene3D {
+export function shareGridScene(input: {
+  roles: { activationShare: number; weightShare: number }[];
+  step: number;
+  tampered: boolean;
+  /** The real values of the current step, written on the parts that hold them. */
+  values?: { client?: string; roles?: Array<string | undefined>; output?: string };
+}): Scene3D {
   const nodes: SceneNode[] = [];
   const links: SceneLink[] = [];
   const finished = input.step >= input.roles.length;
   const refused = finished && input.tampered;
   nodes.push({
     id: "client", kind: "box", position: [0, 0.65, 0], size: [1.5, 1.3, 1.5], tone: refused ? "warn" : "good", active: finished,
-    label: finished ? (refused ? "Client: refuses" : "Client: combined") : "Client",
+    label: input.values?.client ?? (finished ? (refused ? "Client: refuses" : "Client: combined") : "Client"),
     detail: "Splits the activation into two additive shares, checks every product that comes back, and only then adds them up.",
   });
   input.roles.forEach((role, index) => {
@@ -36,7 +42,7 @@ export function shareGridScene(input: { roles: { activationShare: number; weight
     nodes.push({
       id, kind: "box", position: at, size: [1.15, 1, 1.15],
       tone: bad ? "warn" : done ? "accent" : "plain",
-      label: `Worker (${role.activationShare},${role.weightShare})${bad ? " tampered" : ""}`,
+      label: `Worker (${role.activationShare},${role.weightShare})${bad ? " tampered" : ""}${input.values?.roles?.[index] ? `: ${input.values.roles[index]}` : ""}`,
       detail: `Holds activation share ${role.activationShare} and weight share ${role.weightShare}, and multiplies them. It never sees the other share of either.`,
       active: current, pulse: bad && (done || current),
     });
@@ -51,11 +57,12 @@ export function shareGridScene(input: { roles: { activationShare: number; weight
     }
   });
   if (finished && !refused) {
-    nodes.push({ id: "output", kind: "orb", position: [0, 2.3, 0], size: [0.55, 0.55, 0.55], tone: "good", label: "xWᵀ", detail: "The sum of the four verified products is the true output.", pulse: true });
+    nodes.push({ id: "output", kind: "orb", position: [0, 2.3, 0], size: [0.55, 0.55, 0.55], tone: "good", label: input.values?.output ?? "xWᵀ", detail: "The sum of the four verified products is the true output.", pulse: true });
   }
   const caption = finished
     ? (input.tampered ? "The client refuses to combine: the tampered worker's result failed verification." : "All four products verified; the client combines them into the output.")
-    : `Worker ${input.step + 1} of ${input.roles.length} multiplies its activation share by its weight share and returns the product.`;
+    : input.step < 0 ? "The client prepares the two shares; nothing has been sent yet."
+      : `Worker ${input.step + 1} of ${input.roles.length} multiplies its activation share by its weight share and returns the product.`;
   return {
     caption, nodes, links,
     legend: [{ tone: "accent", text: "shares going out" }, { tone: "good", text: "verified product coming back" }, { tone: "warn", text: "tampered" }],

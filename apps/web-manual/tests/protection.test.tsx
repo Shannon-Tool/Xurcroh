@@ -72,6 +72,9 @@ describe("protection tour", () => {
     const strip = document.querySelector(".lab-embed") as HTMLElement;
     expect(strip).toHaveAccessibleName("Splitting your question so no worker can read it");
     fireEvent.change(within(strip).getByLabelText("Your question"), { target: { value: "text-memory" } });
+    // The strip shows the lab's steps; the answer is written when the last one is done.
+    expect(strip.querySelector(".liveio-answer")).toHaveTextContent("Nothing yet.");
+    fireEvent.click(within(strip).getByRole("button", { name: "Step 5: Added up" }));
     expect(strip.querySelector(".liveio-answer")).toHaveTextContent("The memory your request used is wiped");
     fireEvent.click(within(strip).getByRole("button", { name: /^Try to break it/ }));
     expect(strip.querySelector(".liveio-out")).toHaveClass("warn");
