@@ -322,6 +322,20 @@ class Session {
     const at = (control) => this.page.locator(`${lab} [data-recording-control="${control.index}"]`);
     const plain = plainLabel;
 
+    // The step cards along the bottom of the stage first: each one pressed shows that step and its values.
+    const cards = this.page.locator(`${lab} .stage .track-go`);
+    for (let card = 0; card < await cards.count(); card += 1) {
+      const target = cards.nth(card);
+      await this.mark(target);
+      await target.click();
+      this.used((await target.getAttribute("aria-label")) ?? `Step ${card + 1}`);
+      await this.record(card === (await cards.count()) - 1 ? dwell * 2.4 : dwell * 1.3);
+    }
+    if (await cards.count() > 0) {
+      await cards.first().click();
+      await this.record(dwell * 0.5);
+    }
+
     const controls = await describe();
     // The lab's own parameters first; then its playback buttons, in an order in which each can be pressed.
     const order = ["Step forward", "Step back", "Reset", "Play", "Pause"];

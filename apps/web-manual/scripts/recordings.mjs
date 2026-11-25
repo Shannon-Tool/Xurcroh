@@ -55,7 +55,7 @@ const labRecordings = LABS.flatMap((lab) => [
     group: "labs",
     file: `lab-${lab.id}.gif`,
     title: lab.title,
-    caption: lab.says,
+    caption: `${lab.says} The cards along the bottom show the real values of each step; the answer is written only after the last one.`,
     page: `/laboratory#${lab.id}`,
     // The gallery lists this lab's stage under `lab-pipeline`, because `pipeline` is the live demonstration.
     stage: lab.id === "pipeline" ? "lab-pipeline" : lab.id,
@@ -75,7 +75,8 @@ const labRecordings = LABS.flatMap((lab) => [
       await r.settle(40);
       await r.record(0.4);
       await r.recordUntil((id) => document.querySelector(`#${id} .lab-controls .playback button:nth-of-type(2)`)?.disabled === false, 6, 0, lab.id);
-      await r.recordUntil((id) => document.querySelector(`#${id} .lab-controls .playback button:nth-of-type(2)`)?.disabled === true, 24, 1.2, lab.id);
+      // A loop now ends with the answer being written, so it lasts longer than the steps alone.
+      await r.recordUntil((id) => document.querySelector(`#${id} .lab-controls .playback button:nth-of-type(2)`)?.disabled === true, 44, 1.2, lab.id);
     },
   },
   {
@@ -90,7 +91,7 @@ const labRecordings = LABS.flatMap((lab) => [
     async run(r) {
       await openLab(r, lab.id);
       // Only the stage and the controls are kept in the picture; the text between them is left out.
-      await r.hide(`#${lab.id} .lab-header > div:first-child, #${lab.id} .liveio-facts, #${lab.id} .liveio-honest, #${lab.id} .lab-exact > :not(summary):not(.lab-controls)`);
+      await r.hide(`#${lab.id} .lab-header > div:first-child, #${lab.id} .liveio-facts, #${lab.id} .liveio-honest, #${lab.id} .strength, #${lab.id} .lab-exact > :not(summary):not(.lab-controls)`);
       await r.frame(`#${lab.id}`);
       await r.hold();
       // The 3D scene stands still here so that only the controls' effects change the picture.
@@ -127,8 +128,9 @@ export const GROUPS = [
   { id: "pipeline", title: "The pipeline", lead: "A question goes in on the left and the answer comes out on the right. In between it is shuffled, split into random pieces, sealed in three layers, passed through three relays, computed by four workers in enclaves, checked and put back together." },
   { id: "eyes", title: "The pipeline through someone else's eyes", lead: "“Whose eyes?” rebuilds the view of another party from what that party really holds." },
   { id: "attacks", title: "Trying to break the pipeline", lead: "Each attack is caught by the real check, and the step is done again." },
-  { id: "labs", title: "The eleven laboratories", lead: "Each laboratory shows one stop of the trip from a question to its answer: what goes in, what the other party sees, what comes out." },
-  { id: "lab-controls", title: "Every control of every laboratory", lead: "The same laboratories with their controls underneath. A yellow outline marks the control being used; the 3D scene is held still so that only the control's effect changes the picture, and the text between the stage and the controls is left out of the frame." },
+  { id: "strength", title: "How hard it is to undo", lead: "Facts the page computes about recovering what was hidden, each with the place where it stops. No ratings and no adjectives." },
+  { id: "labs", title: "The eleven laboratories", lead: "Each laboratory runs one real computation from what goes in to what comes out. The cards along the bottom are its steps, each with the actual values of that step; the lit part of the 3D scene carries the same values; the output panel stays empty until the last step is done, and then the answer is written one token at a time." },
+  { id: "lab-controls", title: "Every control of every laboratory", lead: "The same laboratories with their controls underneath. Every step card is pressed first, then every control. A yellow outline marks the control being used; the 3D scene is held still so that only the control's effect changes the picture, and the text between the stage and the controls is left out of the frame." },
   { id: "tour", title: "The protection tour", lead: "The protection as seven layers around the data, one at a time." },
   { id: "diagrams", title: "Chapter diagrams", lead: "The schematic drawings of chapters 5, 7 and 9, stepped through with the real values of the chosen question." },
   { id: "settings", title: "Settings", lead: "The choices a reader can make on any page." },
@@ -349,6 +351,22 @@ export const RECORDINGS = [
     },
   })),
   ...labRecordings,
+  {
+    id: "strength-show",
+    group: "strength",
+    file: "strength-show.gif",
+    title: "How hard is this to undo?",
+    caption: "Under the demonstration: readable bytes beside sealed ones, wrong keys the page really tries against them (none opens), what one changed bit does, and where each of these facts stops.",
+    page: "/show",
+    viewport: { width: 1440, height: 1300 },
+    async run(r) {
+      await r.ready(".theater");
+      await r.hide(".show-details");
+      await r.frame(".show-strength");
+      await r.hold();
+      await r.record(7);
+    },
+  },
   {
     id: "tour",
     group: "tour",

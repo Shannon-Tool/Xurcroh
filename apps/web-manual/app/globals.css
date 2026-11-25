@@ -439,6 +439,24 @@ input[type="checkbox"] { width: 1rem; height: 1rem; }
 .ribbon-accent.on, .ribbon-plain.on { box-shadow: 0 0 14px rgb(125 211 252 / 45%); }
 .ribbon-cipher.on { box-shadow: 0 0 16px rgb(196 181 253 / 60%); }
 .ribbon-warn.on { box-shadow: 0 0 16px rgb(253 186 116 / 60%); }
+/* Under a stage: what it would take to undo what the stage hides. */
+.strength { margin: 0.75rem 0 0; padding: 0.7rem 0.9rem 0.8rem; border: 1px solid var(--border); border-left: 3px solid var(--cipher); border-radius: 10px; background: var(--surface-alt); }
+.article .strength .strength-title, .strength .strength-title { margin: 0 0 0.45rem; font-size: 0.95rem; font-weight: 700; }
+.article .strength p, .strength p { max-width: none; margin: 0 0 0.45rem; font-size: 0.9rem; line-height: 1.5; }
+.strength code { word-break: break-all; }
+.strength-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem 1.2rem; margin: 0 0 0.55rem; }
+.strength-pair dt { color: var(--muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.strength-pair dd { margin: 0.15rem 0 0; font-size: 0.86rem; }
+.article .strength-facts, .strength-facts { margin: 0 0 0.5rem; padding-left: 1.1rem; }
+.article .strength-facts li, .strength-facts li { max-width: none; margin: 0 0 0.3rem; font-size: 0.9rem; line-height: 1.5; }
+.strength-table { width: 100%; margin: 0 0 0.5rem; border-collapse: collapse; font-size: 0.84rem; }
+.strength-table th { color: var(--muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-align: left; text-transform: uppercase; }
+.strength-table th, .strength-table td { padding: 0.2rem 0.6rem 0.2rem 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+.article .strength-limit, .strength-limit { margin: 0.2rem 0 0; padding-top: 0.45rem; border-top: 1px dashed var(--border); color: var(--muted); font-size: 0.84rem; }
+.show-strength { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; align-items: start; }
+@media (max-width: 900px) { .show-strength { grid-template-columns: 1fr; } }
+.strength-leak { color: var(--warning); font-weight: 700; }
+@media (max-width: 760px) { .strength-pair { grid-template-columns: 1fr; } }
 /* A lab's computation as a row of step cards along the bottom of its stage. */
 .stage.has-steps .stage-side { bottom: 10.4rem; }
 .stage-steps { pointer-events: auto; }

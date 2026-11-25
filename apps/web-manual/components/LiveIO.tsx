@@ -4,6 +4,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import type { FlowForm } from "@/components/FlowRibbon";
 import { DataViews, ProcessTrack } from "@/components/ProcessTrack";
 import { QuestionPicker } from "@/components/QuestionPicker";
+import { StrengthPanel, type StrengthSpec } from "@/components/StrengthPanel";
 import { TypedText } from "@/components/TypedText";
 import { useGeneration, usePictureGeneration } from "@/lib/show/generation";
 import { paintPixels } from "@/lib/show/paint";
@@ -63,6 +64,8 @@ export interface LiveStory {
   speed?: number;
   /** Goes to a step when the reader presses its card. */
   onStep?: (step: number) => void;
+  /** What this stage hides and with what: shown under it as facts about undoing it. */
+  strength?: StrengthSpec;
 }
 
 function AnswerPicture() {
@@ -200,6 +203,7 @@ export function LiveNotes({ story }: { story: LiveStory }) {
           <p role="status">{story.attack.outcome}</p>
         </div>
       ) : null}
+      {story.strength ? <StrengthPanel spec={story.strength} /> : null}
       <dl className="liveio-facts">
         <div><dt>Why this protects you</dt><dd>{story.why}</dd></div>
         <div><dt>It relies on</dt><dd>{story.relies}</dd></div>

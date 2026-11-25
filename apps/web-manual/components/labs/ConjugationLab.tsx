@@ -104,6 +104,7 @@ export function ConjugationLab() {
     relies: "The rotation stays secret on your device.",
     limit: "This is disguise, not encryption. The overall size of the numbers is still visible, so it is only an inner layer underneath the random pieces.",
     screenSeen: short(state.rotatedInput[0]!),
+    strength: { kind: "disguise", what: "The worker gets your numbers turned by an angle it does not know." },
   };
   return (
     <LabShell id="conjugation" plainTitle="Disguising the numbers before they leave" scene={scene} story={story} watch={playback.watch} title="Orthogonal conjugation laboratory" caption="Adjust basis and dimension. Error measures recovered output against the original computation; equal norms demonstrate structural leakage, not semantic secrecy.">

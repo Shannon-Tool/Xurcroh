@@ -92,6 +92,7 @@ export function DiffusionLab() {
     relies: "The rotation and the shuffle order stay secret on your device.",
     limit: "Turning and shuffling are disguise, not encryption; the random pieces are the real protection. No picture model runs here.",
     screenSeen: short(state.transformedInitial),
+    strength: { kind: "disguise", what: "The worker gets the grid turned by a secret angle, with its points in a secret order." },
   };
   return (
     <LabShell id="diffusion" plainTitle="Making a picture without showing the worker the real grid" scene={scene} story={story} watch={playback.watch} title="Diffusion and video inference" caption="Synthetic latent demonstration. Secret channel rotation and spatial permutation precede Euler denoising; client recovery is checked against the original latent. No model-quality image or video is implied.">

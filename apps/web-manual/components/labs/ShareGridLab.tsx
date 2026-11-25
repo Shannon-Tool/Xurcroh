@@ -126,6 +126,7 @@ export function ShareGridLab() {
       outcome: state.error ? "Caught: that worker's numbers failed their check, and the step was rejected." : "No tampering: all four workers pass their checks.",
     },
     screenSeen: piece.slice(0, 2).map(String).join("\n"),
+    strength: { kind: "pieces", piece: pieceA[first]!, position: first, word: journey.vocabulary[first]!, holder: "Worker (0,0)" },
   };
   return (
     <LabShell id="share-grid" plainTitle="Splitting your question so no worker can read it" scene={scene} story={story} watch={playback.watch} title="Additive share-grid laboratory" caption="Four independent role computations reconstruct xWᵀ in the prime field 2³²−5 (the prime just below 2³²). Epoch changes refresh deterministic teaching shares; production uses independent random shares.">

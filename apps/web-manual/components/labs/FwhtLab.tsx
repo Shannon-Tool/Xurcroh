@@ -67,6 +67,7 @@ export function FwhtLab() {
     relies: "It is combined with secret choices on your device. The mixing step itself is public.",
     limit: "A public mixing step hides nothing by itself. It is a building block, not a protection.",
     screenSeen: short(stage),
+    strength: { kind: "disguise", what: "The mixing step is public: anyone who has the mixed list can run the same rounds again and get your numbers back. On its own it hides nothing; your device combines it with secret choices to apply its disguises quickly." },
   };
   return (
     <LabShell id="fwht" plainTitle="Mixing the numbers quickly" scene={scene} story={story} watch={playback.watch} title="Animated Fast Walsh–Hadamard Transform" caption="Every butterfly stage is computed from your vector. The final stage is orthonormal; complexity is O(d log d). Non-power-of-two dimensions are rejected, not silently padded.">

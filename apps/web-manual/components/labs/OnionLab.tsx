@@ -187,6 +187,7 @@ export function OnionLab() {
       outcome: opens ? "Untouched: every layer authenticates." : "Caught: one flipped bit and the layer no longer authenticates.",
     },
     screenSeen: layer ? `to ${layer.nextHop}\n${sealed.slice(0, 17)}` : "",
+    strength: { kind: "seal", plain, layers: 3, what: "The packet" },
   };
   return (
     <LabShell id="onion" plainTitle="Hiding the route your question takes" scene={ready ? scene : undefined} story={story} watch={playback.watch} title="Interactive onion-routing simulation" caption="Actual ECDH/AES-GCM layers with per-hop visibility, compromised-relay controls, authentication failure, and replay rejection. This is a protocol demonstration, not a traffic-analysis guarantee.">

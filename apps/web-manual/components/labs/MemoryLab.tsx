@@ -63,6 +63,7 @@ export function MemoryLab() {
       outcome: stale ? "It worked: the next request reads your bytes. This is the failure the wipe exists to prevent." : "With the wipe in place, the next request reads only zeros.",
     },
     screenSeen: hex(step.bytes),
+    strength: { kind: "wipe", before: journey.bytes, after: left },
   };
   return (
     <LabShell id="memory" plainTitle="Wiping your question from memory afterwards" scene={scene} story={story} watch={playback.watch} title="GPU memory lifecycle" caption="Logical allocator cleanup is distinct from physical sanitization. Toggle synchronization to see how queued—not completed—wipes can expose sensitive residual bytes on reallocation.">

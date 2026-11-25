@@ -13,6 +13,7 @@ import { paintBlank, paintCipher, paintNumbers, paintPixels, paintText } from "@
 import { useJourney } from "@/lib/show/question";
 import { hexRun } from "@/lib/show/scramble";
 import { ATTRACT_ORDER, SLOW_BEATS, beatMs, currentBeat, initialShow, showReducer, tamperRoleOf, type Attack, type Beat } from "@/lib/show/timeline";
+import { StrengthPanel } from "@/components/StrengthPanel";
 import { WORKER_CODE, attest, makeEnclave, verifyReport, type Enclave } from "@/lib/simulation/enclave";
 import {
   PAD, SHOW_MODELS, SHOW_PRIME, cryptoRng, decodePixels, getModel, openSession, ownDrawingModel, ownTextModel, pooledView, runStep,
@@ -524,6 +525,8 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
   const looking = eye !== "you";
   const showReal = !looking || eyeView.real;
 
+  // The readable request as bytes, for the panel that shows what sealing does to them.
+  const promptBytes = useMemo(() => new TextEncoder().encode(model.prompt), [model.prompt]);
   const forms: FlowForm[] = [
     { id: "readable", label: "Readable", value: model.prompt.length > 26 ? `${model.prompt.slice(0, 25)}…` : model.prompt, tone: "good" },
     { id: "numbers", label: "Numbers", value: snapshot.numbers || "—", tone: "plain" },
@@ -730,6 +733,12 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
             </div>
           </div>
         </details>
+      )}
+      {compact ? null : (
+        <div className="show-strength">
+          <StrengthPanel spec={{ kind: "seal", plain: promptBytes, layers: 3, what: "Each piece that leaves your device" }} />
+          <StrengthPanel spec={{ kind: "report", code: WORKER_CODE }} />
+        </div>
       )}
     </section>
   );
