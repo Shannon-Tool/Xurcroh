@@ -30,6 +30,8 @@ async function streamingPipeline(r, region = STAGE) {
 async function openLab(r, id) {
   // The other laboratories are not drawn, and the page's own index bar, which would cover the top of the stage, is left out.
   await r.hide(`section.lab:not(#${id}), .lab-nav`);
+  // Taking the other laboratories away moves this one; its 3D view only starts once it is on screen.
+  await r.page.locator(`#${id} .scene3d-frame`).evaluate((element) => element.scrollIntoView({ block: "center", behavior: "instant" }));
   await r.ready(`#${id}`);
 }
 
@@ -142,6 +144,9 @@ export const RECORDINGS = [
     caption: "All eight steps once, slowly, then the rest of the answer token by token.",
     page: "/show",
     stage: "pipeline",
+    // The longest recording: a few colours fewer keep it under the limit for one file.
+    colors: 80,
+    settleEvery: 10,
     async run(r) {
       await startPipeline(r);
       // Shown without being pressed: text is what the demonstration opens with, seen through the reader's own eyes.
@@ -256,12 +261,18 @@ export const RECORDINGS = [
     group: "pipeline",
     file: "pipeline-playback.gif",
     title: "Pause, step, speed, restart",
-    caption: "The playback controls, and the panel that lists what is real and what is prepared.",
+    caption: "The playback controls; then the panel that lists what is real and what is prepared is closed and opened (only its first lines are in the picture).",
     page: "/show",
-    viewport: { width: 1440, height: 2000 },
-    scale: 0.7,
+    viewport: { width: 1440, height: 1500 },
     async run(r) {
-      await startPipeline(r, [STAGE, ".show-details"]);
+      await r.ready(".theater");
+      // The panel is long. For the recording only its first lines are kept, so the stage stays a readable size.
+      await r.page.addStyleTag({ content: ".show-facts { max-height: 210px; overflow: hidden; }" });
+      await r.settle(300);
+      await r.frame([STAGE, ".show-details"]);
+      await r.hold();
+      await r.click("Restart");
+      await r.unmark();
       await r.record(1.4);
       await r.click("Pause");
       await r.record(0.6);
@@ -280,7 +291,7 @@ export const RECORDINGS = [
       await r.record(1.2);
       await r.mark(facts);
       await facts.click();
-      await r.record(1.6);
+      await r.record(2.2);
     },
   },
   {

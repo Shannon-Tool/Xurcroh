@@ -31,20 +31,60 @@ const HEADER = 76;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Runs inside the page: steps CSS and SVG animations by the same amount as the page's clock. */
-function installStepper() {
-  // Animation frames are handed out once per recorded frame instead of sixty times a second: the 3D
-  // scene is drawn once for every picture taken, which is all a recording can show anyway.
+/**
+ * Runs in the page before any of its own scripts. Animation frames go through the recorder from the
+ * start: until the clock is stopped they are passed on as usual, and from then on they are handed out
+ * once per recorded frame instead of sixty times a second, so the 3D scene is drawn once for every
+ * picture taken, which is all a recording can show anyway. Owning the queue from the start means a
+ * frame that was asked for before the stop is carried over, not left behind with the old clock.
+ */
+function installFrames() {
+  const request = window.requestAnimationFrame.bind(window);
+  const cancel = window.cancelAnimationFrame.bind(window);
   const waiting = new Map();
   let handles = 0;
-  window.requestAnimationFrame = (callback) => { handles += 1; waiting.set(handles, callback); return handles; };
-  window.cancelAnimationFrame = (handle) => { waiting.delete(handle); };
+  let held = false;
+  window.requestAnimationFrame = (callback) => {
+    handles += 1;
+    const handle = handles;
+    const entry = { callback, passed: 0 };
+    waiting.set(handle, entry);
+    if (!held) {
+      entry.passed = request((time) => {
+        if (waiting.get(handle) !== entry) return;
+        waiting.delete(handle);
+        callback(time);
+      });
+    }
+    return handle;
+  };
+  window.cancelAnimationFrame = (handle) => {
+    const entry = waiting.get(handle);
+    if (!entry) return;
+    waiting.delete(handle);
+    if (entry.passed) cancel(entry.passed);
+  };
+  window.__recordHold = () => {
+    held = true;
+    for (const entry of waiting.values()) {
+      if (entry.passed) cancel(entry.passed);
+      entry.passed = 0;
+    }
+  };
+  /** Runs every frame that was asked for; answers how many there were. */
   window.__recordFrame = () => {
     const due = [...waiting.values()];
     waiting.clear();
     const now = performance.now();
-    for (const callback of due) callback(now);
+    for (const entry of due) entry.callback(now);
+    return due.length;
   };
+}
+
+/** Runs in the page once its clock is stopped: from here CSS and SVG animations are stepped by the same amount as the clock. */
+function installStepper() {
+  if (typeof window.__recordHold !== "function") throw new Error("the recorder's frame queue is not in the page");
+  window.__recordHold();
   window.__recordStep = (ms) => {
     for (const animation of document.getAnimations()) {
       try {
@@ -80,6 +120,8 @@ class Session {
     this.marked = 0;
     this.spent = { clock: 0, shot: 0 };
     this.scrollTop = null;
+    this.anchor = null;
+    this.drawn = [];
   }
 
   /** Lets real time pass so that work the fake clock does not drive (rendering, WebCrypto) can finish. */
@@ -103,11 +145,21 @@ class Session {
     await this.page.clock.runFor(this.stepMs);
     await this.settle();
     // Pressing a control can scroll the page; the recorded area is put back where it was first.
-    await this.page.evaluate(([ms, top]) => {
-      if (top !== null && window.scrollY !== top) window.scrollTo({ top, behavior: "instant" });
-      window.__recordFrame();
+    const drawn = await this.page.evaluate(([ms, top, anchor]) => {
+      if (anchor) {
+        // The recorded part is kept where it was first measured, whether the page was scrolled or
+        // something above it changed height.
+        const tops = anchor.selectors.map((selector) => document.querySelector(selector)?.getBoundingClientRect().top).filter((value) => value !== undefined);
+        const shift = tops.length > 0 ? Math.round(Math.min(...tops) - anchor.top) : 0;
+        if (shift !== 0) window.scrollBy({ top: shift, behavior: "instant" });
+      } else if (top !== null && window.scrollY !== top) {
+        window.scrollTo({ top, behavior: "instant" });
+      }
+      const count = window.__recordFrame();
       window.__recordStep(ms);
-    }, [this.stepMs, this.scrollTop]);
+      return count;
+    }, [this.stepMs, this.scrollTop, this.anchor]);
+    this.drawn.push(drawn);
     this.spent.clock += Date.now() - started;
   }
 
@@ -142,10 +194,16 @@ class Session {
   async skipUntil(test, maxSeconds, arg = undefined) {
     const limit = Math.round((maxSeconds * 1000) / this.stepMs);
     for (let index = 0; index < limit; index += 1) {
-      if (await this.page.evaluate(test, arg)) return true;
+      if (await this.page.evaluate(test, arg)) { await this.unmark(); return true; }
       await this.tick();
     }
     throw new Error(`${this.spec.id}: waited ${maxSeconds} s of page time for a state that did not come`);
+  }
+
+  /** Takes the outline off again: the time in which it would have shown went by unrecorded. */
+  async unmark() {
+    this.marked = 0;
+    await this.page.evaluate(() => document.querySelectorAll("[data-recording-active]").forEach((element) => element.removeAttribute("data-recording-active")));
   }
 
   /** Outlines a control for the next few recorded frames, standing in for a visible mouse pointer. */
@@ -196,6 +254,7 @@ class Session {
     await this.settle(250);
     this.clip = { x: 0, y: 0, width: viewport.width, height: viewport.height };
     this.scrollTop = 0;
+    this.anchor = null;
   }
 
   /** Types into a labelled field one character at a time, recording as it goes. */
@@ -293,13 +352,22 @@ class Session {
         const high = Number(control.max || 10);
         const original = Number(control.value);
         const values = control.kind === "range" ? [low, high] : [Math.min(high, original + 1), Math.min(high, original + 3)];
+        // A slider is set the way dragging it would: the browser moves it to the nearest allowed position
+        // (its ends need not be whole steps), and the page hears about it as it does from a reader.
+        const put = control.kind === "range"
+          ? (value) => target.evaluate((element, next) => {
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(element, String(next));
+            element.dispatchEvent(new Event("input", { bubbles: true }));
+            element.dispatchEvent(new Event("change", { bubbles: true }));
+          }, value)
+          : (value) => target.fill(String(value));
         for (const value of values.filter((entry) => entry !== original)) {
           await this.mark(target);
-          await target.fill(String(value));
+          await put(value);
           await this.record(dwell);
         }
         this.used(name);
-        await target.fill(String(original));
+        await put(original);
         await this.record(dwell * 0.5);
       } else if (control.kind === "text") {
         // Another valid value of the same kind: the same list, the other way round.
@@ -355,8 +423,8 @@ class Session {
     }
   }
 
-  /** Scrolls so that `selector` sits under the page header and fixes the recorded area. */
-  async frame(region) {
+  /** Scrolls so that `region` sits under the page header and fixes the recorded area; `extend` adds height below it. */
+  async frame(region, { extend = 0 } = {}) {
     const parts = Array.isArray(region) ? region : [region];
     await this.page.locator(parts[0]).first().waitFor({ state: "visible", timeout: 60_000 });
     const measure = () => this.page.evaluate((selectors) => {
@@ -375,8 +443,9 @@ class Session {
     const box = await measure();
     const pad = this.spec.pad ?? 0;
     const even = (value) => value - (value % 2);
-    this.clip = { x: Math.max(0, Math.floor(box.left) - pad), y: Math.max(0, Math.floor(box.top) - pad), width: even(Math.ceil(box.right - box.left) + 2 * pad), height: even(Math.ceil(box.bottom - box.top) + 2 * pad) };
+    this.clip = { x: Math.max(0, Math.floor(box.left) - pad), y: Math.max(0, Math.floor(box.top) - pad), width: even(Math.ceil(box.right - box.left) + 2 * pad), height: even(Math.ceil(box.bottom - box.top) + 2 * pad + extend) };
     this.scrollTop = await this.page.evaluate(() => window.scrollY);
+    this.anchor = { selectors: parts, top: box.top };
     const viewport = this.page.viewportSize();
     if (this.clip.y + this.clip.height > viewport.height) throw new Error(`${this.spec.id}: the recorded area (${this.clip.height}px from ${this.clip.y}px) does not fit a ${viewport.height}px window; raise its viewport height`);
   }
@@ -391,18 +460,32 @@ class Session {
   async hold() {
     // The pause must lie in the page's future. Its clock keeps running while the request travels, and
     // catches up in jumps when the page was busy, so the margin is generous and widened if it was not enough.
-    let paused = false;
+    let target = 0;
     for (const ahead of [20_000, 120_000, 900_000]) {
       const now = await this.page.evaluate(() => Date.now());
       try {
         await this.page.clock.pauseAt(now + ahead);
-        paused = true;
+        target = now + ahead;
         break;
       } catch (error) {
         if (!String(error).includes("to the past")) throw error;
       }
     }
-    if (!paused) throw new Error(`${this.spec.id}: could not stop the page's clock`);
+    if (target === 0) throw new Error(`${this.spec.id}: could not stop the page's clock`);
+    // The pause can arrive while the clock is in the middle of one of its own real-time steps. That step
+    // then ends after the pause and sets the time back to where it had been, which leaves everything the
+    // page scheduled during the pause (the next frame of a 3D view, for one) that far in the future: the
+    // view would stand still for the first twenty seconds of the recording. Check, and bring the time
+    // forward again until it stays.
+    let at = 0;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      await this.settle(80);
+      at = await this.page.evaluate(() => Date.now());
+      if (at >= target) break;
+      if (VERBOSE) console.error(`  ${this.spec.id}: the clock had fallen back by ${target - at} ms; brought forward again`);
+      await this.page.clock.fastForward(target - at);
+    }
+    if (at < target) throw new Error(`${this.spec.id}: the page's clock would not stay stopped at one time`);
     await this.page.evaluate(installStepper);
     await this.settle(50);
   }
@@ -455,6 +538,8 @@ async function main() {
       const session = new Session(page, spec);
       try {
         await page.clock.install();
+        // After the clock, so that the frames passed on before the stop follow the clock too.
+        await page.addInitScript(installFrames);
         await page.goto(new URL(spec.page, BASE).href, { waitUntil: "networkidle", timeout: 120_000 });
         await spec.run(session);
         if (session.frames.length === 0) throw new Error("nothing was recorded");
@@ -462,6 +547,7 @@ async function main() {
         const result = await encode(session, path.join(OUT, spec.file));
         index[spec.id] = { file: spec.file, ...result, frames: session.frames.length, seconds: Number(((session.frames.length * session.stepMs) / 1000).toFixed(1)), controls: session.controls, notes: session.notes };
         await writeFile(indexFile, `${JSON.stringify(Object.fromEntries(Object.entries(index).sort(([a], [b]) => a.localeCompare(b))), null, 2)}\n`);
+        if (VERBOSE) console.error(`  ${spec.id}: animation-frame callbacks per tick: ${session.drawn.join("")}`);
         console.log(`${spec.id}: ${result.width}×${result.height}, ${session.frames.length} frames (${result.stored} stored), ${(result.bytes / 1e6).toFixed(2)} MB, took ${Math.round((Date.now() - started) / 1000)} s`);
       } catch (error) {
         failed += 1;

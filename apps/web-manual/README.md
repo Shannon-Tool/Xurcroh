@@ -23,7 +23,7 @@ npm run record                          # all recordings; or: npm run record -- 
 npm run record:readme                   # rewrite the README section from the list
 ```
 
-`scripts/recordings.mjs` lists the recordings, `scripts/record-animations.mjs` plays them, and `scripts/lib/gif.mjs` writes the GIFs without any system tools. `tests/recordings.test.tsx` fails when a gallery stage, a tour layer, a diagram, a control of the live demonstration, a control of a laboratory or a setting has no recording, when a file is missing or over its size limit, or when the README section is out of date. Recordings are software-rendered and not bit-for-bit repeatable, because every run draws fresh random shares and keys.
+`scripts/recordings.mjs` lists the recordings, `scripts/record-animations.mjs` plays them, and `scripts/lib/gif.mjs` writes the GIFs without any system tools. `tests/recordings.test.tsx` fails when a gallery stage, a tour layer, a diagram, a control of the live demonstration, a control of a laboratory or a setting has no recording, when a file is missing or over its size limit, or when the README section is out of date. Recordings are software-rendered and not bit-for-bit repeatable, because every run draws fresh random shares and keys. A full run takes about an hour and a quarter without a graphics card. After stopping the page's clock the recorder checks that it stayed where it was put, and brings it forward again if not: Playwright's clock can slip back by the length of the pause when it is stopped in the middle of a step, which would leave a 3D view standing still for that long.
 
 ## Structure
 
