@@ -6,12 +6,14 @@
  * and vouched for by its maker. Hardware attestation of workers has not been validated yet.
  */
 
+import { primitives, type Bytes, type SecretKey } from "@/lib/crypto/primitives";
+
 /** The software every worker is expected to run. Its hash is the expected measurement. */
 export const WORKER_CODE = "xurcroh-worker: multiply one activation share by one weight share; return the product";
 
 export interface Enclave {
-  publicKey: CryptoKey;
-  privateKey: CryptoKey;
+  publicKey: Bytes;
+  secretKey: SecretKey;
 }
 
 export interface EnclaveReport {
@@ -22,8 +24,9 @@ export interface EnclaveReport {
 
 const encoder = new TextEncoder();
 
-async function sha256Hex(text: string): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(text)));
+/** SHA-256 of a text, as hex: the "measurement" of a piece of software. */
+export async function sha256Hex(text: string): Promise<string> {
+  const digest = await (await primitives()).sha256(encoder.encode(text));
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
@@ -36,15 +39,14 @@ function signedBytes(measurement: string, nonce: Uint8Array): Uint8Array {
 }
 
 export async function makeEnclave(): Promise<Enclave> {
-  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
-  return { publicKey: pair.publicKey, privateKey: pair.privateKey };
+  return (await primitives()).ecdsaPair();
 }
 
 /** The enclave measures the code it runs and signs that measurement together with the device's nonce. */
 export async function attest(enclave: Enclave, nonce: Uint8Array, code: string = WORKER_CODE): Promise<EnclaveReport> {
   const measurement = await sha256Hex(code);
-  const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, enclave.privateKey, signedBytes(measurement, nonce) as unknown as BufferSource);
-  return { measurement, signature: Array.from(new Uint8Array(signature)) };
+  const signature = await (await primitives()).ecdsaSign(enclave.secretKey, signedBytes(measurement, nonce));
+  return { measurement, signature: Array.from(signature) };
 }
 
 export interface ReportCheck {
@@ -55,13 +57,8 @@ export interface ReportCheck {
   ok: boolean;
 }
 
-export async function verifyReport(report: EnclaveReport, publicKey: CryptoKey, nonce: Uint8Array): Promise<ReportCheck> {
-  const signed = await crypto.subtle.verify(
-    { name: "ECDSA", hash: "SHA-256" },
-    publicKey,
-    Uint8Array.from(report.signature) as unknown as BufferSource,
-    signedBytes(report.measurement, nonce) as unknown as BufferSource,
-  );
+export async function verifyReport(report: EnclaveReport, publicKey: Bytes, nonce: Uint8Array): Promise<ReportCheck> {
+  const signed = await (await primitives()).ecdsaVerify(publicKey, Uint8Array.from(report.signature), signedBytes(report.measurement, nonce));
   const expected = report.measurement === await sha256Hex(WORKER_CODE);
   return { signed, expected, ok: signed && expected };
 }

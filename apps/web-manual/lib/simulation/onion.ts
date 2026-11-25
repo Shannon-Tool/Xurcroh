@@ -1,6 +1,8 @@
+import { primitives, randomBytes, type Bytes, type SecretKey } from "@/lib/crypto/primitives";
+
 export interface OnionLayer {
-  publicKey: CryptoKey;
-  privateKey: CryptoKey;
+  publicKey: Bytes;
+  secretKey: SecretKey;
   nonce: Uint8Array;
   ciphertext: Uint8Array;
   nextHop: string;
@@ -11,44 +13,32 @@ export interface OnionHop {
   nextHop: string;
 }
 
-async function deriveSharedKey(publicKey: CryptoKey, privateKey: CryptoKey): Promise<CryptoKey> {
-  const bits = await crypto.subtle.deriveBits({ name: "ECDH", public: publicKey }, privateKey, 256);
-  return crypto.subtle.importKey("raw", bits, "AES-GCM", false, ["encrypt", "decrypt"]);
-}
-
 export async function sealOnion(hops: OnionHop[], payload: Uint8Array): Promise<OnionLayer[]> {
+  const crypt = await primitives();
   let inner = payload;
   const layers: OnionLayer[] = [];
   for (let index = hops.length - 1; index >= 0; index -= 1) {
-    const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
-    const shared = await deriveSharedKey(pair.publicKey, pair.privateKey);
-    const nonce = crypto.getRandomValues(new Uint8Array(12));
-    const ciphertext = await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv: nonce },
-      shared,
-      inner as unknown as BufferSource,
-    );
+    const pair = await crypt.ecdhPair();
+    const shared = await crypt.ecdhShared(pair.secretKey, pair.publicKey);
+    const nonce = randomBytes(12);
+    const ciphertext = await crypt.aesSeal(shared, nonce, inner);
     layers.unshift({
       publicKey: pair.publicKey,
-      privateKey: pair.privateKey,
+      secretKey: pair.secretKey,
       nonce,
-      ciphertext: new Uint8Array(ciphertext),
+      ciphertext,
       nextHop: hops[index]!.nextHop,
       returnSecret: index === hops.length - 1 ? new Uint8Array([7, 7, 7, 7]) : null,
     });
-    inner = new TextEncoder().encode(JSON.stringify({ ciphertext: Array.from(new Uint8Array(ciphertext)), nextHop: hops[index]!.nextHop }));
+    inner = new TextEncoder().encode(JSON.stringify({ ciphertext: Array.from(ciphertext), nextHop: hops[index]!.nextHop }));
   }
   return layers;
 }
 
 export async function openOnion(layer: OnionLayer): Promise<Uint8Array> {
-  const shared = await deriveSharedKey(layer.publicKey, layer.privateKey);
-  const plaintext = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: layer.nonce as unknown as BufferSource },
-    shared,
-    layer.ciphertext as unknown as BufferSource,
-  );
-  return new Uint8Array(plaintext);
+  const crypt = await primitives();
+  const shared = await crypt.ecdhShared(layer.secretKey, layer.publicKey);
+  return crypt.aesOpen(shared, layer.nonce, layer.ciphertext);
 }
 
 export class ReplayWindow {

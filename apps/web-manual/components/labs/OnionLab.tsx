@@ -19,7 +19,8 @@ export function OnionLab() {
   const message = useJourney().question;
   const [exit, setExit] = useState<string | null>(null);
   const [opens, setOpens] = useState(true);
-  const playback = usePlayback(3);
+  // One step for each of the three relays.
+  const playback = usePlayback(2);
   const replay = useMemo(() => new ReplayWindow(), []);
   const layer = useMemo(() => {
     const original = layers[playback.index];

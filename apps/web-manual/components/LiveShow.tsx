@@ -367,7 +367,6 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
   // Attestation: every enclave signs a report over its code and a fresh nonce, and the device verifies it.
   const swappedRole = rejectKind === "software" ? tamperRole : null;
   useEffect(() => {
-    if (typeof crypto === "undefined" || !crypto.subtle) return;
     let current = true;
     const data = dataRef.current;
     const counted = state.rejections;

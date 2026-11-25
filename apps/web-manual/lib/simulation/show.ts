@@ -10,6 +10,8 @@
  * size. The engine itself works in a larger ring; see `fortress.ts` for the big-integer version.
  */
 
+import { primitives, randomBytes } from "@/lib/crypto/primitives";
+
 export const SHOW_PRIME = 65521;
 const HALF = (SHOW_PRIME - 1) / 2;
 
@@ -719,12 +721,10 @@ export function pooledView(session: ShowSession, step: ShowStep, first: number, 
   return { input, output: matVec(weight, input), sum };
 }
 
-/** A worker's numbers as they travel: encrypted with AES-GCM under a fresh key. Returns the ciphertext. */
+/** A worker's numbers as they travel: encrypted with AES-256-GCM under a fresh key. Returns the ciphertext. */
 export async function sealForWire(values: Int32Array): Promise<Uint8Array> {
-  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt"]);
-  const nonce = crypto.getRandomValues(new Uint8Array(12));
   const plain = new Uint8Array(new Uint16Array(values).buffer);
-  return new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, plain));
+  return (await primitives()).aesSeal(randomBytes(32), randomBytes(12), plain);
 }
 
 // ---------------------------------------------------------------- disguise and sealed routing
@@ -768,22 +768,27 @@ export interface SealedRoute {
   delivered: Uint8Array | null;
   /** Index of the relay whose authenticity check failed, if any. */
   failedAt: number | null;
+  /** The readable bytes that were wrapped. */
+  plain: Uint8Array;
+  /** One 256-bit key and one nonce per relay. In the page for teaching; a relay holds only its own. */
+  keys: Uint8Array[];
+  nonces: Uint8Array[];
 }
 
 const RELAYS = 3;
 
 /**
- * Wraps a piece in three layers of AES-GCM, one per relay, then really sends it through: every relay
+ * Wraps a piece in three layers of AES-256-GCM, one per relay, then really sends it through: every relay
  * removes its own layer and forwards the rest. `alterAt` flips one bit of what that relay receives.
  */
 export async function sealRoute(values: Int32Array, alterAt?: number): Promise<SealedRoute> {
-  const keys = await Promise.all(Array.from({ length: RELAYS }, () => crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])));
-  const nonces = keys.map(() => crypto.getRandomValues(new Uint8Array(12)));
-  let packet = new Uint8Array(new Uint16Array(values).buffer);
+  const crypt = await primitives();
+  const keys = Array.from({ length: RELAYS }, () => randomBytes(32));
+  const nonces = keys.map(() => randomBytes(12));
+  const plain = new Uint8Array(new Uint16Array(values).buffer);
+  let packet: Uint8Array = plain;
   // Innermost layer last: the first relay's layer is the outermost.
-  for (let hop = RELAYS - 1; hop >= 0; hop -= 1) {
-    packet = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonces[hop]! as unknown as BufferSource }, keys[hop]!, packet as unknown as BufferSource));
-  }
+  for (let hop = RELAYS - 1; hop >= 0; hop -= 1) packet = await crypt.aesSeal(keys[hop]!, nonces[hop]!, packet);
   const views: Uint8Array[] = [];
   for (let hop = 0; hop < RELAYS; hop += 1) {
     if (alterAt === hop) {
@@ -792,10 +797,10 @@ export async function sealRoute(values: Int32Array, alterAt?: number): Promise<S
     }
     views.push(packet);
     try {
-      packet = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: nonces[hop]! as unknown as BufferSource }, keys[hop]!, packet as unknown as BufferSource));
+      packet = await crypt.aesOpen(keys[hop]!, nonces[hop]!, packet);
     } catch {
-      return { views, delivered: null, failedAt: hop };
+      return { views, delivered: null, failedAt: hop, plain, keys, nonces };
     }
   }
-  return { views, delivered: packet, failedAt: null };
+  return { views, delivered: packet, failedAt: null, plain, keys, nonces };
 }
