@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { decodeGif, encodeGif } from "@/scripts/lib/gif.mjs";
+import { decodeGif, encodeGif, inspectGif } from "@/scripts/lib/gif.mjs";
 
 const COLOURS = { black: [0, 0, 0], red: [255, 0, 0], green: [0, 255, 0], blue: [0, 0, 255], white: [255, 255, 255] } as const;
 
@@ -45,6 +45,13 @@ describe("GIF encoder for the recordings", () => {
     expect(gif.frames.map((frame) => frame.delayMs)).toEqual([300, 200]);
   });
 
+  it("reports a file's size, frames, length and looping without unpacking it, and notices a file that is cut short", () => {
+    const bytes = encodeGif({ width: W, height: H, frames: [stripes, other, moved].map((rgba) => ({ rgba, delayMs: 120 })) });
+    expect(inspectGif(bytes)).toEqual({ width: W, height: H, frames: 3, durationMs: 360, loops: 0 });
+    expect(() => inspectGif(bytes.subarray(0, bytes.length - 20))).toThrow(/cut short|Unexpected/);
+    expect(() => inspectGif(new TextEncoder().encode("not a gif at all"))).toThrow(/Not a GIF/);
+  });
+
   it("can ignore changes too small to see, without letting them pile up", () => {
     const faint = (step: number) => picture(W, H, () => [100 + step, 100, 100]);
     const frames = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((step) => ({ rgba: faint(step * 2), delayMs: 100 }));
@@ -54,6 +61,19 @@ describe("GIF encoder for the recordings", () => {
     expect(gif.frames.length).toBeLessThan(frames.length);
     const last = gif.frames[gif.frames.length - 1]!.rgba;
     expect(Math.abs(last[0]! - 116)).toBeLessThanOrEqual(8);
+  });
+
+  it("clears what the tolerance left behind every few frames, so stale patches do not stay on screen", () => {
+    const grey = (level: number) => picture(W, H, () => [level, level, level]);
+    // A patch that changed by less than the tolerance and then stays as it is.
+    const frames = [grey(100), ...Array.from({ length: 7 }, () => grey(110))].map((rgba) => ({ rgba, delayMs: 100 }));
+    const lazy = decodeGif(encodeGif({ width: W, height: H, frames, fuzz: 12 }));
+    expect(lazy.frames).toHaveLength(1);
+    expect(lazy.frames[0]!.rgba[0]).toBe(100);
+    const settled = decodeGif(encodeGif({ width: W, height: H, frames, fuzz: 12, settleEvery: 4 }));
+    expect(settled.frames).toHaveLength(2);
+    expect(settled.frames.map((frame) => frame.delayMs)).toEqual([400, 400]);
+    expect(Math.abs(settled.frames[1]!.rgba[0]! - 110)).toBeLessThanOrEqual(3);
   });
 
   it("refuses frames of the wrong size", () => {

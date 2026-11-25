@@ -12,6 +12,19 @@ npm run check
 
 `check` runs strict TypeScript, ESLint, simulation and interaction/accessibility tests, the production build, and content/equation/link validation.
 
+## Recordings for the repository README
+
+The repository README shows every animation as a GIF (`docs/media/animations/`). They are made from the built manual, frame by frame, by a headless browser whose clock the recorder steps by hand:
+
+```bash
+npm run build && npm run start          # in one terminal
+npx playwright-core install chromium    # once
+npm run record                          # all recordings; or: npm run record -- --only labs,tour
+npm run record:readme                   # rewrite the README section from the list
+```
+
+`scripts/recordings.mjs` lists the recordings, `scripts/record-animations.mjs` plays them, and `scripts/lib/gif.mjs` writes the GIFs without any system tools. `tests/recordings.test.tsx` fails when a gallery stage, a tour layer, a diagram, a control of the live demonstration, a control of a laboratory or a setting has no recording, when a file is missing or over its size limit, or when the README section is out of date. Recordings are software-rendered and not bit-for-bit repeatable, because every run draws fresh random shares and keys.
+
 ## Structure
 
 - `content/`: MDX sections with evidence labels and citations.

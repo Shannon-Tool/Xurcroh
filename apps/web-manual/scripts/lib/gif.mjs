@@ -32,8 +32,10 @@ export function paletteFrom(samples, colors = 256) {
 /**
  * Writes frames one at a time. A pixel is stored only if it differs from what the viewer already sees;
  * with `fuzz` above zero, a difference of at most that much per colour channel from what is shown is left alone.
+ * With `settleEvery` above zero, every that-many-th frame is compared with a quarter of the tolerance, which
+ * clears the faint leftovers the tolerance would otherwise keep on screen.
  */
-export function createGifWriter({ width, height, palette, fuzz = 0 }) {
+export function createGifWriter({ width, height, palette, fuzz = 0, settleEvery = 0 }) {
   const count = width * height;
   const transparentIndex = palette.length;
   if (transparentIndex > 255) throw new Error("The palette must leave one entry free");
@@ -42,6 +44,7 @@ export function createGifWriter({ width, height, palette, fuzz = 0 }) {
   const shown = new Uint8Array(count);
   let pending = null;
   let written = 0;
+  let added = 0;
 
   const flush = () => {
     if (!pending) return;
@@ -68,14 +71,16 @@ export function createGifWriter({ width, height, palette, fuzz = 0 }) {
         pending = { index, delayMs };
         return;
       }
+      added += 1;
+      const allowed = settleEvery > 0 && added % settleEvery === 0 ? Math.floor(fuzz / 4) : fuzz;
       let changed = 0;
       for (let pixel = 0; pixel < count; pixel += 1) {
         const before = shown[pixel];
         if (index[pixel] === before) { index[pixel] = transparentIndex; continue; }
-        if (fuzz > 0) {
+        if (allowed > 0) {
           const colour = palette[before];
           const at = pixel * 4;
-          if (Math.abs(rgba[at] - colour[0]) <= fuzz && Math.abs(rgba[at + 1] - colour[1]) <= fuzz && Math.abs(rgba[at + 2] - colour[2]) <= fuzz) {
+          if (Math.abs(rgba[at] - colour[0]) <= allowed && Math.abs(rgba[at + 1] - colour[1]) <= allowed && Math.abs(rgba[at + 2] - colour[2]) <= allowed) {
             index[pixel] = transparentIndex;
             continue;
           }
@@ -97,15 +102,52 @@ export function createGifWriter({ width, height, palette, fuzz = 0 }) {
 }
 
 /** Encodes a whole recording held in memory. */
-export function encodeGif({ width, height, frames, colors = 256, fuzz = 0 }) {
+export function encodeGif({ width, height, frames, colors = 256, fuzz = 0, settleEvery = 0 }) {
   if (frames.length === 0) throw new Error("A recording needs at least one frame");
   for (const frame of frames) {
     if (frame.rgba.length !== width * height * 4) throw new Error(`Frame size ${frame.rgba.length / 4} pixels does not match ${width}×${height}`);
   }
   const every = Math.max(1, Math.floor(frames.length / 12));
-  const writer = createGifWriter({ width, height, fuzz, palette: paletteFrom(frames.filter((_, index) => index % every === 0).map((frame) => frame.rgba), colors) });
+  const writer = createGifWriter({ width, height, fuzz, settleEvery, palette: paletteFrom(frames.filter((_, index) => index % every === 0).map((frame) => frame.rgba), colors) });
   for (const frame of frames) writer.add(frame.rgba, frame.delayMs);
   return writer.finish();
+}
+
+/** The facts about a GIF that can be read without unpacking its pictures: size, frames, length, looping. */
+export function inspectGif(bytes) {
+  const signature = String.fromCharCode(...bytes.subarray(0, 6));
+  if (signature !== "GIF89a" && signature !== "GIF87a") throw new Error("Not a GIF");
+  const u16 = (at) => bytes[at] | (bytes[at + 1] << 8);
+  let at = 13 + (bytes[10] & 0x80 ? 3 * (1 << ((bytes[10] & 7) + 1)) : 0);
+  const skipBlocks = () => {
+    while (at < bytes.length && bytes[at] !== 0) at += 1 + bytes[at];
+    if (at >= bytes.length) throw new Error("The GIF is cut short");
+    at += 1;
+  };
+  let frames = 0;
+  let durationMs = 0;
+  let loops = null;
+  let ended = false;
+  while (at < bytes.length && !ended) {
+    const block = bytes[at];
+    at += 1;
+    if (block === 0x3b) { ended = true; break; }
+    if (block === 0x21) {
+      const label = bytes[at];
+      at += 1;
+      if (label === 0xf9) { durationMs += u16(at + 2) * 10; at += 6; continue; }
+      if (label === 0xff && String.fromCharCode(...bytes.subarray(at + 1, at + 12)) === "NETSCAPE2.0") loops = u16(at + 14);
+      skipBlocks();
+      continue;
+    }
+    if (block !== 0x2c) throw new Error(`Unexpected block ${block} at ${at - 1}`);
+    const flags = bytes[at + 8];
+    at += 9 + (flags & 0x80 ? 3 * (1 << ((flags & 7) + 1)) : 0) + 1;
+    skipBlocks();
+    frames += 1;
+  }
+  if (!ended) throw new Error("The GIF is cut short");
+  return { width: u16(6), height: u16(8), frames, durationMs, loops };
 }
 
 /** Reads a GIF back into the pictures a viewer sees, frame by frame. Used to check the recordings. */
@@ -131,6 +173,7 @@ export function decodeGif(bytes) {
     const parts = [];
     let total = 0;
     while (bytes[at] !== 0) {
+      if (at >= bytes.length) throw new Error("The GIF is cut short");
       const size = bytes[at];
       parts.push(bytes.subarray(at + 1, at + 1 + size));
       total += size;

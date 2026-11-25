@@ -10,6 +10,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "record": "node scripts/record-animations.mjs",
+    "record:readme": "node scripts/render-readme.mjs",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build && node scripts/validate-content.mjs"
   },
   "dependencies": {

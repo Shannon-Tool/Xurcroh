@@ -10,8 +10,8 @@ export interface GifWriter {
 }
 
 export function paletteFrom(samples: ReadonlyArray<Uint8Array | Uint8ClampedArray>, colors?: number): number[][];
-export function createGifWriter(options: { width: number; height: number; palette: number[][]; fuzz?: number }): GifWriter;
-export function encodeGif(options: { width: number; height: number; frames: GifFrameInput[]; colors?: number; fuzz?: number }): Uint8Array;
+export function createGifWriter(options: { width: number; height: number; palette: number[][]; fuzz?: number; settleEvery?: number }): GifWriter;
+export function encodeGif(options: { width: number; height: number; frames: GifFrameInput[]; colors?: number; fuzz?: number; settleEvery?: number }): Uint8Array;
 
 export interface DecodedGif {
   width: number;
@@ -23,3 +23,5 @@ export interface DecodedGif {
 }
 
 export function decodeGif(bytes: Uint8Array): DecodedGif;
+
+export function inspectGif(bytes: Uint8Array): { width: number; height: number; frames: number; durationMs: number; loops: number | null };
