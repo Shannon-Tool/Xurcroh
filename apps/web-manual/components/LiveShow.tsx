@@ -12,7 +12,7 @@ import { inkToRgb, presetInk, stampInk, type PadPreset } from "@/lib/show/pad";
 import { paintBlank, paintCipher, paintNumbers, paintPixels, paintText } from "@/lib/show/paint";
 import { useJourney } from "@/lib/show/question";
 import { hexRun } from "@/lib/show/scramble";
-import { ATTRACT_ORDER, beatMs, currentBeat, initialShow, showReducer, tamperRoleOf, type Attack, type Beat } from "@/lib/show/timeline";
+import { ATTRACT_ORDER, SLOW_BEATS, beatMs, currentBeat, initialShow, showReducer, tamperRoleOf, type Attack, type Beat } from "@/lib/show/timeline";
 import { WORKER_CODE, attest, makeEnclave, verifyReport, type Enclave } from "@/lib/simulation/enclave";
 import {
   PAD, SHOW_MODELS, SHOW_PRIME, cryptoRng, decodePixels, getModel, openSession, ownDrawingModel, ownTextModel, pooledView, runStep,
@@ -82,6 +82,8 @@ interface RunData {
   checks: number;
   failed: number;
   last: ShowStep | null;
+  /** The first step, worked out when the run opens and not yet revealed, so the slow pass can show its data. */
+  ahead: ShowStep | null;
   /** The unit `last` belongs to. */
   lastUnit: number;
 }
@@ -153,6 +155,14 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
   const tamperRole = tamperRoleOf(state);
   const rejectKind = state.rejecting ? state.rejectKind : null;
   const words = useSyncExternalStore(wordsSetting.subscribe, wordsSetting.get, () => "plain" as const);
+  // During the slow first pass the first step's data is shown form by form, each when its step is reached.
+  const firstPass = state.revealed === 0 && state.slow && beat !== "done";
+  const reached = SLOW_BEATS.indexOf(beat);
+  const past = (step: Beat) => !firstPass || reached < 0 || reached >= SLOW_BEATS.indexOf(step);
+  const showSealed = past("seal");
+  const showRouted = past("route");
+  const showWork = past("compute");
+  const showChecked = past("verify");
 
   const sectionRef = useRef<HTMLElement>(null);
   const deviceCanvas = useRef<HTMLCanvasElement>(null);
@@ -178,6 +188,8 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
   const [sealed, setSealed] = useState<Sealed>(UNSEALED);
   const [sealedVersion, setSealedVersion] = useState(0);
   const [attested, setAttested] = useState<boolean[] | null>(null);
+  const [workerPaint, setWorkerPaint] = useState(0);
+  const routeRef = useRef<{ step: ShowStep; alteredAt: number | null; route: ReturnType<typeof sealRoute> } | null>(null);
 
   // The canvases double as the pictures on the 3D view's screens. The relays' screens have no place on the page.
   useEffect(() => {
@@ -230,20 +242,23 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
     if (!data || data.run !== state.run || data.model !== model) {
       // The numbers are shuffled with a fresh secret order for every run, and the model's table with them.
       const disguised = shuffled(model, rngRef.current);
-      data = { run: state.run, model, disguised, session: openSession(disguised, rngRef.current), done: 0, rejections: 0, counted: 0, tokens: [], pixels: null, total: null, frames: [], checks: 0, failed: 0, last: null, lastUnit: 0 };
+      data = { run: state.run, model, disguised, session: openSession(disguised, rngRef.current), done: 0, rejections: 0, counted: 0, tokens: [], pixels: null, total: null, frames: [], checks: 0, failed: 0, last: null, ahead: null, lastUnit: 0 };
       dataRef.current = data;
       if (device) {
         if (model.kind === "text") paintText(device, model.prompt, "");
         else paintBlank(device, model.width, model.height);
       }
-      for (const canvas of workerCanvases.current) if (canvas) paintBlank(canvas, 64, 40);
       for (const canvas of filmCanvases.current) if (canvas && model.kind !== "text") paintBlank(canvas, model.width, model.height);
     }
+    // The first step is worked out as soon as the run opens. It is counted, and its result appears, only
+    // when the timeline reveals it.
+    if (data.done === 0 && !data.ahead) data.ahead = runStep(data.session, 0);
     let last: ShowStep | null = null;
     let unit = data.lastUnit;
     while (data.done < state.revealed && data.done < model.units) {
       unit = data.done;
-      last = runStep(data.session, unit);
+      last = unit === 0 && data.ahead ? data.ahead : runStep(data.session, unit);
+      data.ahead = null;
       data.checks += last.roles.length;
       if (last.combined && model.kind === "text") data.tokens.push(model.decodeToken(last.combined));
       if (last.combined && model.kind !== "text") {
@@ -284,15 +299,9 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
       data.lastUnit = unit;
       if (device && model.kind === "text") paintText(device, model.prompt, data.tokens.join(""));
       if (device && model.kind !== "text" && data.pixels) paintPixels(device, data.pixels, model.width, model.height);
-      last.roles.forEach((role, index) => {
-        const canvas = workerCanvases.current[index];
-        if (!canvas) return;
-        if (model.kind === "text") paintNumbers(canvas, role.product, !role.valid);
-        else paintPixels(canvas, workerBytes(role.product), model.width, model.height);
-      });
     }
     const produced = data;
-    const shown = produced.last;
+    const shown = produced.last ?? produced.ahead;
     setSnapshot((current) => ({
       tokens: [...produced.tokens],
       frames: produced.frames.length,
@@ -307,11 +316,25 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
     }));
   }, [state.run, state.revealed, state.rejections, tamperRole, rejectKind, model]);
 
+  // The workers' screens show the numbers each one holds, from the moment the workers have them.
+  useEffect(() => {
+    const data = dataRef.current;
+    const step = showWork ? data?.last ?? data?.ahead : null;
+    workerCanvases.current.forEach((canvas, index) => {
+      if (!canvas) return;
+      const role = step?.roles[index];
+      if (!role) paintBlank(canvas, 64, 40);
+      else if (model.kind === "text") paintNumbers(canvas, role.product, !role.valid);
+      else paintPixels(canvas, workerBytes(role.product), model.width, model.height);
+    });
+    setWorkerPaint((current) => current + 1);
+  }, [snapshot.version, showWork, model]);
+
   // Sealing: the first piece of the latest step really is wrapped in three layers and sent through three relays.
   const alteredAt = rejectKind === "packet" && tamperRole !== null ? relayOf(tamperRole) : null;
   useEffect(() => {
     const data = dataRef.current;
-    const last = data?.last;
+    const last = data?.last ?? data?.ahead;
     if (!data || !last) {
       relayCanvases.current.forEach((canvas) => paintCipher(canvas, null));
       setSealed(UNSEALED);
@@ -320,9 +343,14 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
     }
     let current = true;
     const counted = state.rejections;
-    void sealRoute(last.activationShares[0], alteredAt ?? undefined).then((route) => {
+    // One sealing per step: showing it at a later moment must not seal it again under new keys.
+    const kept = routeRef.current;
+    const sealing = kept && kept.step === last && kept.alteredAt === alteredAt ? kept.route : sealRoute(last.activationShares[0], alteredAt ?? undefined);
+    routeRef.current = { step: last, alteredAt, route: sealing };
+    void sealing.then((route) => {
       if (!current) return;
-      relayCanvases.current.forEach((canvas, index) => paintCipher(canvas, route.views[index] ?? null));
+      // The relays have nothing until the sealed piece is sent.
+      relayCanvases.current.forEach((canvas, index) => paintCipher(canvas, showRouted ? route.views[index] ?? null : null));
       setSealed({ hex: hexRun(route.views[0]!, 2, 10), bytes: route.views[0]!.length, failedAt: route.failedAt, middle: route.views[1] ?? route.views[0]! });
       setSealedVersion((version) => version + 1);
       if (route.failedAt !== null && dataRef.current === data && data.counted < counted) {
@@ -334,7 +362,7 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
     return () => {
       current = false;
     };
-  }, [snapshot.version, alteredAt, state.rejections]);
+  }, [snapshot.version, alteredAt, state.rejections, showRouted]);
 
   // Attestation: every enclave signs a report over its code and a fresh nonce, and the device verifies it.
   const swappedRole = rejectKind === "software" ? tamperRole : null;
@@ -366,7 +394,7 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
     if (eye === "you") return;
     const data = dataRef.current;
     const canvas = eyeCanvas.current;
-    const last = data?.last;
+    const last = data?.last ?? (showWork ? data?.ahead : null);
     if (!data || !last) {
       setEyeView({ text: "", real: false, bytes: 0 });
       if (canvas && model.kind !== "text") paintBlank(canvas, model.width, model.height);
@@ -404,7 +432,7 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
     return () => {
       current = false;
     };
-  }, [eye, snapshot.version, sealed, model]);
+  }, [eye, snapshot.version, sealed, model, showWork]);
 
   // A finished clip plays in a loop on the device's screen.
   const clipDone = model.kind === "clip" && beat === "done" && snapshot.frames === model.frames.length;
@@ -502,9 +530,9 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
     { id: "numbers", label: "Numbers", value: snapshot.numbers || "—", tone: "plain" },
     { id: "shuffled", label: "Shuffled", value: snapshot.shuffled || "—", tone: "plain" },
     { id: "pieces", label: "Two pieces", value: snapshot.pieces || "—", tone: "accent" },
-    { id: "sealed", label: sealed.failedAt === null ? "Sealed ×3" : "Refused", value: sealed.hex || "—", tone: sealed.failedAt === null ? "cipher" : "warn" },
-    { id: "enclave", label: "In enclave", value: snapshot.result || "—", tone: attested && attested.some((ok) => !ok) ? "warn" : "accent" },
-    { id: "checked", label: "Checked", value: rejectKind === "result" ? "1 of 4 fails" : snapshot.passed || "—", tone: rejectKind === "result" ? "warn" : "good" },
+    { id: "sealed", label: sealed.failedAt === null ? "Sealed ×3" : "Refused", value: (showSealed && sealed.hex) || "—", tone: sealed.failedAt === null ? "cipher" : "warn" },
+    { id: "enclave", label: "In enclave", value: (showWork && snapshot.result) || "—", tone: attested && attested.some((ok) => !ok) ? "warn" : "accent" },
+    { id: "checked", label: "Checked", value: rejectKind === "result" ? "1 of 4 fails" : (showChecked && snapshot.passed) || "—", tone: rejectKind === "result" ? "warn" : "good" },
     { id: "answer", label: "Answer", value: model.kind === "text" ? (snapshot.tokens.join("").slice(-22) || "—") : `${Math.min(state.revealed, model.units)} of ${model.units} steps`, tone: "good" },
   ];
   const lit = beat === "rejected" ? [rejectKind === "software" ? "enclave" : rejectKind === "packet" ? "sealed" : "checked"] : LIT[beat];
@@ -514,7 +542,7 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
       <p className="stage-label">{mode === "own-text" || mode === "own-drawing" ? "You put in" : "You ask"}</p>
       <p className="show-prompt"><span className="show-tag">{mode === "own-text" || mode === "own-drawing" ? "Yours" : "Prompt"}</span> <q><ScrambleText text={model.prompt} /></q></p>
       {model.toy ? <p className="show-toy">{model.toy}</p> : null}
-      <p className="stage-leaves"><span>What leaves your device</span> <ScrambleText className="stage-cipher" text={sealed.hex || snapshot.pieces || "nothing yet"} /></p>
+      <p className="stage-leaves"><span>What leaves your device</span> <ScrambleText className="stage-cipher" text={(showRouted && sealed.hex) || "nothing yet"} /></p>
     </div>
   );
 
@@ -544,7 +572,7 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
     <div className="stage-panel show-hud">
       <div className="show-progress" role="progressbar" aria-label="Progress of this run" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div>
       <dl className="show-counters">
-        <div><dt>{words === "plain" ? "Answers checked" : "Products checked"}</dt><dd data-testid="checks">{snapshot.checks}</dd></div>
+        <div><dt>{words === "plain" ? "Answers checked" : "Products checked"}</dt><dd data-testid="checks">{snapshot.checks + (firstPass && reached >= 0 && showChecked ? ROLES.length : 0)}</dd></div>
         <div className={snapshot.failed > 0 ? "bad" : undefined}><dt>Rejected</dt><dd data-testid="rejected">{snapshot.failed}</dd></div>
       </dl>
     </div>
@@ -638,7 +666,7 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
         scene={scene}
         direct={direct}
         screens={screens}
-        screensVersion={snapshot.version + loopFrame + sealedVersion}
+        screensVersion={snapshot.version + loopFrame + sealedVersion + workerPaint}
         left={<>{input}{output}</>}
         right={corner}
         caption={scene.caption}

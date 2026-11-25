@@ -263,6 +263,38 @@ describe("live demonstration", () => {
     expect(document.querySelector(".stage-leaves")).toHaveTextContent("What leaves your device");
   });
 
+  it("shows the first step's data taking each form as the slow pass reaches that step", () => {
+    render(<LiveShow autoPlay rng={seededRng(21)} />);
+    const value = (label: string) => [...document.querySelectorAll(".ribbon-form")].find((form) => form.querySelector(".ribbon-label")!.textContent === label)!.querySelector(".sr-only")!.textContent!;
+    const leaves = () => document.querySelector(".stage-leaves .sr-only")!.textContent;
+    // Step 1, Split: the question is already numbers, shuffled and in two pieces. Nothing is sealed, computed or sent.
+    expect(value("Numbers")).toMatch(/^([0-9a-f]{4} ?){6}$/);
+    expect(value("Shuffled")).toMatch(/^([0-9a-f]{4} ?){6}$/);
+    expect(value("Two pieces")).toMatch(/^([0-9a-f]{4} ){2}[0-9a-f]{4} \| ([0-9a-f]{4} ){2}[0-9a-f]{4}$/);
+    for (const label of ["Sealed ×3", "In enclave", "Checked", "Answer"]) expect(value(label)).toBe("—");
+    expect(leaves()).toBe("nothing yet");
+    expect(screen.getByTestId("checks")).toHaveTextContent("0");
+    advance(1100 * 2 + 50);
+    expect(screen.getByText(/^Step 3 of 8 · Seal\./)).toBeInTheDocument();
+    // Sealed, but still on the device.
+    expect(leaves()).toBe("nothing yet");
+    expect(value("In enclave")).toBe("—");
+    advance(1100 * 2);
+    expect(screen.getByText(/^Step 5 of 8 · Compute\./)).toBeInTheDocument();
+    expect(value("In enclave")).toMatch(/^([0-9a-f]{4} ?){5}$/);
+    expect(value("Checked")).toBe("—");
+    advance(1100 * 2);
+    expect(screen.getByText(/^Step 7 of 8 · Check\./)).toBeInTheDocument();
+    expect(value("Checked")).toBe("4 of 4 pass");
+    expect(screen.getByTestId("checks")).toHaveTextContent("4");
+    // The answer itself still appears only when the checked results are combined.
+    expect(value("Answer")).toBe("—");
+    expect(answer()).toBe("");
+    advance(1100);
+    expect(answer()).toBe(first.tokens[0]);
+    expect(screen.getByTestId("checks")).toHaveTextContent("4");
+  });
+
   it("refuses a worker whose software was swapped, using a real signature check", async () => {
     vi.useRealTimers();
     setReducedMotion(true);
