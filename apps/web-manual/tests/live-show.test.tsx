@@ -31,6 +31,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// These tests play a whole run, a render per step; they take seconds, more when the machine is busy.
+const LONG = 20_000;
+
 describe("live demonstration", () => {
   it("starts by itself, plays the first token slowly and then streams the prepared answer from the share arithmetic", () => {
     render(<LiveShow autoPlay rng={seededRng(1)} />);
@@ -50,7 +53,7 @@ describe("live demonstration", () => {
     advance(300 * first.tokens.length);
     expect(answer()).toBe(first.answer);
     expect(screen.getByRole("status")).toHaveTextContent(`Answer complete: ${first.answer}`);
-  });
+  }, LONG);
 
   it("moves on to a picture and then a clip while nobody touches it", () => {
     render(<LiveShow autoPlay rng={seededRng(2)} />);
@@ -74,7 +77,7 @@ describe("live demonstration", () => {
     expect(answer()).toBe(first.tokens.slice(0, 2).join(""));
     advance(20_000);
     expect(answer()).toBe(first.tokens.slice(0, 2).join(""));
-  });
+  }, LONG);
 
   it("lets the reader choose what is produced, and stops the tour", () => {
     render(<LiveShow autoPlay rng={seededRng(4)} />);
@@ -94,7 +97,7 @@ describe("live demonstration", () => {
     fireEvent.click(screen.getByRole("button", { name: "What does this page not show?" }));
     advance(SLOW + 100);
     expect(answer()).toBe("This");
-  });
+  }, LONG);
 
   it("shows a real rejection when a worker is tampered with, then carries on", () => {
     render(<LiveShow autoPlay rng={seededRng(5)} />);
