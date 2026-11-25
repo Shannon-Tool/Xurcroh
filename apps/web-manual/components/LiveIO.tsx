@@ -5,7 +5,7 @@ import type { FlowForm } from "@/components/FlowRibbon";
 import { DataViews, ProcessTrack } from "@/components/ProcessTrack";
 import { QuestionPicker } from "@/components/QuestionPicker";
 import { TypedText } from "@/components/TypedText";
-import { useGeneration } from "@/lib/show/generation";
+import { useGeneration, usePictureGeneration } from "@/lib/show/generation";
 import { paintPixels } from "@/lib/show/paint";
 import type { DataView, ProcessStep } from "@/lib/show/process";
 import { useJourney, usePictureJourney } from "@/lib/show/question";
@@ -93,6 +93,28 @@ function GeneratedAnswer({ story }: { story: LiveStory }) {
   );
 }
 
+/** The picture as it forms: one step cleaner for every protected product that has been computed and checked. */
+function GeneratedPicture({ story }: { story: LiveStory }) {
+  const picture = usePictureJourney();
+  const generation = usePictureGeneration(picture.id, story.done === true, story.speed ?? 1);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (canvas.current && generation.pixels) paintPixels(canvas.current, generation.pixels, generation.width, generation.height);
+  }, [generation.pixels, generation.width, generation.height]);
+  return (
+    <>
+      {story.result ? <div className="liveio-produced"><DataViews views={story.result} /></div> : null}
+      <div className="liveio-answer">
+        <span className="liveio-tag">The model&apos;s picture</span>
+        <canvas ref={canvas} className="liveio-picture" width={generation.width} height={generation.height} role="img" aria-label={generation.complete ? `The finished picture: ${picture.request}` : `The picture forming: ${picture.request}`} />
+      </div>
+      <p className="liveio-count" data-testid="generation">
+        Step {generation.step} of {generation.total}. Each one is its own product on two pieces; {generation.passed} of {generation.checks} results passed their check.
+      </p>
+    </>
+  );
+}
+
 /** The output panel of a stage that shows its steps: nothing until the last step is done. */
 function SteppedOutput({ story }: { story: LiveStory }) {
   const steps = story.steps ?? [];
@@ -101,8 +123,8 @@ function SteppedOutput({ story }: { story: LiveStory }) {
   if (!story.done) {
     return (
       <>
-        <p className="liveio-answer waiting"><span className="liveio-tag">The model&apos;s answer</span> Nothing yet.</p>
-        <p className="liveio-count">It can only be written when all {steps.length} steps are done. Now at step {at + 1}: {steps[at]?.title}.</p>
+        <p className="liveio-answer waiting"><span className="liveio-tag">{story.kind === "picture" ? "The model's picture" : "The model's answer"}</span> Nothing yet.</p>
+        <p className="liveio-count">It can only be {story.kind === "picture" ? "made" : "written"} when all {steps.length} steps are done. Now at step {at + 1}: {steps[at]?.title}.</p>
       </>
     );
   }
@@ -116,7 +138,7 @@ function SteppedOutput({ story }: { story: LiveStory }) {
   }
   return (
     <>
-      {story.kind === "picture" ? <div className="liveio-answer"><span className="liveio-tag">The model&apos;s picture</span><AnswerPicture /></div> : <GeneratedAnswer story={story} />}
+      {story.kind === "picture" ? <GeneratedPicture story={story} /> : <GeneratedAnswer story={story} />}
       <div className="liveio-result">{story.output}</div>
     </>
   );

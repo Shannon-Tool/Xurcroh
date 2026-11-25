@@ -168,6 +168,64 @@ describe("3D scene builders", () => {
     wellFormed(onionScene({ hops: [], step: 0, tampered: false, compromised: false, colluding: false }));
   });
 
+  it("onion: the packet is wrapped at the sender, travels, stops where it is refused, and carries its real bytes as a label", () => {
+    const hops = ["worker-1", "worker-2", "client"];
+    const base = { hops, tampered: false, compromised: false, colluding: false };
+    const shells = (scene: Scene3D) => scene.nodes.filter((node) => node.kind === "shell").length;
+    // Wrapping: the packet is at the sender and gains one layer at a time.
+    const wrapping = [0, 1, 2, 3].map((wrapped) => onionScene({ ...base, step: 0, phase: "wrap", wrapped, note: `sealed ×${wrapped}` }));
+    expect(wrapping.map(shells)).toEqual([0, 1, 2, 3]);
+    for (const scene of wrapping) {
+      wellFormed(scene);
+      expect(find(scene, "payload")!.position[0]).toBe(find(scene, "sender")!.position[0]);
+      expect(scene.nodes.some((node) => node.kind === "ring")).toBe(false);
+    }
+    expect(find(wrapping[0]!, "payload")!.label).toBe("sealed ×0");
+    expect(wrapping[2]!.nodes.find((node) => node.kind === "shell")!.label).toBe("sealed ×2");
+    // Arrived: no layer left, every relay has removed its own.
+    const arrived = onionScene({ ...base, step: 2, phase: "arrived", note: "readable again" });
+    expect(shells(arrived)).toBe(0);
+    expect(arrived.nodes.filter((node) => node.kind === "ring")).toHaveLength(3);
+    expect(find(arrived, "payload")!.label).toBe("readable again");
+    // Refused at the middle relay: the packet stays there, with its layers on, however far the playback goes.
+    for (const phase of ["relay", "arrived"] as const) {
+      const stopped = onionScene({ ...base, tampered: true, step: 2, phase, stoppedAt: 1 });
+      wellFormed(stopped);
+      expect(find(stopped, "payload")!.position[0]).toBe(find(stopped, "hop-1")!.position[0]);
+      expect(find(stopped, "hop-1")!.tone).toBe("warn");
+      expect(find(stopped, "hop-1")!.label).toContain("refuses");
+      expect(shells(stopped)).toBe(2);
+      expect(stopped.caption).toContain("goes no further");
+    }
+  });
+
+  it("share grid, check and placement follow the step they are given", () => {
+    const roles = [0, 1, 2, 3].map((role) => ({ activationShare: role >> 1, weightShare: role & 1 }));
+    const before = shareGridScene({ roles, step: -1, tampered: false, values: { client: "Your device: 1 0 1" } });
+    wellFormed(before);
+    expect(find(before, "client")!.label).toBe("Your device: 1 0 1");
+    expect(before.nodes.some((node) => node.active)).toBe(false);
+    expect(before.caption).toContain("nothing has been sent yet");
+    const working = shareGridScene({ roles, step: 1, tampered: false, values: { roles: ["sent 5 …", "piece 7 …"] } });
+    expect(find(working, "role-1")!.label).toBe("Worker (0,1): piece 7 …");
+    expect(find(working, "role-1")!.active).toBe(true);
+
+    const check = (step: number) => freivaldsScene({ x: [1, 1], product: [600, 300], challenge: [11, 13], expected: [600, 300], valid: true, step, sides: { left: "10 500", right: "10 500" } });
+    expect(check(0).nodes.some((node) => node.id.startsWith("r-"))).toBe(false);
+    expect(find(check(0), "beam")!.label).toBe("not compared yet");
+    expect(find(check(2), "right")!.label).toBe("from the result: 10 500");
+    expect(check(2).nodes.some((node) => node.id === "left")).toBe(false);
+    expect(find(check(3), "left")!.active).toBe(true);
+    expect(find(check(4), "beam")!.label).toBe("balanced: accept");
+    for (const step of [0, 1, 2, 3, 4]) wellFormed(check(step));
+
+    const placed = placeOperations(3);
+    const count = (scene: Scene3D) => scene.nodes.filter((node) => node.id.startsWith("place-")).length;
+    expect([0, 1, 2, 3, 4].map((done) => count(placementScene({ roles: placed, placed: done })))).toEqual([0, 4, 8, 12, 16]);
+    expect(placementScene({ roles: placed, placed: 2 }).nodes.filter((node) => node.active)).toHaveLength(4);
+    expect(placementScene({ roles: placed }).nodes.some((node) => node.active)).toBe(false);
+  });
+
   it("mixture of experts: dummy routes are dashed and still, and disappear when protection is off", () => {
     const hidden = [[1, 0], [0, 1], [1, 1], [2, 0], [0, 2], [2, 2]];
     const plan = routeMoe(hidden, [[1, 0], [0, 1], [1, 1], [2, 0.5]], 1, 4);

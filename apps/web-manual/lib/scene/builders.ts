@@ -71,30 +71,41 @@ export function shareGridScene(input: {
 
 // ---------------------------------------------------------------- Freivalds
 
-export function freivaldsScene(input: { x: number[]; product: number[]; challenge: number[]; expected: number[]; valid: boolean }): Scene3D {
+export function freivaldsScene(input: {
+  x: number[]; product: number[]; challenge: number[]; expected: number[]; valid: boolean;
+  /** How far the check has got: 0 the result, 1 the challenge, 2 the result's side, 3 the device's side, 4 the comparison. Left out: all of it. */
+  step?: number;
+  /** The two sides as the device computed them, written on the scale's pans once they exist. */
+  sides?: { left: string; right: string };
+}): Scene3D {
+  const step = input.step ?? 4;
+  const weighed = step >= 4;
   const largest = largestOf([...input.x, ...input.product, ...input.challenge]);
   const nodes: SceneNode[] = [];
-  input.x.forEach((value, index) => nodes.push(bar(`x-${index}`, index, 0, value, largest, "plain", { label: `x${index} = ${short(value)}`, detail: "Input entry." })));
-  input.challenge.forEach((value, index) => nodes.push(bar(`r-${index}`, index, 1.5, value, largest, "accent", { label: `r${index} = ${short(value)}`, detail: "Secret random challenge chosen by the verifier." })));
+  input.x.forEach((value, index) => nodes.push(bar(`x-${index}`, index, 0, value, largest, "plain", { label: `x${index} = ${short(value)}`, detail: "Input entry.", active: step === 3 })));
+  if (step >= 1) input.challenge.forEach((value, index) => nodes.push(bar(`r-${index}`, index, 1.5, value, largest, "accent", { label: `r${index} = ${short(value)}`, detail: "Secret random challenge chosen by the verifier.", active: step === 1 })));
   input.product.forEach((value, index) => {
     const wrong = value !== input.expected[index];
-    nodes.push(bar(`p-${index}`, index, 3, value, largest, wrong ? "warn" : "good", { label: `claimed ${short(value)}`, detail: wrong ? `The worker claimed ${short(value)}; the true entry is ${short(input.expected[index] ?? 0)}.` : "Product entry claimed by the worker.", active: wrong, pulse: wrong }));
+    nodes.push(bar(`p-${index}`, index, 3, value, largest, wrong && weighed ? "warn" : "good", { label: `claimed ${short(value)}`, detail: wrong ? `The worker claimed ${short(value)}; the true entry is ${short(input.expected[index] ?? 0)}.` : "Product entry claimed by the worker.", active: step === 0 || step === 2 || (wrong && weighed), pulse: wrong && weighed }));
   });
   const dot = (values: number[]) => values.reduce((sum, value, index) => sum + value * (input.challenge[index] ?? 0), 0);
   const left = dot(input.expected);
   const right = dot(input.product);
   // A level beam means the two sides agree. When they differ it tips towards the heavier side.
-  const tilt = input.valid ? 0 : (right > left ? -1 : 1) * 0.3;
-  const tone: SceneTone = input.valid ? "good" : "warn";
+  const tilt = !weighed || input.valid ? 0 : (right > left ? -1 : 1) * 0.3;
+  const tone: SceneTone = !weighed ? "plain" : input.valid ? "good" : "warn";
   const middle = (Math.max(input.x.length, 1) - 1) / 2;
   const arm = 1.7;
   const pan = (side: -1 | 1): Vec3 => [middle + side * arm * Math.cos(tilt), 1.95 + side * arm * Math.sin(tilt) + 0.5, -2.2];
   nodes.push({ id: "pivot", kind: "cylinder", position: [middle, 0.95, -2.2], size: [0.3, 1.9, 0.3], tone: "plain" });
-  nodes.push({ id: "beam", kind: "box", position: [middle, 1.95, -2.2], size: [arm * 2 + 0.5, 0.12, 0.45], tone, tilt, active: !input.valid, label: input.valid ? "balanced: accept" : "unbalanced: reject" });
-  nodes.push({ id: "left", kind: "sphere", position: pan(-1), size: [0.85, 0.85, 0.85], tone, label: "x·(Wᵀr)", detail: `What the verifier computes itself: ${short(left)}.` });
-  nodes.push({ id: "right", kind: "sphere", position: pan(1), size: [0.85, 0.85, 0.85], tone, label: "(claimed)·r", detail: `What the claimed product gives: ${short(right)}.`, pulse: !input.valid });
+  nodes.push({ id: "beam", kind: "box", position: [middle, 1.95, -2.2], size: [arm * 2 + 0.5, 0.12, 0.45], tone, tilt, active: weighed, label: !weighed ? "not compared yet" : input.valid ? "balanced: accept" : "unbalanced: reject" });
+  if (step >= 3) nodes.push({ id: "left", kind: "sphere", position: pan(-1), size: [0.85, 0.85, 0.85], tone, active: step === 3, label: input.sides ? `from your question: ${input.sides.left}` : "x·(Wᵀr)", detail: `What the verifier computes itself: ${short(left)}.` });
+  if (step >= 2) nodes.push({ id: "right", kind: "sphere", position: pan(1), size: [0.85, 0.85, 0.85], tone, active: step === 2, label: input.sides ? `from the result: ${input.sides.right}` : "(claimed)·r", detail: `What the claimed product gives: ${short(right)}.`, pulse: weighed && !input.valid });
+  const caption = !weighed
+    ? ["The workers' result arrives.", "The verifier draws a challenge the workers could not know.", "One side of the check is computed from the workers' result.", "The other side is computed from the verifier's own input.", ""][Math.max(0, Math.min(3, step))]!
+    : input.valid ? "Both sides of the check agree, so the claimed product is accepted." : "The two sides of the check differ, so the claimed product is rejected.";
   return {
-    caption: input.valid ? "Both sides of the check agree, so the claimed product is accepted." : "The two sides of the check differ, so the claimed product is rejected.",
+    caption,
     nodes,
     links: [],
     legend: [{ tone: "plain", text: "input" }, { tone: "accent", text: "random challenge" }, { tone: "good", text: "agrees" }, { tone: "warn", text: "wrong" }],
@@ -128,7 +139,11 @@ export function quantizedScene(input: { stages: { title: string; values: number[
 
 const OPERATION_TONES: SceneTone[] = ["accent", "good", "plain", "muted"];
 
-export function placementScene(input: { roles: { operation: string; activationShare: number; weightShare: number; provider: string; country: string }[] }): Scene3D {
+export function placementScene(input: {
+  roles: { operation: string; activationShare: number; weightShare: number; provider: string; country: string }[];
+  /** How many operations have been handed out so far; the last of them is lit. Left out: all of them, none lit. */
+  placed?: number;
+}): Scene3D {
   const providers = [...new Set(input.roles.map((role) => role.provider))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   const countries = [...new Set(input.roles.map((role) => role.country))].sort();
   const operations = [...new Set(input.roles.map((role) => role.operation))];
@@ -145,10 +160,14 @@ export function placementScene(input: { roles: { operation: string; activationSh
     const rows = Math.ceil((perCountry.get(country) ?? 1) / 2);
     return { id: `country-${country}`, kind: "slab", position: [index * 5 + 0.75, 0.05, (rows - 1) * 0.75], size: [3.4, 0.1, rows * 1.5 + 0.4], tone: "muted", opacity: 0.4, label: `Jurisdiction ${country.toUpperCase()}` };
   });
+  const placed = input.placed ?? operations.length;
   input.roles.forEach((role, index) => {
     const pad = padOf.get(role.provider)!;
     const operation = operations.indexOf(role.operation);
+    // A piece of work that has not been handed out yet is not on any provider.
+    if (operation >= placed) return;
     nodes.push({
+      active: input.placed !== undefined && operation === placed - 1 && placed <= operations.length,
       id: `place-${index}`, kind: "box", position: [pad[0], 0.1 + 0.45, pad[2]], size: [1.05, 0.9, 1.05],
       tone: OPERATION_TONES[operation % OPERATION_TONES.length]!,
       label: `${role.operation} (${role.activationShare},${role.weightShare})`,
@@ -156,7 +175,9 @@ export function placementScene(input: { roles: { operation: string; activationSh
     });
   });
   return {
-    caption: `${operations.length} operations × 4 roles placed on ${providers.length} providers in ${countries.length} jurisdictions. No provider holds two roles of the same operation; reshuffling moves every block.`,
+    caption: placed < operations.length
+      ? (placed === 0 ? `${operations.length} operations × 4 roles wait to be placed on ${providers.length} providers in ${countries.length} jurisdictions.` : `Operation ${placed} of ${operations.length} is placed: its four roles go to four different providers.`)
+      : `${operations.length} operations × 4 roles placed on ${providers.length} providers in ${countries.length} jurisdictions. No provider holds two roles of the same operation; reshuffling moves every block.`,
     nodes,
     links: [],
     legend: operations.map((operation, index) => ({ tone: OPERATION_TONES[index % OPERATION_TONES.length]!, text: operation })),
@@ -330,40 +351,62 @@ export function pipelineScene(input: { nodes: number; failNode: number | null; e
 
 // ---------------------------------------------------------------- onion
 
-export function onionScene(input: { hops: string[]; step: number; tampered: boolean; compromised: boolean; colluding: boolean }): Scene3D {
+export function onionScene(input: {
+  hops: string[]; step: number; tampered: boolean; compromised: boolean; colluding: boolean;
+  /** "wrap": the sender is still putting layers on. "relay" (the default): the packet is at hop `step`. "arrived": it is out the far end. */
+  phase?: "wrap" | "relay" | "arrived";
+  /** While wrapping: how many layers are on so far. */
+  wrapped?: number;
+  /** The real bytes of the packet at this moment, written on it. */
+  note?: string;
+  /** The hop that refused the packet, if one did: nothing travels beyond it. */
+  stoppedAt?: number | null;
+}): Scene3D {
   const count = input.hops.length;
   const gap = 2.6;
-  const nodes: SceneNode[] = [{ id: "sender", kind: "box", position: [-gap, 0.5, 0], size: [1, 1, 1], tone: "good", label: "Sender", detail: "Wraps the payload once per hop, innermost layer first." }];
+  const phase = input.phase ?? "relay";
+  const stopped = input.stoppedAt ?? null;
+  const reached = Math.max(0, Math.min(input.step, count - 1));
+  // A refused packet stays at the hop that refused it.
+  const at = stopped !== null && phase !== "wrap" ? Math.min(reached, stopped) : reached;
+  const refusedHere = stopped !== null && phase !== "wrap" && reached >= stopped;
+  const nodes: SceneNode[] = [{ id: "sender", kind: "box", position: [-gap, 0.5, 0], size: [1, 1, 1], tone: "good", label: "Sender", detail: "Wraps the payload once per hop, innermost layer first.", active: phase === "wrap" }];
   const links: SceneLink[] = [];
-  const at = Math.max(0, Math.min(input.step, count - 1));
+  const delivered = phase === "arrived" && !refusedHere;
   for (let index = 0; index < count; index += 1) {
-    const current = index === at;
+    const current = phase === "relay" && index === at;
     const exposed = input.colluding || (input.compromised && current);
     nodes.push({
-      id: `hop-${index}`, kind: "box", position: [index * gap, 0.5, 0], size: [1, 1, 1], tone: exposed ? "warn" : "plain",
-      label: `Hop ${index} → ${input.hops[index]}${exposed ? " (compromised)" : ""}`,
+      id: `hop-${index}`, kind: "box", position: [index * gap, 0.5, 0], size: [1, 1, 1], tone: exposed || (refusedHere && index === at) ? "warn" : "plain",
+      label: `Hop ${index} → ${input.hops[index]}${exposed ? " (compromised)" : ""}${refusedHere && index === at ? ": refuses" : ""}`,
       detail: "Can open only its own layer, which tells it nothing but the next hop.",
-      active: current, pulse: exposed && current,
+      active: current, pulse: (exposed && current) || (refusedHere && index === at),
     });
     links.push({ id: `route-${index}`, from: index === 0 ? "sender" : `hop-${index - 1}`, to: `hop-${index}`, tone: input.colluding && index > 0 ? "warn" : current ? "accent" : "plain", dashed: input.colluding && index > 0, active: current, flow: current ? "forward" : undefined });
-    if (index < at) nodes.push({ id: `peel-${index}`, kind: "ring", position: [index * gap, 0.06, 0], size: [1.9, 0, 0], tone: "accent", detail: `Layer ${index} was removed here.` });
+    if (phase !== "wrap" && (index < at || delivered)) nodes.push({ id: `peel-${index}`, kind: "ring", position: [index * gap, 0.06, 0], size: [1.9, 0, 0], tone: "accent", detail: `Layer ${index} was removed here.` });
   }
   // Layer j is removed by hop j, so the layers still wrapped are j ≥ at. Outer layers are larger.
-  const remaining = Math.max(count - at, count === 0 ? 0 : 1);
-  for (let layer = at; layer < count; layer += 1) {
-    const outer = layer === at;
+  const on = phase === "wrap" ? Math.max(0, Math.min(count, input.wrapped ?? 0)) : delivered ? 0 : count - at;
+  const where = phase === "wrap" ? -1 : at;
+  const remaining = phase === "relay" && !refusedHere ? Math.max(count - at, count === 0 ? 0 : 1) : on;
+  const marked = input.tampered && phase !== "wrap" && (stopped === null || refusedHere);
+  for (let layer = count - on; layer < count; layer += 1) {
+    const outer = layer === count - on;
     nodes.push({
-      id: `shell-${layer}`, kind: "shell", position: [at * gap, 2.6, 0], size: [0.75 + (count - layer) * 0.55, 0, 0],
-      tone: outer && input.tampered ? "warn" : "accent", active: outer, pulse: outer && input.tampered,
+      id: `shell-${layer}`, kind: "shell", position: [where * gap, 2.6, 0], size: [0.75 + (count - layer) * 0.55, 0, 0],
+      tone: outer && marked ? "warn" : "accent", active: outer, pulse: outer && marked,
       opacity: outer ? 0.34 : 0.2,
-      label: outer ? `${remaining} layer${remaining === 1 ? "" : "s"} left${input.tampered ? ", tampered" : ""}` : undefined,
+      label: outer ? (input.note ?? `${remaining} layer${remaining === 1 ? "" : "s"} left${marked ? ", tampered" : ""}`) : undefined,
     });
   }
-  if (count > 0) nodes.push({ id: "payload", kind: "orb", position: [at * gap, 2.6, 0], size: [0.42, 0.42, 0.42], tone: "good", detail: "The payload. Only the last hop's layer wraps it directly." });
+  if (count > 0) nodes.push({ id: "payload", kind: "orb", position: [where * gap, 2.6, 0], size: [0.42, 0.42, 0.42], tone: "good", label: on === 0 ? input.note : undefined, detail: "The payload. Only the last hop's layer wraps it directly.", pulse: delivered });
   const risk = input.colluding ? " Colluding hops can link the two ends of the route." : input.compromised ? " A compromised hop sees only its own layer and the next hop." : "";
+  const caption = phase === "wrap" ? (on === 0 ? "The sender holds the readable payload; no layer is on yet." : `The sender has put ${on} of ${count} layers on, the innermost first.`)
+    : refusedHere ? `Hop ${at} was handed altered bytes: its check fails and the packet goes no further.`
+      : delivered ? "The last layer is off: the payload is readable again at the far end."
+        : `At hop ${at}, ${remaining} layer${remaining === 1 ? "" : "s"} still wrap${remaining === 1 ? "s" : ""} the payload; this hop removes one.${input.tampered ? " The ciphertext was altered, so this hop's check fails." : ""}${risk}`;
   return {
-    caption: `At hop ${at}, ${remaining} layer${remaining === 1 ? "" : "s"} still wrap${remaining === 1 ? "s" : ""} the payload; this hop removes one.${input.tampered ? " The ciphertext was altered, so this hop's check fails." : ""}${risk}`,
-    nodes, links,
+    caption, nodes, links,
     legend: [{ tone: "accent", text: "encryption layer" }, { tone: "good", text: "payload" }, { tone: "warn", text: "tampered or compromised" }],
   };
 }

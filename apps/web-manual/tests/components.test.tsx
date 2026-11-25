@@ -58,9 +58,9 @@ describe("interactive manual", () => {
   it("can verify an onion layer again after removing tampering", async () => {
     render(<OnionLab />);
     await screen.findByText("Next: client", { exact: false });
-    fireEvent.click(screen.getByRole("button", { name: "Step forward" }));
-    fireEvent.click(screen.getByRole("button", { name: "Step forward" }));
-    const tamper = screen.getByRole("checkbox", { name: "Tamper current ciphertext" });
+    // On to the last relay, whose layer holds the question itself.
+    fireEvent.click(screen.getByRole("button", { name: "Step 5: Relay 3" }));
+    const tamper = screen.getByRole("checkbox", { name: "Alter the packet on its way to relay 2" });
     fireEvent.click(tamper);
     fireEvent.click(tamper);
     fireEvent.click(screen.getByRole("button", { name: "Decrypt / verify" }));

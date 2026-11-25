@@ -34,6 +34,7 @@ export function DataViews({ views }: { views: DataView[] }) {
         }
         if (view.kind === "bars") {
           const most = Math.max(1, ...view.values.map((value) => Math.abs(value)));
+          // `top: -1` lights no bar: a count of work has no winner.
           const top = view.top ?? view.values.indexOf(Math.max(...view.values));
           return (
             <div key={index} className="data data-bars">
@@ -50,7 +51,7 @@ export function DataViews({ views }: { views: DataView[] }) {
         }
         if (view.kind === "rows") {
           return (
-            <div key={index} className="data data-rows">
+            <div key={index} className={view.rows.length >= 3 ? "data data-rows two" : "data data-rows"}>
               {view.rows.map((row) => (
                 <span key={row.name} className={`data-line ${row.state ?? "done"}`}>
                   <span className="data-mark" aria-hidden="true">{MARK[row.state ?? "done"]}</span>

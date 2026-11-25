@@ -7,6 +7,9 @@ import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
 import { pipelineScene } from "@/lib/scene/builders";
 import type { LiveStory } from "@/components/LiveIO";
+import { writingTime } from "@/lib/show/generation";
+import type { ProcessStep } from "@/lib/show/process";
+import { useJourney } from "@/lib/show/question";
 
 export function PipelineLab() {
   const [nodes, setNodes] = useState(4);
@@ -15,14 +18,61 @@ export function PipelineLab() {
   const [requests, setRequests] = useState(2);
   const [fail, setFail] = useState(false);
   const events = useMemo(() => simulatePipeline({ nodes, latencyMs: latency, packetLoss: loss, requests, failNode: fail && nodes > 1 ? 1 : null }), [nodes, latency, loss, requests, fail]);
-  const playback = usePlayback(events.length - 1);
-  const event = events[playback.index]!;
-  const scene = useMemo(() => pipelineScene({ nodes, failNode: fail && nodes > 1 ? 1 : null, events, index: playback.index }), [nodes, fail, events, playback.index]);
+  const journey = useJourney();
+  const playback = usePlayback(events.length - 1, writingTime(journey.tokens.length));
+  const index = playback.index;
+  const event = events[index]!;
+  // The reader's own request is the first one; the others follow it through the same chain.
+  const mine = events.map((entry, at) => ({ entry, at })).filter(({ entry }) => entry.request === 0);
+  const delivered = mine.find(({ entry }) => entry.state === "decoded")!.at;
+  const soFar = mine.filter(({ at }) => at <= index).map(({ entry }) => entry);
+  const WORDS = { resent: "lost, sent again", recovered: "failed, recovered", computed: "done" } as const;
+  const workerRows = Array.from({ length: nodes }, (_, worker) => {
+    const seen = soFar.filter((entry) => entry.stageIndex === worker && entry.state !== "scrubbed").map((entry) => WORDS[entry.state as keyof typeof WORDS]);
+    const done = seen.includes("done");
+    return { name: `worker ${worker}`, value: seen.length === 0 ? "waiting" : seen.join(", "), state: seen.length === 0 ? "todo" as const : done ? (seen.length > 1 ? "bad" as const : "done" as const) : "now" as const };
+  });
+  const trouble = soFar.filter((entry) => entry.state === "resent" || entry.state === "recovered").length;
+  const card = event.request > 0 ? 3 : event.state === "encrypted" ? 0 : index >= delivered ? 2 : 1;
+  const jump = [0, mine[1]?.at ?? 0, delivered, mine.at(-1)!.at + 1];
+  const scene = useMemo(() => pipelineScene({ nodes, failNode: fail && nodes > 1 ? 1 : null, events, index }), [nodes, fail, events, index]);
   const count = (state: string) => events.filter((entry) => entry.state === state).length;
   const answered = count("decoded");
+  const steps: ProcessStep[] = [
+    {
+      id: "sealed", title: "Sealed and sent", tone: "cipher",
+      does: `Your question leaves your device sealed, as request 1 of ${requests}, at ${events[0]!.timeMs.toFixed(1)} ms on this run's clock.`,
+      data: [{ kind: "rows", rows: [{ name: "request 1", value: "sealed, on its way", state: "done" }] }],
+    },
+    {
+      id: "chain", title: "Through the workers", tone: trouble > 0 ? "warn" : "accent",
+      does: event.request === 0 && event.stageIndex >= 0
+        ? `At ${event.timeMs.toFixed(1)} ms, worker ${event.stageIndex}: ${event.state === "resent" ? "the message was lost on the way and is sent again" : event.state === "recovered" ? "this worker failed; its work is recovered and done again" : event.state === "computed" ? "its part of the work is done and passed on" : "its memory is cleared"}.`
+        : `Each of the ${nodes} workers does its part and passes the request on. A lost message is sent again; a failed worker's part is recovered.`,
+      data: [{ kind: "rows", rows: workerRows }],
+    },
+    {
+      id: "back", title: "Back on your device", tone: "good",
+      does: `The result came back and was opened on your device at ${events[delivered]!.timeMs.toFixed(1)} ms${trouble > 0 ? `, after ${trouble} ${trouble === 1 ? "setback" : "setbacks"} on the way` : ""}. Now the answer can be written.`,
+      data: [{ kind: "rows", rows: [{ name: "request 1", value: "answered", state: "done" }, { name: "setbacks", value: String(trouble), state: trouble > 0 ? "bad" : "done" }] }],
+    },
+    ...(requests > 1 ? [{
+      id: "others", title: "The other requests", tone: "plain" as const,
+      does: event.request > 0 ? `Request ${event.request + 1} of ${requests} is at ${event.stage}: ${event.state}.` : `${requests - 1} more ${requests === 2 ? "request follows" : "requests follow"} through the same workers.`,
+      data: [{ kind: "rows" as const, rows: Array.from({ length: requests - 1 }, (_, other) => {
+        const last = events.filter((entry, at) => entry.request === other + 1 && at <= index).at(-1);
+        return { name: `request ${other + 2}`, value: last ? `${last.stage}: ${last.state}` : "waiting", state: !last ? "todo" as const : events.some((entry, at) => entry.request === other + 1 && entry.state === "decoded" && at <= index) ? "done" as const : "now" as const };
+      }) }],
+    }] : []),
+  ];
   const story: LiveStory = {
     plain: "Your question passes along a chain of workers. When a message is lost or a worker fails, it is sent again or recovered, and you still get your answer.",
     stage: "send",
+    steps,
+    step: Math.min(card, steps.length - 1),
+    done: index >= delivered,
+    speed: playback.speed,
+    onStep: (target) => playback.goTo(jump[target] ?? 0),
     input: <p>It travels as request 1 of {requests}, through {nodes} workers in a row.</p>,
     seenTitle: "What is happening right now",
     seen: <p>Request {event.request + 1} at <code>{event.stage}</code>: {event.state}. Step {playback.index + 1} of {events.length}.</p>,

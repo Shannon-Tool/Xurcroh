@@ -9,25 +9,48 @@ import { memoryScene } from "@/lib/scene/builders";
 import type { LiveStory } from "@/components/LiveIO";
 
 const hex = (bytes: number[]) => bytes.map((value) => value.toString(16).padStart(2, "0")).join(" ");
+import { writingTime } from "@/lib/show/generation";
+import { stepped, type ProcessStep } from "@/lib/show/process";
 import { useJourney } from "@/lib/show/question";
 
 export function MemoryLab() {
   const [synchronized, setSynchronized] = useState(true);
-  const playback = usePlayback(5);
   // While the model works, the question sits in memory. Its first four characters stand for it here.
   const journey = useJourney();
+  const playback = usePlayback(5, writingTime(journey.tokens.length));
   const steps = useMemo(() => simulateMemory(synchronized, journey.bytes), [synchronized, journey]);
   const scene = useMemo(() => memoryScene({ steps, index: playback.index }), [steps, playback.index]);
   const step = steps[playback.index]!;
   const residual = step.bytes.some((value) => value !== 0);
   const left = steps[steps.length - 1]!.bytes;
   const stale = left.some((value) => value !== 0);
+  const last = steps.length - 1;
+  // The engine's six operations in everyday words.
+  const PLAIN: Record<string, { title: string; does: string }> = {
+    allocate: { title: "Set aside", does: "Memory is set aside for your request, and the start of your question is written into it." },
+    execute: { title: "In use", does: "The model works on your question. The bytes stay in memory while it does." },
+    release: { title: "Handed back", does: "The work is done and the memory is handed back to the pool. Handing it back does not erase it." },
+    synchronize: synchronized ? { title: "Wipe put first", does: "The wipe is put ahead of any reuse: nobody gets this memory until the wipe has finished." } : { title: "Wipe only queued", does: "The wipe is only queued. Nothing waits for it to finish." },
+    zero: synchronized ? { title: "Wiped", does: "The wipe has run, and the memory was read back to confirm it." } : { title: "Not wiped yet", does: "The wipe has not run yet, so your bytes are still there." },
+    reuse: synchronized ? { title: "Next user", does: "The memory goes to the next request, which finds nothing of yours." } : { title: "Next user", does: "The memory goes to the next request, which can read the start of your question." },
+  };
+  const track: ProcessStep[] = steps.map((entry, at): ProcessStep => {
+    const holds = entry.bytes.some((value) => value !== 0);
+    const words = PLAIN[entry.operation] ?? { title: entry.operation, does: entry.note };
+    return {
+      id: `memory-${at}`, title: words.title, tone: at === last ? (holds ? "warn" : "good") : holds ? "accent" : "plain",
+      does: `${words.does} The four bytes now read ${hex(entry.bytes)}.`,
+      data: [{ kind: "bytes", bytes: entry.bytes, show: 4, readable: holds ? String.fromCharCode(...entry.bytes.map((value) => (value >= 32 && value < 127 ? value : 46))) : undefined }],
+    };
+  });
   const story: LiveStory = {
     plain: "While the model works on your question, the question sits in the graphics card's memory. When the answer is done, that memory is wiped before anyone else can get it. Skip the wipe, and the next user can read what was left behind.",
     stage: "wipe",
+    steps: track,
+    ...stepped(playback, last),
     input: <p>Its first four characters, “{journey.question.slice(0, 4)}”, are stored as the bytes <code>{hex(journey.bytes)}</code>.</p>,
     seenTitle: "What the next user of that memory reads",
-    seen: <p><code>{hex(left)}</code> {stale ? "— the start of your question, still there." : "— nothing of yours."}</p>,
+    seen: playback.index < last ? <p>Nothing yet: the memory is still in use for your request.</p> : <p><code>{hex(left)}</code> {stale ? "— the start of your question, still there." : "— nothing of yours."}</p>,
     output: stale ? <p>You got your answer, but part of your question leaked to the next request.</p> : <p>Afterwards the memory reads zeros. The next request cannot recover anything.</p>,
     outputTone: stale ? "warn" : "good",
     why: "Memory is handed to the next request only after the wipe has actually finished, so there is nothing left to read.",

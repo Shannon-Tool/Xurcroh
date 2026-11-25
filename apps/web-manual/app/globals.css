@@ -483,7 +483,8 @@ input[type="checkbox"] { width: 1rem; height: 1rem; }
 .data-more { align-self: center; margin-left: 0.25rem; color: var(--muted); font-size: 0.6rem; }
 .data-sum, .data-text { color: var(--text); white-space: normal; }
 .data-readable { margin-left: 0.35rem; color: var(--good); }
-.data-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.5rem; white-space: nowrap; }
+.data-rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 0.5rem; white-space: nowrap; }
+.data-rows.two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .data-line { display: flex; gap: 0.25rem; min-width: 0; overflow: hidden; }
 .data-line .data-value { overflow: hidden; text-overflow: ellipsis; }
 .data-line.todo { color: var(--muted); }

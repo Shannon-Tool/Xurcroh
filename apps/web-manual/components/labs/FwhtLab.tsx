@@ -7,6 +7,8 @@ import { PlaybackControls } from "@/components/PlaybackControls";
 import { usePlayback } from "@/components/usePlayback";
 import { fwhtScene } from "@/lib/scene/builders";
 import type { LiveStory } from "@/components/LiveIO";
+import { writingTime } from "@/lib/show/generation";
+import { stepped, type ProcessStep } from "@/lib/show/process";
 import { useJourney } from "@/lib/show/question";
 
 const short = (values: number[]) => values.map((value) => (Number.isInteger(value) ? String(value) : value.toFixed(2))).join(", ");
@@ -18,7 +20,8 @@ export function FwhtLab() {
   const lettersFor = (count: number) => Array.from({ length: count }, (_, index) => journey.letters[index % journey.letters.length]!).join(",");
   const [text, setText] = useState(lettersFor(8));
   useEffect(() => setText(Array.from({ length: dimension }, (_, index) => journey.letters[index % journey.letters.length]!).join(",")), [journey, dimension]);
-  const playback = usePlayback(Math.log2(dimension));
+  const rounds = Math.log2(dimension);
+  const playback = usePlayback(rounds, writingTime(journey.tokens.length));
   const result = useMemo<{ error?: string; stages: number[][]; output: number[] }>(() => {
     const values = text.split(",").map((value) => Number(value.trim()));
     if (values.length !== dimension || values.some((value) => !Number.isFinite(value))) {
@@ -32,9 +35,28 @@ export function FwhtLab() {
   }, [text, dimension]);
   const stage = result.stages[playback.index] ?? [];
   const scene = useMemo(() => fwhtScene({ stages: result.stages, step: playback.index }), [result, playback.index]);
+  const tidy = (values: number[]) => values.map((value) => (Number.isInteger(value) ? value : Number(value.toFixed(2))));
+  const steps: ProcessStep[] | undefined = result.error ? undefined : result.stages.map((values, round): ProcessStep => {
+    if (round === 0) {
+      return { id: "numbers", title: "Your numbers", tone: "good", does: `The first ${dimension} letters of your question as numbers (a = 1, b = 2, …). Each position holds one letter.`, data: [{ kind: "numbers", values: tidy(values), show: 8 }] };
+    }
+    const apart = 2 ** (round - 1);
+    const before = result.stages[round - 1]!;
+    const last = round === rounds;
+    // The last round is also divided by √d, so that the overall size of the list stays the same.
+    const scale = last ? Math.sqrt(dimension) : 1;
+    return {
+      id: `round-${round}`, title: `Round ${round}`, tone: last ? "good" : "accent",
+      does: `Numbers ${apart} apart are replaced by their sum and their difference: ${short([before[0]!])} and ${short([before[apart]!])} become ${short([before[0]! + before[apart]!])} and ${short([before[0]! - before[apart]!])}${last ? `, and everything is divided by √${dimension}` : ""}. After this round every number carries ${2 ** round} of your letters.`,
+      data: [{ kind: "numbers", values: tidy(values), show: 8 }, { kind: "sum", text: `${short([before[0]!])} ± ${short([before[apart]!])}${last ? ` ÷ √${dimension}` : ""} → ${short([(before[0]! + before[apart]!) / scale])}, ${short([(before[0]! - before[apart]!) / scale])}` }],
+    };
+  });
   const story: LiveStory = {
     plain: "A fast way to mix the numbers of your question so that every output depends on every input, using only additions and subtractions. Your device uses it to apply its disguises quickly.",
     stage: "prepare",
+    steps,
+    ...stepped(playback, rounds),
+    released: !result.error,
     input: result.error
       ? <p className="error">The list below is not {dimension} numbers.</p>
       : <p>Its first {dimension} letters as numbers (a = 1, b = 2, …): <code>{short(result.stages[0] ?? [])}</code>. They are mixed in {Math.log2(dimension)} rounds.</p>,

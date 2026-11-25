@@ -59,3 +59,8 @@ export function viewText(view: DataView): string {
     default: return view.text;
   }
 }
+
+/** The fields a lab's story needs from its playback when one playback position is one step. */
+export function stepped(playback: { index: number; speed: number; goTo(step: number): void }, last: number): { step: number; done: boolean; speed: number; onStep(step: number): void } {
+  return { step: playback.index, done: playback.index >= last, speed: playback.speed, onStep: playback.goTo };
+}
