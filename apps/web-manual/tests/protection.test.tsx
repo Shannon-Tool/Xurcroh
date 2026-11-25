@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/Scene3DView", () => ({ Scene3DView: ({ scene, overlay }: { scene: { caption: string }; overlay?: React.ReactNode }) => <div data-testid="view"><span data-testid="scene">{scene.caption}</span>{overlay}</div> }));
 
-import ProtectionPage from "@/app/protection/page";
+import Home from "@/app/page";
+import ProtectionPage, { metadata } from "@/app/protection/page";
 import { ProtectionTour } from "@/components/ProtectionTour";
 import { sections } from "@/lib/content";
 import { protectionScene } from "@/lib/scene/protection-scene";
@@ -122,5 +123,14 @@ describe("protection tour", () => {
     expect(limits).toHaveTextContent("its claims are under evaluation");
     expect(container.querySelector(".hero .evidence")).toHaveTextContent("Designed for defence in depth · claims under evaluation");
     expect((await axe(container)).violations).toHaveLength(0);
+  }, 20000);
+
+  it("says how many layers there are, and the number matches the list", () => {
+    const word = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"][PROTECTION_LAYERS.length]!;
+    expect(String(metadata.description)).toMatch(new RegExp(`^${word} layers of protection`));
+    const page = render(<ProtectionPage />);
+    expect(page.container).toHaveTextContent(`${word} layers stand between your data and anyone else`);
+    page.unmount();
+    expect(render(<Home />).container).toHaveTextContent(`${word} layers, each one shown working`);
   }, 20000);
 });

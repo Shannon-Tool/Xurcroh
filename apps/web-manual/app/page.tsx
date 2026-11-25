@@ -18,7 +18,7 @@ export default function Home() {
       <LiveShow autoPlay />
       <section className="overview" aria-labelledby="layers-title">
         <h2 id="layers-title">How your data is protected</h2>
-        <p>Six layers, each one shown working on your own input, with what it relies on and where it stops.</p>
+        <p>Seven layers, each one shown working on your own input, with what it relies on and where it stops.</p>
         <ol className="layer-row">
           {PROTECTION_LAYERS.map((layer) => (
             <li key={layer.id}><Link href="/protection"><strong>{layer.name}</strong><span>{layer.claim}</span></Link></li>

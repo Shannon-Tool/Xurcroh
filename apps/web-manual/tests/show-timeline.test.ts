@@ -10,7 +10,7 @@ function tick(state: ShowState, times = 1): ShowState {
 }
 
 describe("show timeline", () => {
-  it("plays the first unit slowly through all six steps and reveals it on the last", () => {
+  it("plays the first unit slowly through all eight steps and reveals it on the last", () => {
     let state = initialShow("text-shares", { playing: true, attract: false });
     const seen: string[] = [];
     for (let index = 0; index < SLOW_BEATS.length; index += 1) {

@@ -4,7 +4,7 @@ import { ProtectionTour } from "@/components/ProtectionTour";
 
 export const metadata: Metadata = {
   title: "How your data is protected",
-  description: "Six layers of protection, each shown working on your own input, with what it relies on and where it stops.",
+  description: "Seven layers of protection, each shown working on your own input, with what it relies on and where it stops.",
 };
 
 export default function ProtectionPage() {
@@ -14,7 +14,7 @@ export default function ProtectionPage() {
         <span className="evidence">Designed for defence in depth · claims under evaluation</span>
         <h1>How your data is protected</h1>
         <p>
-          Six layers stand between your data and anyone else. For each one this page names the threat, shows the mechanism working on
+          Seven layers stand between your data and anyone else. For each one this page names the threat, shows the mechanism working on
           input you type, and says plainly what it relies on and where it stops. Nothing here is a promise: it is what the design does
           and how far that has been checked.
         </p>

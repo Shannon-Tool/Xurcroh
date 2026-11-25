@@ -2,7 +2,7 @@ import type { ShowKind } from "@/lib/simulation/show";
 
 /**
  * Pacing of the live demonstration. A run is a list of units (tokens, picture steps, clip passes).
- * The first unit is played slowly through the six steps of one protected computation; the rest
+ * The first unit is played slowly through the eight steps of one protected computation; the rest
  * stream. This module only decides what is on stage when; it computes nothing itself.
  */
 
@@ -39,7 +39,7 @@ export interface ShowState {
   attract: boolean;
   /** Counts fresh starts, so restarting the same model is a visible change. */
   run: number;
-  /** Whether the first unit is played slowly through all six steps. Off for the reader's own input. */
+  /** Whether the first unit is played slowly through all eight steps. Off for the reader's own input. */
   slow: boolean;
 }
 

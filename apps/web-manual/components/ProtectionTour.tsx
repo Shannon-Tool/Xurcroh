@@ -35,7 +35,7 @@ const EVIDENCE_WORDS: Record<string, string> = {
 const LAYER_MS = 9000;
 
 /**
- * The protection as one story: six layers around your data. Each layer names the threat it answers, shows the
+ * The protection as one story: seven layers around your data. Each layer names the threat it answers, shows the
  * mechanism working on the reader's own input, and says what it relies on and where it stops.
  */
 export function ProtectionTour({ autoPlay = false }: { autoPlay?: boolean }) {
