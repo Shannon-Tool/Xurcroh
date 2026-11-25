@@ -1,0 +1,910 @@
+{
+  "attack-packet": {
+    "file": "attack-packet.gif",
+    "width": 702,
+    "height": 552,
+    "bytes": 1147498,
+    "stored": 45,
+    "frames": 45,
+    "seconds": 5.4,
+    "controls": [
+      "Restart",
+      "Alter a sealed packet"
+    ],
+    "notes": []
+  },
+  "attack-result": {
+    "file": "attack-result.gif",
+    "width": 702,
+    "height": 552,
+    "bytes": 1099643,
+    "stored": 45,
+    "frames": 45,
+    "seconds": 5.4,
+    "controls": [
+      "Restart",
+      "Tamper with a worker"
+    ],
+    "notes": []
+  },
+  "attack-software": {
+    "file": "attack-software.gif",
+    "width": 702,
+    "height": 552,
+    "bytes": 1057007,
+    "stored": 45,
+    "frames": 45,
+    "seconds": 5.4,
+    "controls": [
+      "Restart",
+      "Swap a worker's software"
+    ],
+    "notes": []
+  },
+  "diagram-architecture": {
+    "file": "diagram-architecture.gif",
+    "width": 650,
+    "height": 803,
+    "bytes": 756954,
+    "stored": 137,
+    "frames": 137,
+    "seconds": 16.4,
+    "controls": [
+      "Schematic drawing, step by step",
+      "Play walk-through",
+      "Pause",
+      "Next",
+      "Back",
+      "Show all",
+      "Look inside: Your question",
+      "Look inside: Split"
+    ],
+    "notes": []
+  },
+  "diagram-memory": {
+    "file": "diagram-memory.gif",
+    "width": 650,
+    "height": 594,
+    "bytes": 504186,
+    "stored": 137,
+    "frames": 137,
+    "seconds": 16.4,
+    "controls": [
+      "Schematic drawing, step by step",
+      "Play walk-through",
+      "Pause",
+      "Next",
+      "Back",
+      "Show all",
+      "Look inside: Allocate",
+      "Look inside: Execute"
+    ],
+    "notes": []
+  },
+  "diagram-runtime": {
+    "file": "diagram-runtime.gif",
+    "width": 650,
+    "height": 648,
+    "bytes": 636473,
+    "stored": 137,
+    "frames": 137,
+    "seconds": 16.4,
+    "controls": [
+      "Schematic drawing, step by step",
+      "Play walk-through",
+      "Pause",
+      "Next",
+      "Back",
+      "Show all",
+      "Look inside: Prompt",
+      "Look inside: Split"
+    ],
+    "notes": []
+  },
+  "eyes-match": {
+    "file": "eyes-match.gif",
+    "width": 702,
+    "height": 459,
+    "bytes": 1114594,
+    "stored": 58,
+    "frames": 58,
+    "seconds": 7,
+    "controls": [
+      "Restart",
+      "Two workers, matching pieces"
+    ],
+    "notes": []
+  },
+  "eyes-operator": {
+    "file": "eyes-operator.gif",
+    "width": 702,
+    "height": 459,
+    "bytes": 1137005,
+    "stored": 58,
+    "frames": 58,
+    "seconds": 7,
+    "controls": [
+      "Restart",
+      "The machine's operator"
+    ],
+    "notes": []
+  },
+  "eyes-relay": {
+    "file": "eyes-relay.gif",
+    "width": 702,
+    "height": 459,
+    "bytes": 1141259,
+    "stored": 58,
+    "frames": 58,
+    "seconds": 7,
+    "controls": [
+      "Restart",
+      "A Tor relay"
+    ],
+    "notes": []
+  },
+  "eyes-same": {
+    "file": "eyes-same.gif",
+    "width": 702,
+    "height": 459,
+    "bytes": 1178561,
+    "stored": 58,
+    "frames": 58,
+    "seconds": 7,
+    "controls": [
+      "Restart",
+      "Two workers, same piece"
+    ],
+    "notes": []
+  },
+  "eyes-wire": {
+    "file": "eyes-wire.gif",
+    "width": 702,
+    "height": 459,
+    "bytes": 1156850,
+    "stored": 58,
+    "frames": 58,
+    "seconds": 7,
+    "controls": [
+      "Restart",
+      "The network"
+    ],
+    "notes": []
+  },
+  "eyes-worker": {
+    "file": "eyes-worker.gif",
+    "width": 702,
+    "height": 459,
+    "bytes": 1173678,
+    "stored": 58,
+    "frames": 58,
+    "seconds": 7,
+    "controls": [
+      "Restart",
+      "One worker"
+    ],
+    "notes": []
+  },
+  "lab-conjugation": {
+    "file": "lab-conjugation.gif",
+    "width": 713,
+    "height": 401,
+    "bytes": 724738,
+    "stored": 64,
+    "frames": 64,
+    "seconds": 7.7,
+    "controls": [],
+    "notes": []
+  },
+  "lab-conjugation-controls": {
+    "file": "lab-conjugation-controls.gif",
+    "width": 689,
+    "height": 554,
+    "bytes": 689340,
+    "stored": 157,
+    "frames": 178,
+    "seconds": 21.4,
+    "controls": [
+      "Pause motion",
+      "Dimension: 3",
+      "Dimension: 4",
+      "Dimension: 2",
+      "Rotation θ",
+      "Step forward",
+      "Step back",
+      "Reset",
+      "Play",
+      "Pause",
+      "Speed: 0.5×",
+      "Speed: 2×",
+      "Speed: 4×",
+      "Speed: 1×",
+      "Watch",
+      "Stop",
+      "Hide 3D view",
+      "Show 3D view"
+    ],
+    "notes": []
+  },
+  "lab-diffusion": {
+    "file": "lab-diffusion.gif",
+    "width": 713,
+    "height": 401,
+    "bytes": 647948,
+    "stored": 64,
+    "frames": 64,
+    "seconds": 7.7,
+    "controls": [],
+    "notes": []
+  },
+  "lab-diffusion-controls": {
+    "file": "lab-diffusion-controls.gif",
+    "width": 689,
+    "height": 571,
+    "bytes": 468136,
+    "stored": 73,
+    "frames": 178,
+    "seconds": 21.4,
+    "controls": [
+      "Pause motion",
+      "Rotation",
+      "Euler steps",
+      "Step forward",
+      "Step back",
+      "Reset",
+      "Play",
+      "Pause",
+      "Speed: 0.5×",
+      "Speed: 2×",
+      "Speed: 4×",
+      "Speed: 1×",
+      "Watch",
+      "Stop",
+      "Hide 3D view",
+      "Show 3D view"
+    ],
+    "notes": []
+  },
+  "lab-freivalds": {
+    "file": "lab-freivalds.gif",
+    "width": 713,
+    "height": 401,
+    "bytes": 950736,
+    "stored": 67,
+    "frames": 67,
+    "seconds": 8,
+    "controls": [],
+    "notes": []
+  },
+  "lab-freivalds-controls": {
+    "file": "lab-freivalds-controls.gif",
+    "width": 689,
+    "height": 589,
+    "bytes": 453780,
+    "stored": 78,
+    "frames": 97,
+    "seconds": 11.6,
+    "controls": [
+      "Pause motion",
+      "Challenge vector r",
+      "Add one to the first product",
+      "Try to break it: change one number by one",
+      "Hide 3D view",
+      "Show 3D view"
+    ],
+    "notes": []
+  },
+  "lab-fwht": {
+    "file": "lab-fwht.gif",
+    "width": 713,
+    "height": 401,
+    "bytes": 1021561,
+    "stored": 64,
+    "frames": 64,
+    "seconds": 7.7,
+    "controls": [],
+    "notes": []
+  },
+  "lab-fwht-controls": {
+    "file": "lab-fwht-controls.gif",
+    "width": 689,
+    "height": 543,
+    "bytes": 676150,
+    "stored": 158,
+    "frames": 173,
+    "seconds": 20.8,
+    "controls": [
+      "Pause motion",
+      "Dimension: 4",
+      "Dimension: 16",
+      "Dimension: 8",
+      "Input vector",
+      "Step forward",
+      "Step back",
+      "Reset",
+      "Play",
+      "Pause",
+      "Speed: 0.5×",
+      "Speed: 2×",
+      "Speed: 4×",
+      "Speed: 1×",
+      "Watch",
+      "Stop",
+      "Hide 3D view",
+      "Show 3D view"
+    ],
+    "notes": []
+  },
+  "lab-memory": {
+    "file": "lab-memory.gif",
+    "width": 713,
+    "height": 401,
+    "bytes": 1032476,
+    "stored": 90,
+    "frames": 90,
+    "seconds": 10.8,
+    "controls": [],
+    "notes": []
+  },
+  "lab-memory-controls": {
+    "file": "lab-memory-controls.gif",
+    "width": 689,
+    "height": 594,
+    "bytes": 565415,
+    "stored": 159,
+    "frames": 174,
+    "seconds": 20.9,
+    "controls": [
+      "Pause motion",
+      "Complete wipe before reuse",
+      "Step forward",
+      "Step back",
+      "Reset",
+      "Play",
+      "Pause",
+      "Speed: 0.5×",
+      "Speed: 2×",
+      "Speed: 4×",
+      "Speed: 1×",
+      "Try to break it: skip the wipe",
+      "Watch",
+      "Stop",
+      "Hide 3D view",
+      "Show 3D view"
+    ],
+    "notes": []
+  },
+  "lab-moe": {
+    "file": "lab-moe.gif",
+    "width": 713,
+    "height": 401,
+    "bytes": 881140,
+    "stored": 64,
+    "frames": 64,
+    "seconds": 7.7,
+    "controls": [],
+    "notes": []
+  },
+  "lab-moe-controls": {
+    "file": "lab-moe-controls.gif",
+    "width": 689,
+    "height": 623,
+    "bytes": 787551,
+    "stored": 195,
+    "frames": 220,
+    "seconds": 26.4,
+    "controls": [
+      "Pause motion",
+      "Top-k: 2",
+      "Top-k: 3",
+      "Top-k: 1",
+      "Capacity",
+      "Constant-load protected dispatch",
+      "Step forward",
+      "Step back",
+      "Reset",
+      "Play",
+      "Pause",
+      "Speed: 0.5×",
+      "Speed: 2×",
+      "Speed: 4×",
+      "Speed: 1×",
+      "Try to break it: turn the padding off",
+      "Watch",
+      "Stop",
+      "Hide 3D view",
+      "Show 3D view"
+    ],
+    "notes": []
+  },
+  "lab-onion": {
+    "file": "lab-onion.gif",
+    "width": 713,
+    "height": 401,
+    "bytes": 862354,
+    "stored": 64,
+    "frames": 64,
+    "seconds": 7.7,
+    "controls": [],
+    "notes": []
+  },
+  "lab-onion-controls": {
+    "file": "lab-onion-controls.gif",
+    "width": 689,
+    "height": 629,
+    "bytes": 825445,
+    "stored": 190,
+    "frames": 219,
+    "seconds": 26.3,
+    "controls": [
+      "Pause motion",
+      "Tamper current ciphertext",
+      "Compromised relay",
+      "Colluding hops",
+      "Decrypt / verify",
+      "Step forward",
+      "Step back",
+      "Reset",
+      "Play",
+      "Pause",
+      "Speed: 0.5×",
+      "Speed: 2×",
+      "Speed: 4×",
+      "Speed: 1×",
+      "Try to break it: alter the sealed bytes",
+      "Watch",
+      "Stop",
+      "Hide 3D view",
+      "Show 3D view"
+    ],
+    "notes": []
+  },
+  "lab-pipeline": {
+    "file": "lab-pipeline.gif",
+    "width": 713,
+    "height": 401,
+    "bytes": 2061566,
+    "stored": 197,
+    "frames": 197,
+    "seconds": 23.6,
+    "controls": [],
+    "notes": []
+  },
+  "lab-pipeline-controls": {
+    "file": "lab-pipeline-controls.gif",
+    "width": 689,
+    "height": 623,
+    "bytes": 1112690,
+    "stored": 263,
+    "frames": 311,
+    "seconds": 37.3,
+    "controls": [
+      "Pause motion",
+      "Nodes: 2",
+      "Nodes: 3",
+      "Nodes: 5",
+      "Nodes: 6",
+      "Nodes: 8",
+      "Nodes: 4",
+      "Latency",
+      "Loss",
+      "Requests: 1",
+      "Requests: 4",
+      "Requests: 8",
+      "Requests: 2",
+      "Fail worker",
+      "Step forward",
+      "Step back",
+      "Reset",
+      "Play",
+      "Pause",
+      "Speed: 0.5×",
+      "Speed: 2×",
+      "Speed: 4×",
+      "Speed: 1×",
+      "Try to break it: fail worker 1",
+      "Stop",
+      "Watch",
+      "Hide 3D view",
+      "Show 3D view"
+    ],
+    "notes": []
+  },
+  "lab-placement": {
+    "file": "lab-placement.gif",
+    "width": 713,
+    "height": 401,
+    "bytes": 887053,
+    "stored": 67,
+    "frames": 67,
+    "seconds": 8,
+    "controls": [],
+    "notes": []
+  },
+  "lab-placement-controls": {
+    "file": "lab-placement-controls.gif",
+    "width": 689,
+    "height": 543,
+    "bytes": 254488,
+    "stored": 67,
+    "frames": 69,
+    "seconds": 8.3,
+    "controls": [
+      "Pause motion",
+      "Placement epoch",
+      "Reshuffle",
+      "Hide 3D view",
+      "Show 3D view"
+    ],
+    "notes": []
+  },
+  "lab-quantized-formats": {
+    "file": "lab-quantized-formats.gif",
+    "width": 713,
+    "height": 401,
+    "bytes": 1242725,
+    "stored": 90,
+    "frames": 90,
+    "seconds": 10.8,
+    "controls": [],
+    "notes": []
+  },
+  "lab-quantized-formats-controls": {
+    "file": "lab-quantized-formats-controls.gif",
+    "width": 689,
+    "height": 574,
+    "bytes": 557456,
+    "stored": 151,
+    "frames": 173,
+    "seconds": 20.8,
+    "controls": [
+      "Pause motion",
+      "Encoding: EXL2 mixed widths",
+      "Encoding: EXL3 procedural 3INST",
+      "Encoding: GGUF Q4_0",
+      "Integer codes",
+      "Step forward",
+      "Step back",
+      "Reset",
+      "Play",
+      "Pause",
+      "Speed: 0.5×",
+      "Speed: 2×",
+      "Speed: 4×",
+      "Speed: 1×",
+      "Watch",
+      "Stop",
+      "Hide 3D view",
+      "Show 3D view"
+    ],
+    "notes": []
+  },
+  "lab-share-grid": {
+    "file": "lab-share-grid.gif",
+    "width": 713,
+    "height": 401,
+    "bytes": 1018222,
+    "stored": 77,
+    "frames": 77,
+    "seconds": 9.2,
+    "controls": [],
+    "notes": []
+  },
+  "lab-share-grid-controls": {
+    "file": "lab-share-grid-controls.gif",
+    "width": 689,
+    "height": 594,
+    "bytes": 717198,
+    "stored": 168,
+    "frames": 197,
+    "seconds": 23.6,
+    "controls": [
+      "Pause motion",
+      "Share epoch",
+      "Tamper role (0,0)",
+      "Step forward",
+      "Step back",
+      "Reset",
+      "Play",
+      "Pause",
+      "Speed: 0.5×",
+      "Speed: 2×",
+      "Speed: 4×",
+      "Speed: 1×",
+      "Try to break it: tamper with worker (0,0)",
+      "Watch",
+      "Stop",
+      "Hide 3D view",
+      "Show 3D view"
+    ],
+    "notes": []
+  },
+  "pipeline-chapter": {
+    "file": "pipeline-chapter.gif",
+    "width": 615,
+    "height": 345,
+    "bytes": 1801050,
+    "stored": 108,
+    "frames": 108,
+    "seconds": 13,
+    "controls": [
+      "Restart"
+    ],
+    "notes": []
+  },
+  "pipeline-choices": {
+    "file": "pipeline-choices.gif",
+    "width": 702,
+    "height": 558,
+    "bytes": 2486973,
+    "stored": 112,
+    "frames": 112,
+    "seconds": 13.4,
+    "controls": [
+      "Restart",
+      "How is my prompt kept from the workers?",
+      "What if a worker returns a wrong answer?",
+      "What does a worker actually see?",
+      "Who runs the workers?",
+      "What happens to my data in memory afterwards?",
+      "What does this page not show?",
+      "Picture",
+      "Sunrise over the water",
+      "City at night"
+    ],
+    "notes": []
+  },
+  "pipeline-clip": {
+    "file": "pipeline-clip.gif",
+    "width": 702,
+    "height": 396,
+    "bytes": 2573496,
+    "stored": 138,
+    "frames": 138,
+    "seconds": 16.6,
+    "controls": [
+      "Restart",
+      "Clip"
+    ],
+    "notes": []
+  },
+  "pipeline-full-screen": {
+    "file": "pipeline-full-screen.gif",
+    "width": 768,
+    "height": 480,
+    "bytes": 1160410,
+    "stored": 64,
+    "frames": 64,
+    "seconds": 7.7,
+    "controls": [
+      "Restart",
+      "Full screen",
+      "Exit full screen"
+    ],
+    "notes": []
+  },
+  "pipeline-own-drawing": {
+    "file": "pipeline-own-drawing.gif",
+    "width": 702,
+    "height": 629,
+    "bytes": 2295312,
+    "stored": 111,
+    "frames": 111,
+    "seconds": 13.3,
+    "controls": [
+      "Restart",
+      "Your drawing",
+      "Clear",
+      "Drawing pad",
+      "Arrow",
+      "Smile"
+    ],
+    "notes": []
+  },
+  "pipeline-own-text": {
+    "file": "pipeline-own-text.gif",
+    "width": 702,
+    "height": 560,
+    "bytes": 1620538,
+    "stored": 80,
+    "frames": 80,
+    "seconds": 9.6,
+    "controls": [
+      "Restart",
+      "Your text",
+      "Type something"
+    ],
+    "notes": []
+  },
+  "pipeline-picture": {
+    "file": "pipeline-picture.gif",
+    "width": 702,
+    "height": 396,
+    "bytes": 3320517,
+    "stored": 181,
+    "frames": 181,
+    "seconds": 21.7,
+    "controls": [
+      "Restart",
+      "Picture"
+    ],
+    "notes": []
+  },
+  "pipeline-playback": {
+    "file": "pipeline-playback.gif",
+    "width": 702,
+    "height": 792,
+    "bytes": 2769701,
+    "stored": 105,
+    "frames": 105,
+    "seconds": 12.6,
+    "controls": [
+      "Restart",
+      "Pause",
+      "Next step",
+      "Play",
+      "Speed: 1×",
+      "Speed: 2×",
+      "What is real here"
+    ],
+    "notes": []
+  },
+  "pipeline-text": {
+    "file": "pipeline-text.gif",
+    "width": 702,
+    "height": 396,
+    "bytes": 4642286,
+    "stored": 268,
+    "frames": 268,
+    "seconds": 32.2,
+    "controls": [
+      "Restart",
+      "Text",
+      "You"
+    ],
+    "notes": []
+  },
+  "setting-effects": {
+    "file": "setting-effects.gif",
+    "width": 702,
+    "height": 474,
+    "bytes": 1261311,
+    "stored": 67,
+    "frames": 67,
+    "seconds": 8,
+    "controls": [
+      "Restart",
+      "Effects: on",
+      "Effects: off",
+      "Effects: auto"
+    ],
+    "notes": []
+  },
+  "setting-lab-fullscreen": {
+    "file": "setting-lab-fullscreen.gif",
+    "width": 768,
+    "height": 516,
+    "bytes": 454957,
+    "stored": 43,
+    "frames": 43,
+    "seconds": 5.2,
+    "controls": [
+      "Fullscreen",
+      "Exit fullscreen"
+    ],
+    "notes": []
+  },
+  "setting-motion": {
+    "file": "setting-motion.gif",
+    "width": 702,
+    "height": 474,
+    "bytes": 896420,
+    "stored": 52,
+    "frames": 52,
+    "seconds": 6.2,
+    "controls": [
+      "Restart",
+      "Pause motion",
+      "Play motion"
+    ],
+    "notes": []
+  },
+  "setting-picture": {
+    "file": "setting-picture.gif",
+    "width": 713,
+    "height": 401,
+    "bytes": 534739,
+    "stored": 50,
+    "frames": 50,
+    "seconds": 6,
+    "controls": [
+      "Your picture request: A city at night under the moon",
+      "Your picture request: A sunrise over the water"
+    ],
+    "notes": []
+  },
+  "setting-question": {
+    "file": "setting-question.gif",
+    "width": 615,
+    "height": 506,
+    "bytes": 1415103,
+    "stored": 84,
+    "frames": 84,
+    "seconds": 10.1,
+    "controls": [
+      "Your question: What if a worker returns a wrong answer?",
+      "Your question: What does a worker actually see?",
+      "Your question: Who runs the workers?",
+      "Your question: What happens to my data in memory afterwards?",
+      "Your question: What does this page not show?",
+      "Your question: How is my prompt kept from the workers?"
+    ],
+    "notes": []
+  },
+  "setting-theme": {
+    "file": "setting-theme.gif",
+    "width": 768,
+    "height": 516,
+    "bytes": 242660,
+    "stored": 49,
+    "frames": 49,
+    "seconds": 5.9,
+    "controls": [
+      "Dark theme",
+      "Light theme"
+    ],
+    "notes": []
+  },
+  "setting-view": {
+    "file": "setting-view.gif",
+    "width": 702,
+    "height": 474,
+    "bytes": 1179859,
+    "stored": 62,
+    "frames": 62,
+    "seconds": 7.4,
+    "controls": [
+      "Restart",
+      "Drag to turn",
+      "Zoom in",
+      "Zoom out",
+      "Reset view"
+    ],
+    "notes": []
+  },
+  "setting-words": {
+    "file": "setting-words.gif",
+    "width": 702,
+    "height": 515,
+    "bytes": 1102830,
+    "stored": 50,
+    "frames": 50,
+    "seconds": 6,
+    "controls": [
+      "Restart",
+      "Words: plain",
+      "Words: technical"
+    ],
+    "notes": []
+  },
+  "tour": {
+    "file": "tour.gif",
+    "width": 738,
+    "height": 456,
+    "bytes": 1778540,
+    "stored": 157,
+    "frames": 157,
+    "seconds": 18.8,
+    "controls": [
+      "Layer: Split",
+      "Layer: Separate",
+      "Layer: Enclave",
+      "Layer: Check",
+      "Layer: Seal and route",
+      "Layer: Wipe",
+      "Layer: Prove",
+      "Play the tour"
+    ],
+    "notes": []
+  }
+}

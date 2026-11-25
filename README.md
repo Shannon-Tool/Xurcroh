@@ -6,6 +6,453 @@ Every completed request produces a signed task trace that can be checked with `x
 
 > **Security status:** designed for defence in depth; claims under evaluation. Fortress implementation and production evidence are incomplete. Orthogonal transformations are computational obfuscation, not homomorphic encryption or a cryptographic non-reversibility proof.
 
+<!-- animations:start -->
+## See it run
+
+These are recordings of the interactive manual in `apps/web-manual`. They show a simulation that runs in the reader's browser, not the production engine: the questions and answers are prepared, the models are toys, the three relays stand in for a Tor circuit, and the enclaves are simulated. What is computed for real in the page is the share arithmetic, the three layers of AES-GCM, the signature check on each worker's report and the check on each result. The pace is set for viewing and measures nothing.
+
+There are 52 recordings (62 MB together), made frame by frame with `npm run record` in `apps/web-manual`. In the manual itself every one of these views is interactive.
+
+<p align="center"><img src="docs/media/animations/pipeline-text.gif" alt="Text: a prepared question to its answer. All eight steps once, slowly, then the rest of the answer token by token." width="100%"></p>
+
+**Text: a prepared question to its answer.** All eight steps once, slowly, then the rest of the answer token by token. From `/show`.
+
+### The pipeline
+
+A question goes in on the left and the answer comes out on the right. In between it is shuffled, split into random pieces, sealed in three layers, passed through three relays, computed by four workers in enclaves, checked and put back together.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/pipeline-picture.gif" alt="Picture. A prepared picture forms step by step on your device; the workers' screens show the noise each of them holds." width="100%"><br>
+<b>Picture</b><br>
+A prepared picture forms step by step on your device; the workers' screens show the noise each of them holds.<br>
+<sub>From <code>/show</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/pipeline-clip.gif" alt="Clip. Twelve frames of a short clip, two steps per frame, then the finished clip playing." width="100%"><br>
+<b>Clip</b><br>
+Twelve frames of a short clip, two steps per frame, then the finished clip playing.<br>
+<sub>From <code>/show</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/pipeline-own-text.gif" alt="Your text. Text typed by the reader; a toy model writes it backwards, one character per step, on random pieces." width="100%"><br>
+<b>Your text</b><br>
+Text typed by the reader; a toy model writes it backwards, one character per step, on random pieces.<br>
+<sub>From <code>/show</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/pipeline-own-drawing.gif" alt="Your drawing. A drawing made on the pad is mirrored and embossed by a toy model; then the ready-made drawings." width="100%"><br>
+<b>Your drawing</b><br>
+A drawing made on the pad is mirrored and embossed by a toy model; then the ready-made drawings.<br>
+<sub>From <code>/show</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/pipeline-chapter.gif" alt="Chapter size. The same pipeline as it appears inside chapters 5 and 7 (the first seconds of a run)." width="100%"><br>
+<b>Chapter size</b><br>
+The same pipeline as it appears inside chapters 5 and 7 (the first seconds of a run).<br>
+<sub>From <code>/05-system-architecture</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/pipeline-choices.gif" alt="Prepared prompts and pictures. The six prepared questions and the two prepared pictures, chosen one after another." width="100%"><br>
+<b>Prepared prompts and pictures</b><br>
+The six prepared questions and the two prepared pictures, chosen one after another.<br>
+<sub>From <code>/show</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/pipeline-playback.gif" alt="Pause, step, speed, restart. The playback controls; then the panel that lists what is real and what is prepared is closed and opened (only its first lines are in the picture)." width="100%"><br>
+<b>Pause, step, speed, restart</b><br>
+The playback controls; then the panel that lists what is real and what is prepared is closed and opened (only its first lines are in the picture).<br>
+<sub>From <code>/show</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/pipeline-full-screen.gif" alt="Full screen. The demonstration filling the window." width="100%"><br>
+<b>Full screen</b><br>
+The demonstration filling the window.<br>
+<sub>From <code>/show</code></sub>
+</td>
+</tr>
+</table>
+
+### The pipeline through someone else's eyes
+
+“Whose eyes?” rebuilds the view of another party from what that party really holds.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/eyes-worker.gif" alt="One worker. One worker's view: one piece of your data and one piece of the model. Noise." width="100%"><br>
+<b>One worker</b><br>
+One worker's view: one piece of your data and one piece of the model. Noise.<br>
+<sub>From <code>/show</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/eyes-same.gif" alt="Two workers, same piece. Two workers that hold the same piece of your data, pooling what they have. Still noise." width="100%"><br>
+<b>Two workers, same piece</b><br>
+Two workers that hold the same piece of your data, pooling what they have. Still noise.<br>
+<sub>From <code>/show</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/eyes-match.gif" alt="Two workers, matching pieces. Two workers that hold both pieces rebuild what you see. This is where the design stops: it relies on such workers not pooling what they hold." width="100%"><br>
+<b>Two workers, matching pieces</b><br>
+Two workers that hold both pieces rebuild what you see. This is where the design stops: it relies on such workers not pooling what they hold.<br>
+<sub>From <code>/show</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/eyes-relay.gif" alt="A Tor relay. The middle relay's view: sealed bytes and the next stop." width="100%"><br>
+<b>A Tor relay</b><br>
+The middle relay's view: sealed bytes and the next stop.<br>
+<sub>From <code>/show</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/eyes-wire.gif" alt="The network. Someone watching the network sees encrypted bytes: how much and when, not what." width="100%"><br>
+<b>The network</b><br>
+Someone watching the network sees encrypted bytes: how much and when, not what.<br>
+<sub>From <code>/show</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/eyes-operator.gif" alt="The machine's operator. The operator of the machine sees an enclave it cannot look into (simulated here; one more layer, not proof)." width="100%"><br>
+<b>The machine's operator</b><br>
+The operator of the machine sees an enclave it cannot look into (simulated here; one more layer, not proof).<br>
+<sub>From <code>/show</code></sub>
+</td>
+</tr>
+</table>
+
+### Trying to break the pipeline
+
+Each attack is caught by the real check, and the step is done again.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/attack-result.gif" alt="Tamper with a worker. One worker's result is changed by one. The check rejects it and the step is done again." width="100%"><br>
+<b>Tamper with a worker</b><br>
+One worker's result is changed by one. The check rejects it and the step is done again.<br>
+<sub>From <code>/show</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/attack-software.gif" alt="Swap a worker's software. A worker's signed report no longer matches the expected software. Nothing is sent to it." width="100%"><br>
+<b>Swap a worker's software</b><br>
+A worker's signed report no longer matches the expected software. Nothing is sent to it.<br>
+<sub>From <code>/show</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/attack-packet.gif" alt="Alter a sealed packet. One bit of a sealed packet is flipped. The relay's authenticity check fails and the packet is dropped." width="100%"><br>
+<b>Alter a sealed packet</b><br>
+One bit of a sealed packet is flipped. The relay's authenticity check fails and the packet is dropped.<br>
+<sub>From <code>/show</code></sub>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+### The eleven laboratories
+
+Each laboratory shows one stop of the trip from a question to its answer: what goes in, what the other party sees, what comes out.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-share-grid.gif" alt="Splitting your question. Your question becomes numbers, cut into two random pieces; four workers each work on one piece." width="100%"><br>
+<b>Splitting your question</b><br>
+Your question becomes numbers, cut into two random pieces; four workers each work on one piece.<br>
+<sub>From <code>/laboratory#share-grid</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-freivalds.gif" alt="Catching a wrong answer. Every result a worker returns is tested against a random challenge before it is used." width="100%"><br>
+<b>Catching a wrong answer</b><br>
+Every result a worker returns is tested against a random challenge before it is used.<br>
+<sub>From <code>/laboratory#freivalds</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-quantized-formats.gif" alt="Storing the model in pieces. The model's compressed numbers are decoded exactly and split into pieces as well." width="100%"><br>
+<b>Storing the model in pieces</b><br>
+The model's compressed numbers are decoded exactly and split into pieces as well.<br>
+<sub>From <code>/laboratory#quantized-formats</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-placement.gif" alt="Deciding who gets which piece. Pieces that fit together are placed with different providers in different countries." width="100%"><br>
+<b>Deciding who gets which piece</b><br>
+Pieces that fit together are placed with different providers in different countries.<br>
+<sub>From <code>/laboratory#placement</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-conjugation.gif" alt="Disguising the numbers. The numbers are rotated with a secret rotation before they leave. A disguise, not encryption." width="100%"><br>
+<b>Disguising the numbers</b><br>
+The numbers are rotated with a secret rotation before they leave. A disguise, not encryption.<br>
+<sub>From <code>/laboratory#conjugation</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-fwht.gif" alt="Mixing the numbers quickly. A fast mixing transform spreads every number across all the others." width="100%"><br>
+<b>Mixing the numbers quickly</b><br>
+A fast mixing transform spreads every number across all the others.<br>
+<sub>From <code>/laboratory#fwht</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-pipeline.gif" alt="Getting your answer when a worker fails. Requests pass from worker to worker; a failed worker is noticed and the work is sent again." width="100%"><br>
+<b>Getting your answer when a worker fails</b><br>
+Requests pass from worker to worker; a failed worker is noticed and the work is sent again.<br>
+<sub>From <code>/laboratory#pipeline</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-onion.gif" alt="Hiding the route. The message is wrapped in layers; each relay removes one and learns only the next stop." width="100%"><br>
+<b>Hiding the route</b><br>
+The message is wrapped in layers; each relay removes one and learns only the next stop.<br>
+<sub>From <code>/laboratory#onion</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-moe.gif" alt="Hiding which experts were used. Every expert receives the same amount of work, so the load does not reveal the question." width="100%"><br>
+<b>Hiding which experts were used</b><br>
+Every expert receives the same amount of work, so the load does not reveal the question.<br>
+<sub>From <code>/laboratory#moe</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-diffusion.gif" alt="Making a picture. A picture is produced step by step from numbers the worker only sees in disguise." width="100%"><br>
+<b>Making a picture</b><br>
+A picture is produced step by step from numbers the worker only sees in disguise.<br>
+<sub>From <code>/laboratory#diffusion</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-memory.gif" alt="Wiping memory afterwards. Memory is wiped, and the wipe confirmed finished, before it is handed to anyone else." width="100%"><br>
+<b>Wiping memory afterwards</b><br>
+Memory is wiped, and the wipe confirmed finished, before it is handed to anyone else.<br>
+<sub>From <code>/laboratory#memory</code></sub>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+### Every control of every laboratory
+
+The same laboratories with their controls underneath. A yellow outline marks the control being used; the 3D scene is held still so that only the control's effect changes the picture, and the text between the stage and the controls is left out of the frame.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-share-grid-controls.gif" alt="Splitting your question: every control. Each control is changed in turn and put back." width="100%"><br>
+<b>Splitting your question: every control</b><br>
+Each control is changed in turn and put back.<br>
+<sub>Controls used: Pause motion · Share epoch · Tamper role (0,0) · Step forward · Step back · Reset · Play · Pause · Speed: 0.5× · Speed: 2× · Speed: 4× · Speed: 1× · Try to break it: tamper with worker (0,0) · Watch · Stop · Hide 3D view · Show 3D view</sub><br>
+<sub>From <code>/laboratory#share-grid</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-freivalds-controls.gif" alt="Catching a wrong answer: every control. Each control is changed in turn and put back." width="100%"><br>
+<b>Catching a wrong answer: every control</b><br>
+Each control is changed in turn and put back.<br>
+<sub>Controls used: Pause motion · Challenge vector r · Add one to the first product · Try to break it: change one number by one · Hide 3D view · Show 3D view</sub><br>
+<sub>From <code>/laboratory#freivalds</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-quantized-formats-controls.gif" alt="Storing the model in pieces: every control. Each control is changed in turn and put back." width="100%"><br>
+<b>Storing the model in pieces: every control</b><br>
+Each control is changed in turn and put back.<br>
+<sub>Controls used: Pause motion · Encoding: EXL2 mixed widths · Encoding: EXL3 procedural 3INST · Encoding: GGUF Q4_0 · Integer codes · Step forward · Step back · Reset · Play · Pause · Speed: 0.5× · Speed: 2× · Speed: 4× · Speed: 1× · Watch · Stop · Hide 3D view · Show 3D view</sub><br>
+<sub>From <code>/laboratory#quantized-formats</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-placement-controls.gif" alt="Deciding who gets which piece: every control. Each control is changed in turn and put back." width="100%"><br>
+<b>Deciding who gets which piece: every control</b><br>
+Each control is changed in turn and put back.<br>
+<sub>Controls used: Pause motion · Placement epoch · Reshuffle · Hide 3D view · Show 3D view</sub><br>
+<sub>From <code>/laboratory#placement</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-conjugation-controls.gif" alt="Disguising the numbers: every control. Each control is changed in turn and put back." width="100%"><br>
+<b>Disguising the numbers: every control</b><br>
+Each control is changed in turn and put back.<br>
+<sub>Controls used: Pause motion · Dimension: 3 · Dimension: 4 · Dimension: 2 · Rotation θ · Step forward · Step back · Reset · Play · Pause · Speed: 0.5× · Speed: 2× · Speed: 4× · Speed: 1× · Watch · Stop · Hide 3D view · Show 3D view</sub><br>
+<sub>From <code>/laboratory#conjugation</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-fwht-controls.gif" alt="Mixing the numbers quickly: every control. Each control is changed in turn and put back." width="100%"><br>
+<b>Mixing the numbers quickly: every control</b><br>
+Each control is changed in turn and put back.<br>
+<sub>Controls used: Pause motion · Dimension: 4 · Dimension: 16 · Dimension: 8 · Input vector · Step forward · Step back · Reset · Play · Pause · Speed: 0.5× · Speed: 2× · Speed: 4× · Speed: 1× · Watch · Stop · Hide 3D view · Show 3D view</sub><br>
+<sub>From <code>/laboratory#fwht</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-pipeline-controls.gif" alt="Getting your answer when a worker fails: every control. Each control is changed in turn and put back." width="100%"><br>
+<b>Getting your answer when a worker fails: every control</b><br>
+Each control is changed in turn and put back.<br>
+<sub>Controls used: Pause motion · Nodes: 2 · Nodes: 3 · Nodes: 5 · Nodes: 6 · Nodes: 8 · Nodes: 4 · Latency · Loss · Requests: 1 · Requests: 4 · Requests: 8 · Requests: 2 · Fail worker · Step forward · Step back · Reset · Play · Pause · Speed: 0.5× · Speed: 2× · Speed: 4× · Speed: 1× · Try to break it: fail worker 1 · Stop · Watch · Hide 3D view · Show 3D view</sub><br>
+<sub>From <code>/laboratory#pipeline</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-onion-controls.gif" alt="Hiding the route: every control. Each control is changed in turn and put back." width="100%"><br>
+<b>Hiding the route: every control</b><br>
+Each control is changed in turn and put back.<br>
+<sub>Controls used: Pause motion · Tamper current ciphertext · Compromised relay · Colluding hops · Decrypt / verify · Step forward · Step back · Reset · Play · Pause · Speed: 0.5× · Speed: 2× · Speed: 4× · Speed: 1× · Try to break it: alter the sealed bytes · Watch · Stop · Hide 3D view · Show 3D view</sub><br>
+<sub>From <code>/laboratory#onion</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-moe-controls.gif" alt="Hiding which experts were used: every control. Each control is changed in turn and put back." width="100%"><br>
+<b>Hiding which experts were used: every control</b><br>
+Each control is changed in turn and put back.<br>
+<sub>Controls used: Pause motion · Top-k: 2 · Top-k: 3 · Top-k: 1 · Capacity · Constant-load protected dispatch · Step forward · Step back · Reset · Play · Pause · Speed: 0.5× · Speed: 2× · Speed: 4× · Speed: 1× · Try to break it: turn the padding off · Watch · Stop · Hide 3D view · Show 3D view</sub><br>
+<sub>From <code>/laboratory#moe</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-diffusion-controls.gif" alt="Making a picture: every control. Each control is changed in turn and put back." width="100%"><br>
+<b>Making a picture: every control</b><br>
+Each control is changed in turn and put back.<br>
+<sub>Controls used: Pause motion · Rotation · Euler steps · Step forward · Step back · Reset · Play · Pause · Speed: 0.5× · Speed: 2× · Speed: 4× · Speed: 1× · Watch · Stop · Hide 3D view · Show 3D view</sub><br>
+<sub>From <code>/laboratory#diffusion</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/lab-memory-controls.gif" alt="Wiping memory afterwards: every control. Each control is changed in turn and put back." width="100%"><br>
+<b>Wiping memory afterwards: every control</b><br>
+Each control is changed in turn and put back.<br>
+<sub>Controls used: Pause motion · Complete wipe before reuse · Step forward · Step back · Reset · Play · Pause · Speed: 0.5× · Speed: 2× · Speed: 4× · Speed: 1× · Try to break it: skip the wipe · Watch · Stop · Hide 3D view · Show 3D view</sub><br>
+<sub>From <code>/laboratory#memory</code></sub>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+### The protection tour
+
+The protection as seven layers around the data, one at a time.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/tour.gif" alt="Seven layers, one at a time. Split, Separate, Enclave, Check, Seal and route, Wipe, Prove: each with its guard post lit around the data." width="100%"><br>
+<b>Seven layers, one at a time</b><br>
+Split, Separate, Enclave, Check, Seal and route, Wipe, Prove: each with its guard post lit around the data.<br>
+<sub>From <code>/protection</code></sub>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+### Chapter diagrams
+
+The schematic drawings of chapters 5, 7 and 9, stepped through with the real values of the chosen question.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/diagram-architecture.gif" alt="System architecture. From the question on your device to the combined answer, part by part." width="100%"><br>
+<b>System architecture</b><br>
+From the question on your device to the combined answer, part by part.<br>
+<sub>From <code>/05-system-architecture</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/diagram-runtime.gif" alt="Runtime loop. One token round the loop: split, compute, check, combine, next layer, next token." width="100%"><br>
+<b>Runtime loop</b><br>
+One token round the loop: split, compute, check, combine, next layer, next token.<br>
+<sub>From <code>/07-inference-runtime</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/diagram-memory.gif" alt="Memory life cycle. Allocate, execute, release, synchronise, zero, reuse, and what goes wrong if a step is skipped." width="100%"><br>
+<b>Memory life cycle</b><br>
+Allocate, execute, release, synchronise, zero, reuse, and what goes wrong if a step is skipped.<br>
+<sub>From <code>/09-memory-security</code></sub>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+### Settings
+
+The choices a reader can make on any page.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/setting-question.gif" alt="Your question. Six prepared questions. The choice is shared by the chapters, the laboratories, the diagrams and the tour." width="100%"><br>
+<b>Your question</b><br>
+Six prepared questions. The choice is shared by the chapters, the laboratories, the diagrams and the tour.<br>
+<sub>From <code>/05-system-architecture</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/setting-picture.gif" alt="Your picture request. Two prepared picture requests, used by the picture laboratory." width="100%"><br>
+<b>Your picture request</b><br>
+Two prepared picture requests, used by the picture laboratory.<br>
+<sub>From <code>/laboratory#diffusion</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/setting-words.gif" alt="Plain or technical words. Everyday wording, or the terms the chapters use." width="100%"><br>
+<b>Plain or technical words</b><br>
+Everyday wording, or the terms the chapters use.<br>
+<sub>From <code>/show</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/setting-effects.gif" alt="Glow effects: on, off, automatic. Glow and shadows can be switched off; “auto” switches them off by itself on slow graphics hardware, as it does on the machine that made these recordings." width="100%"><br>
+<b>Glow effects: on, off, automatic</b><br>
+Glow and shadows can be switched off; “auto” switches them off by itself on slow graphics hardware, as it does on the machine that made these recordings.<br>
+<sub>From <code>/show</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/setting-motion.gif" alt="Pause motion. The 3D view stands still on request (and always does for readers who ask their system for reduced motion)." width="100%"><br>
+<b>Pause motion</b><br>
+The 3D view stands still on request (and always does for readers who ask their system for reduced motion).<br>
+<sub>From <code>/show</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/setting-view.gif" alt="Turn, zoom and reset the 3D view. Every 3D view can be dragged round, zoomed and reset." width="100%"><br>
+<b>Turn, zoom and reset the 3D view</b><br>
+Every 3D view can be dragged round, zoomed and reset.<br>
+<sub>From <code>/show</code></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/media/animations/setting-theme.gif" alt="Light and dark theme. The pages switch between a light and a dark theme; the stages are dark in both." width="100%"><br>
+<b>Light and dark theme</b><br>
+The pages switch between a light and a dark theme; the stages are dark in both.<br>
+<sub>From <code>/laboratory#share-grid</code></sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/media/animations/setting-lab-fullscreen.gif" alt="A laboratory filling the window. Every laboratory has a Fullscreen button." width="100%"><br>
+<b>A laboratory filling the window</b><br>
+Every laboratory has a Fullscreen button.<br>
+<sub>From <code>/laboratory#share-grid</code></sub>
+</td>
+</tr>
+</table>
+
+<!-- animations:end -->
+
 ## Public Python API
 
 ```python
