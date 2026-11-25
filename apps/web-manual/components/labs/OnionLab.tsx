@@ -144,8 +144,8 @@ export function OnionLab() {
       does: wrapped === 0 ? "Your device seals the bytes three times, the layer for the last relay first."
         : `Layer ${wrapped} of 3 is on: sealed with a key shared with relay ${4 - wrapped} (AES-256-GCM). The packet is now ${layers[3 - wrapped]!.ciphertext.length} bytes and none of them is readable.`,
       data: [
-        { kind: "rows", rows: [2, 1, 0].map((relay, order) => ({ name: `relay ${relay + 1}`, value: order < wrapped ? `${layers[relay]!.ciphertext.length} b` : "wait", state: order < wrapped - 1 ? "done" as const : order === wrapped - 1 ? "now" as const : "todo" as const })) },
         ...(wrapped > 0 ? [{ kind: "bytes" as const, bytes: layers[3 - wrapped]!.ciphertext, show: 6 }] : []),
+        { kind: "rows", rows: [2, 1, 0].map((relay, order) => ({ name: `relay ${relay + 1}`, value: order < wrapped ? `${layers[relay]!.ciphertext.length} b` : "wait", state: order < wrapped - 1 ? "done" as const : order === wrapped - 1 ? "now" as const : "todo" as const })) },
       ],
     },
     relayStep(0), relayStep(1), relayStep(2),

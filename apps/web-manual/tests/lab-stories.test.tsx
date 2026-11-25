@@ -145,7 +145,10 @@ describe("every lab as steps from what goes in to what comes out", () => {
     tellsItsSteps(["The work", ...operations, "Nobody holds a pair"]);
     expect(card("seen")).toHaveTextContent("Nothing yet.");
     go(operations[0]!);
-    for (const role of roles.filter((entry) => entry.operation === operations[0])) expect(now()).toHaveTextContent(`${role.provider} ${role.country.toUpperCase()}`);
+    for (const role of roles.filter((entry) => entry.operation === operations[0])) {
+      expect(now()).toHaveTextContent(`${role.provider.replace("provider-", "#")} ${role.country.toUpperCase()}`);
+      expect(said()).toHaveTextContent(`to ${role.provider} in ${role.country.toUpperCase()}`);
+    }
     expect(card("seen").textContent).toMatch(new RegExp(`^What .* holds(${operations[0]} \\(\\d,\\d\\) and nothing else|Nothing yet)`));
     toEnd();
     expect(said()).toHaveTextContent(/Checked: 0 of \d+ providers hold two pieces of the same operation/);

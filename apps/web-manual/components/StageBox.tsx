@@ -9,7 +9,8 @@ import type { Scene3D } from "@/lib/scene/types";
 /**
  * The stage every animation in the manual is shown on: a dark 16:9 box with the 3D scene in the middle,
  * a column of panels on the left (what goes in), another on the right (what comes out or what others
- * see), and along the bottom the caption and the data in each form it takes.
+ * see), and along the bottom the caption and the data in each form it takes, or a lab's row of steps
+ * (such a stage is 16:10 on wide screens, so the steps have room).
  */
 export function StageBox({ scene, direct, autoRotate, screens, screensVersion, left, right, caption, why, forms, current, ribbonLabel, foot, label }: {
   scene: Scene3D;

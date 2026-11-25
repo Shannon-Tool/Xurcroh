@@ -46,13 +46,13 @@ export function PlacementLab() {
       return {
         id: `op-${at}`, title: operation, tone: "accent",
         does: `The four pieces of “${operation}” go to four different providers: ${own.map((role) => `(${role.activationShare},${role.weightShare}) to ${role.provider} in ${role.country.toUpperCase()}`).join(", ")}.`,
-        data: [{ kind: "rows", rows: own.map((role) => ({ name: `(${role.activationShare},${role.weightShare})`, value: `${role.provider} ${role.country.toUpperCase()}`, state: "done" as const })) }],
+        data: [{ kind: "rows", rows: own.map((role) => ({ name: `(${role.activationShare},${role.weightShare})`, value: `${role.provider.replace("provider-", "#")} ${role.country.toUpperCase()}`, state: "done" as const })) }],
       };
     }),
     {
       id: "check", title: pairs === 0 ? "Nobody holds a pair" : "A pair is held", tone: pairs === 0 ? "good" : "warn",
       does: pairs === 0 ? `Checked: ${pairs} of ${holdings.size} providers hold two pieces of the same operation, so no single provider can put your data back together.` : `${pairs} of ${holdings.size} providers hold two pieces of the same operation: this placement must not be used.`,
-      data: [{ kind: "rows", rows: [{ name: "providers", value: String(holdings.size), state: "done" }, { name: "holding a pair", value: String(pairs), state: pairs === 0 ? "done" : "bad" }] }],
+      data: [{ kind: "rows", rows: [{ name: "providers", value: String(holdings.size), state: "done" }, { name: "pairs held", value: String(pairs), state: pairs === 0 ? "done" : "bad" }] }],
     },
   ];
   const story: LiveStory = {
