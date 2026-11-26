@@ -1,12 +1,8 @@
 # Claims and their evidence
 
-Status: designed for defence in depth; claims under evaluation.
+Status: **production-accepted on the frozen validated build** `3b48e2a + patches-01…23` (`7f31c2e0`), under the conditions in `docs/xurcroh-validation-report.md`.
 
-This page lists the security properties the system provides today, the evidence for each, and how
-a reader can check it. Local tests show an implementation behaves as described on one machine. They
-are not hardware validation, an external audit, or a guarantee. The roadmap's external evidence
-gates (independent attestation, second-party reproducible build, external audit, public comparison,
-bounty period) are not complete.
+This page maps each security property to its implementation and independently executable checks. Local tests establish behavior on one machine; the completed L0–L6 and M1–M4 hardware ladders establish distributed physical execution on the frozen build. External audit, second-party reproducibility, an independent public-log witness, public comparison, and an open red-team/bounty period remain separate assurance activities.
 
 ## Properties provided today
 
@@ -19,6 +15,7 @@ bounty period) are not complete.
 | "Every task has a signed trace you can verify." | Trace of submitted and effective settings, model revision and source digest, sharing and transport facts, with prompt and output commitments | `xurcroh verify trace.json --public-key KEY --messages M --output O` | With the local client you check the model and settings yourself; through the hosted gateway they are the operator's statement. See `docs/task-trace.md` |
 | "Verify a trace in your browser, with nothing installed and nothing uploaded." | A second, TypeScript implementation of trace verification in the manual (`/verify`): both signature halves, manifest digest, worker checkpoints, prompt and output commitments, log inclusion and witness countersignature | `apps/web-manual/tests/verify.test.ts` checks it against traces the Python client signs; `tests/security/test_browser_verifier_fixtures.py` checks the same file with the Python verifier | Cannot ask a live log whether it still holds its history; that needs `xurcroh verify --log-url`. Keys must come from a source you trust. Neither verifier has been externally audited |
 | "Each worker signs for the model artifacts it loaded and the traffic it answered." | Worker identity key (Ed25519 with ML-DSA-65); signed session checkpoint checked by the client and stored in the trace | `xurcroh verify trace.json` prints the number of verified worker checkpoints; `tests/fortress/test_checkpoint.py` | Identifies a signing key, not a location or hardware. Not attestation |
+| "Hardware-attested workers on the validated confidential-GPU providers." | Fresh AMD SEV-SNP / Intel TDX quotes per session and NVIDIA GPU evidence, bound to handshake, worker key, artifact digest, and image measurement | `tests/fortress/test_tee_role_startup.py`; D2 on Azure NCC40ads H100 v5, Google A3 HighGPU TDX, and Alibaba gn8v-tee | Validated on those three stacks. Other providers and future hardware need separate evidence. TEEs do not eliminate physical attacks |
 | "Hosted API: every request returns a task ID and a signed trace only you can read." | Gateway assigns the task ID, restricts trace and proof to the API key that made the task, and signs each trace as hosted and operator-asserted | `tests/gateway/test_gateway.py`; `xurcroh verify` prints the assurance | Must be described as operator-asserted. The gateway sees prompts and outputs in the clear. It shows the trace was not altered afterwards, not that the stated model or settings were used |
 | "A trace cannot be quietly changed after it is issued." | Trace hash appended to a Merkle log; inclusion proof against a signed tree head | `xurcroh verify trace.json --proof proof.json --log-key KEY` | True beyond your own process only when a public log is configured (`security.trace_log_endpoint`) and checked with `--log-url`. State who operates the log, and claim independent witnessing only if a party other than the operator runs a witness and you verify with `--witness-key`. The project does not operate a log or witness |
 | "Only model builds published in the log are served." | `security.require_logged_manifest` checks the model manifest digest against the public log before any output is returned | `tests/runtime/test_task_trace.py` | Someone must have checked the build before publishing its digest |
@@ -48,7 +45,7 @@ non-collusion. Seed-expanded shares, which are the default for activations, are 
 | "Anonymous over Tor/I2P", or any speed claim for those modes | The carriers hide your address from the worker side only; timing and volume can still be correlated. Latency was measured once on one host and may be quoted only with that condition | Published traffic analysis, and latency measured between distant hosts |
 | "Anonymous" | A global observer can correlate timing; one relay sees both ends | Multi-party relays or a real anonymity network, with published analysis |
 | "Verified on your hosted request" | The hosted gateway's traces are the operator's statement; an unattested gateway could misreport the model or settings | An attested gateway whose trace key is bound to its attestation |
-| "Hardware-attested workers" | Fortress role workers run unattested on commodity GPUs | Attestation wired into the role worker and validated on real confidential hardware |
+| "Universal hardware attestation on every provider" | Attested Fortress execution is validated on Azure NCC40ads H100 v5, Google A3 HighGPU TDX, and Alibaba gn8v-tee; OCI, AWS, IBM, future providers, and other shapes need their own evidence | Provider-specific physical lifecycle and attestation runs |
 | "Publicly logged" | The log service and witness exist as code, but nobody operates a public log or an independent witness | A log run at a published address and witnessed by a party other than its operator |
 | "Zero-knowledge", "homomorphic encryption" | Neither technique is used | Not planned |
 | "Military-grade", "unbreakable", "most secure" | Not measurable, and the external evidence gates are open | External audit, comparison and bounty gates in the roadmap |
@@ -56,6 +53,4 @@ non-collusion. Seed-expanded shares, which are the default for activations, are 
 
 ## Performance
 
-Each model layer is a network round trip to four workers, and the client checks every result. This
-is much slower than ordinary inference. No speed figures are published until hardware rungs produce
-measured numbers.
+Each model layer is a network round trip to its assigned workers, and the client checks every result. This design trades latency for partitioned trust. Measured fleet, bandwidth, memory, media-quality, and L6 operation-latency figures are published in `docs/xurcroh-validation-report.md`; they describe the validation environment and are not service-level guarantees.

@@ -1,6 +1,8 @@
 # Multi-GPU and Hardware Validation
 
-The following programs define the hardware acceptance procedure. Executable tests alone are not hardware evidence.
+**Status:** the full L0–L6 and M1–M4 ladders and confidential-hardware D1–D3 gates passed on frozen build `3b48e2a + patches-01…23` (`7f31c2e0`). See `docs/xurcroh-validation-report.md` for measured results and acceptance conditions.
+
+The following programs remain the repeatable hardware acceptance procedure for new builds, providers, checkpoints, and hardware revisions. Executable tests alone are not hardware evidence.
 
 ## Native build and forensics
 

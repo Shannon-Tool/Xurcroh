@@ -234,7 +234,7 @@ describe("live demonstration", () => {
     expect(screen.getByLabelText("Your question")).toHaveValue("text-shares");
     expect(screen.queryByRole("button", { name: "Your drawing" })).toBeNull();
     expect(screen.queryByText("What is real here")).toBeNull();
-    expect(document.querySelector(".show-truth")).toHaveTextContent("Designed for defence in depth; claims under evaluation");
+    expect(document.querySelector(".show-truth")).toHaveTextContent("production engine is hardware-validated");
     advance(SLOW + 50);
     expect(answer()).toBe(first.tokens[0]);
     fireEvent.change(screen.getByLabelText("Your question"), { target: { value: "text-operators" } });
@@ -354,7 +354,7 @@ describe("live demonstration", () => {
     expect(truth).toHaveTextContent(/Simulation in your browser/);
     expect(truth).toHaveTextContent(/prepared toy models/);
     expect(truth).toHaveTextContent(/the relays and enclaves are stand-ins inside this page/);
-    expect(truth).toHaveTextContent(/Designed for defence in depth; claims under evaluation/);
+    expect(truth).toHaveTextContent(/production engine is hardware-validated/);
     const panel = screen.getByText("What is real here").closest("details")!;
     expect(within(panel).getByText(/No language or image model runs/)).toBeInTheDocument();
     expect(within(panel).getByText(/The three relays stand in for a Tor circuit/)).toBeInTheDocument();

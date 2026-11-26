@@ -1,3 +1,8 @@
 # Two false positives: a type annotation in an old commit, and the first version of this file quoting it.
 209ece2f26c7aa1b314f0d22b6e2f8160e5f9c2b:python/xurcroh/receipts.py:generic-api-key:140
 49075edf59f28d7a2928285d57b840dfb8eb4df7:.gitleaksignore:generic-api-key:1
+# Later copies of the same annotation and public verification-key test material.
+b046011bab647f93671dfde0678eb396e60ce82c:.gitleaksignore:generic-api-key:1
+4b1666b4767a365aefe45928c7ff6340e446516c:python/xurcroh/receipts.py:generic-api-key:140
+525621b9b8d26e56e69d060dae66fa519379069f:apps/web-manual/tests/fixtures/verify.json:generic-api-key:481
+525621b9b8d26e56e69d060dae66fa519379069f:apps/web-manual/tests/fixtures/verify.json:generic-api-key:488

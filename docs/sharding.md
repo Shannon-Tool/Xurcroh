@@ -44,4 +44,4 @@ Verification authenticates the manifest, boundary, recipient envelopes, and supp
 
 ## EROFS and dm-verity
 
-`VerityPackager` invokes `mkfs.erofs` and `veritysetup` directly without a shell. It packages an encrypted shard into a read-only image, obtains the Merkle root hash, and supports explicit verification. Missing tools and command failures are reported; no root-hash success is assumed. Binding the verified root into a CVM/kernel launch configuration is deployment-specific and remains hardware-pending.
+`VerityPackager` invokes `mkfs.erofs` and `veritysetup` directly without a shell. It packages an encrypted shard into a read-only image, obtains the Merkle root hash, and supports explicit verification. Missing tools and command failures are reported; no root-hash success is assumed. Binding the verified root into a CVM/kernel launch configuration is deployment-specific; confidential-hardware execution and artifact binding were validated on the three providers documented in `docs/xurcroh-validation-report.md`.

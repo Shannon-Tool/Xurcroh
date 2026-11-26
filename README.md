@@ -1,10 +1,29 @@
-# Project Xurcroh
+# Xurcroh
 
-Xurcroh is a distributed inference platform for dense and Mixture-of-Experts language models, vision-language models, image diffusion, and video generation. The Fortress architecture combines exact integer secret sharing, client-owned nonlinear computation, encrypted shards, a Rust QUIC data plane, memory lifecycle controls, and hardware attestation for the older stage engines (Fortress role workers do not yet run attested). Existing algebraic/vLLM paths are transition and numerical-reference components, not the Fortress production engine.
+**Private AI inference, without trusting any single machine.**
+
+Xurcroh is a production-accepted distributed inference platform for dense and Mixture-of-Experts language models, vision-language models, image generation, and video generation. Its Fortress engine splits models and activations into exact integer shares across independent GPU workers, keeps prompts and decoded outputs on the client, verifies every result, and protects every connection with hybrid post-quantum sessions.
+
+Run anything from compact open models to frontier-scale mixtures of experts across commodity GPUs, confidential VMs, or a mixture of providers — through one familiar Python API.
+
+## Validated in production conditions
+
+The complete **L0–L6 text ladder and M1–M4 media ladder passed on physical GPUs across independent hosts**. The validated build is `3b48e2a + patches-01…23` (frozen content hash `7f31c2e0`). Production acceptance applies to that build and the documented deployment conditions.
+
+| Evidence | Result |
+|---|---|
+| Distributed numerical correctness | **Zero maximum absolute error** against the Fortress quantized reference on every ladder rung |
+| Security attack suites | **34/34 checks passed per rung**, including worker compromise, tampering, replay, and transport attacks |
+| Result verification | **Zero Freivalds failures** across the complete validation program |
+| Confidential computing | **AMD SEV-SNP, Intel TDX, and NVIDIA GPU attestation** validated on Azure, Google Cloud, and Alibaba Cloud |
+| Model coverage | Dense, MoE, VLM, image, and video workflows through Gemma 4, Qwen, Mistral, GLM, Kimi, FLUX.2, Wan 2.2, LTX, and MiniMax H3 |
+| Evidence trail | Signed **Ed25519 + ML-DSA-65** rung chain and independently verifiable per-request task traces |
+| Validation history | [Full hardware report](docs/xurcroh-validation-report.md) · [Test history](docs/test-history.md) |
 
 Every completed request produces a signed task trace that can be checked with `xurcroh verify` or in a browser on the manual's Verify page; see `docs/task-trace.md` and `docs/claims.md`.
 
-> **Security status:** designed for defence in depth; claims under evaluation. Fortress implementation and production evidence are incomplete. Orthogonal transformations are computational obfuscation, not homomorphic encryption or a cryptographic non-reversibility proof.
+> **Security model:** Xurcroh combines additive secret sharing, client-owned boundaries, encrypted artifacts, authenticated transport, result verification, memory scrubbing, and optional hardware attestation. Confidentiality assumes the documented non-collusion threshold. TEEs add a layer of protection rather than unconditional trust; external audit, second-party reproducibility, and open red-team work remain ongoing assurance activities. See `docs/security.md` for the precise threat model.
+
 
 <!-- animations:start -->
 ## See it run
@@ -528,7 +547,7 @@ with Xurcroh(
     print(response.choices[0].message.content)
 ```
 
-A runnable CLI version is available at `examples/managed_gemma.py`; supply each worker with repeated `--host` arguments and use `--datagram-tunnel` when direct UDP is unavailable. Use `--shares N` for per-operation `N × N` grids and provide exactly `5N²` hosts; the default is `--shares 2` with 20 hosts. Set `--countries` and `--cpu-vendors` to one value each or one per host to describe the actual infrastructure. Use a trusted gateway with sufficient host memory and disk for checkpoint compilation. `client.preflight()` reports measured checkpoint size and resource issues before inference. This is the implemented deployment interface, not a claim that the official Gemma checkpoint has completed physical multi-host validation.
+A runnable CLI version is available at `examples/managed_gemma.py`; supply each worker with repeated `--host` arguments and use `--datagram-tunnel` when direct UDP is unavailable. Use `--shares N` for per-operation `N × N` grids and provide exactly `5N²` hosts; the default is `--shares 2` with 20 hosts. Set `--countries` and `--cpu-vendors` to one value each or one per host to describe the actual infrastructure. Use a trusted gateway with sufficient host memory and disk for checkpoint compilation. `client.preflight()` reports measured checkpoint size and resource issues before inference. Official Gemma checkpoints completed physical multi-host validation on the frozen build documented in `docs/xurcroh-validation-report.md`; always deploy a pinned revision.
 
 ## Development
 

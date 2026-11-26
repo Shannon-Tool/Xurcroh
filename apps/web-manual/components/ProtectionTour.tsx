@@ -124,7 +124,7 @@ export function ProtectionTour({ autoPlay = false }: { autoPlay?: boolean }) {
       <section className="tour-limits" aria-labelledby="tour-limits-title">
         <h3 id="tour-limits-title">What this does not protect against</h3>
         <ul>{PROTECTION_LIMITS.map((entry) => <li key={entry}>{entry}</li>)}</ul>
-        <p>The full list is in the <Link href="/03-threat-model">threat model</Link>. The design is built for defence in depth, and its claims are under evaluation.</p>
+        <p>The full list is in the <Link href="/03-threat-model">threat model</Link>. The production engine is hardware-validated; these limits remain part of its security model.</p>
       </section>
     </div>
   );

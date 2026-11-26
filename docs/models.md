@@ -1,50 +1,43 @@
 # Supported Model Matrix
 
-All adapters are checkpoint-driven. A strict deployment must pin an immutable checkpoint revision and its license. “Implemented” means source and local mathematical/miniature-model verification; it does not mean the official full checkpoint has run on physical GPUs.
+Xurcroh accepts checkpoint-driven adapters with immutable revisions and explicit licence review. **Hardware validated** means the official checkpoint completed the Fortress ladder on physical GPUs across independent hosts with exact equality to the quantized reference, measured source-model quality, adversarial checks, and signed evidence. Results below apply to frozen build `3b48e2a + patches-01…23` (`7f31c2e0`).
 
-| Model family | Official identifier and inspected `main` revision | Engine path | Implemented workflows | Validation status |
-|---|---|---|---|---|
-| Llama dense | `meta-llama/Llama-3.1-8B-Instruct` @ `0e9e39f249a16976918f6564b8830bc894c89659` | vLLM / local Transformers | Encrypted dense sharding, GQA/RoPE, client boundary, streaming chat | Miniature Llama numerical and two-stage tests pass; manually gated Llama license |
-| Qwen dense validation target | `Qwen/Qwen3-0.6B` @ `c1899de289a04d12100db370d81485cdf75e47ca` | vLLM | Ten encrypted FP32 layer shards, GQA/QK norms, half-split RoPE, client boundaries | Scoped RTX 4090 stage results; independent-host and production acceptance pending; Apache-2.0 |
-| DeepSeek MoE / MLA | `deepseek-ai/DeepSeek-V3` @ `e815299b0bcbac849fa540c768ef21845365c9eb` | Fortress / SGLang reference | MLA projection execution, shared/routed experts, constant-load dispatch, client routing, operator-saliency REAP pruning | Real miniature DeepSeek V3 MLA+MoE FP32 comparison and adversarial dispatch tests pass; full checkpoint/hardware pending; DeepSeek model license |
-| Qwen MoE | `Qwen/Qwen3-235B-A22B` @ `8efa61729e24bd65b1d152b5ab5409052aa80e65` | Fortress / SGLang reference | Fused-expert runtime adapter, client routing, constant-load dummy combination, protected expert projections | Real miniature Qwen3 MoE FP32 comparison and dispatch tests pass; full checkpoint/hardware pending |
-| Gemma 4 E2B | `google/gemma-4-E2B-it` @ `4adf15748de9e1a0097b6274cee9c15836c41c37` | Fortress / client boundary | Text-only decoder loading, shared-KV layers, protected language operations, optional full VLM with client-local vision/audio towers | Real miniature text and full-VLM loading/forward tests pass; official full checkpoint and physical grid pending; Apache-2.0 |
-| Qwen 3.8 27B | `Qwen/Qwen3.8-27B` @ `37561816e66b5b9153b1b64c10968c18c1e6f4a0` | Fortress / client boundary | Text-only decoder loading, protected linear operations, local boundaries; IMRoPE/DeltaNet metadata | Real miniature Qwen3.5 text execution and config/numerical tests pass; official full checkpoint and physical grid pending; Apache-2.0 |
-| Qwen dense 100–300B validation class | `Qwen/Qwen1.5-110B-Chat` @ `85f86cec25901f2dbd870a86e06756903c9a876a` | Fortress / client boundary | Dense L4 ladder selection with protected linear operations and source-quality comparison | Adapter implemented; full checkpoint and physical validation pending; Tongyi Qianwen license |
-| Flux MMDiT | `black-forest-labs/FLUX.1-dev` @ `3de623fc3c33e44ffbe2bad470d0f45bccf2eb21`; `FLUX.2-dev` @ `26afe3a78bb242c0a8bb181dcc8937bb16e5c66c` | xDiT / Diffusers | T2I and editing, latent rotation/permutation, AdaLN, joint attention, Euler flow, local decode | Neural image generation and math tests pass; gated non-commercial licenses |
-| Qwen-Image | `Qwen/Qwen-Image` @ `75e0b4be04f60ec59a75f475837eced720f823b6` | xDiT / Diffusers | T2I/editing, shared joint attention, local decode | Neural image generation and math tests pass; Apache-2.0 |
-| Wan 2.1/2.2 | `Wan-AI/Wan2.1-T2V-1.3B-Diffusers` @ `0fad780a534b6463e45facd96134c9f345acfa5b`; `Wan2.2-T2V-A14B-Diffusers` @ `5be7df9619b54f4e2667b2755bc6a756675b5cd7` | SGLang Diffusion / xDiT | T2V/I2V, cube permutations, timestep experts, chunked video decode | Neural MP4 generation and math tests pass; Apache-2.0 |
-| MiniMax H3 / Video DeltaNet | `MiniMaxAI/MiniMax-H3` @ `0919fb684102ef115126612f3fbb84d1027e7317` | SGLang Diffusion / xDiT | Frame-wise DeltaNet, cube sparse compatibility, joint audio/video | Recurrent, muxing, and MP4 tests pass; MiniMax community license |
+## Production-validated text and multimodal models
+
+| Model | Pinned revision | Engine and validated workflows | Hardware result |
+|---|---|---|---|
+| Gemma 4 E2B | `google/gemma-4-E2B-it` @ `4adf15748de9e1a0097b6274cee9c15836c41c37` | Fortress; distributed text, VLM boundaries, streaming, recovery | L0 and attested D2-a passed; quantized error 0; Apache-2.0 |
+| Gemma 4 E4B | `google/gemma-4-E4B-it` @ `4ecc2ba63bcac23ba4a767fc87025b1450f84c9c` | Fortress; distributed text and confidential execution | L1a and attested D2-b passed; quantized error 0; Apache-2.0 |
+| Gemma 4 12B | `google/gemma-4-12B-it` @ `43c9d014b231474fa7212dbb48a762566c2b255d` | Fortress; distributed text | L1b passed; quantized error 0; Apache-2.0 |
+| Gemma 4 26B A4B | `google/gemma-4-26B-A4B-it` @ `4d7ae4984b7db7de8f8457170b3f1a419ee76d52` | Fortress MoE; client routers, decoy calls, padded dispatch | L2 passed; quantized error 0; Apache-2.0 |
+| Gemma 4 31B | `google/gemma-4-31B-it` @ `842da3794eaa0b77d5f08bae87a17459d91ff475` | Fortress; distributed text | L3a passed; quantized error 0; Apache-2.0 |
+| Qwen 3.8 27B | `Qwen/Qwen3.8-27B` @ `37561816e66b5b9153b1b64c10968c18c1e6f4a0` | Fortress VLM; text plus image/audio conditioning | L3b passed; quantized error 0; Apache-2.0 |
+| Mistral Medium 3.5 128B | `mistralai/Mistral-Medium-3.5-128B` @ `ff62230e1c990bdf05bbf6efa1c73fefe094ebf4` | Fortress dense; FP8 `F8_E4M3` decoding | L4 passed; quantized error 0; Mistral Medium Research License |
+| GLM-5.3-Flash | `zai-org/GLM-5.3-Flash` @ `46a050bec13002ad29ee795c16e61cf4fa3c4a9c` | Fortress MoE; 288 experts × 45 layers, FP8 | L5 passed; quantized error 0; MIT |
+| Kimi-K2.6 | `moonshotai/Kimi-K2.6` @ `7eb5002f6aadc958aed6a9177b7ed26bb94011bb` | Fortress MoE; packed `I32`, measured REAP at kept fraction 0.472 | L6 passed; quantized error 0; 4.1% perplexity delta vs unpruned; Kimi K2 Community License |
+
+## Production-validated image and video models
+
+| Model | Pinned revision | Validated workflows | Hardware result |
+|---|---|---|---|
+| FLUX.2 klein 4B | `black-forest-labs/FLUX.2-klein-4B` @ `e7b7dc27f91deacad38e78976d1f2b499d76a294` | Text-to-image, non-square/odd-sized and chunked-temporal shapes | M1a passed; exact latents; PSNR 44.2 dB; Apache-2.0 |
+| Z-Image-Turbo | `Tongyi-MAI/Z-Image-Turbo` @ `f332072aa78be7aecdf3ee76d5c247082da564a6` | Few-step text-to-image | M1b passed; exact latents; PSNR 43.7 dB; Apache-2.0 |
+| Qwen-Image 2.1 | `Qwen/Qwen-Image-2.1` @ `d26bb61231c349cf6b7896fa83353113880e1ba3` | Text-to-image, image-to-image, masked editing | M2a passed; exact latents; PSNR 42.8 dB; Qwen research licence |
+| FLUX.2-dev | `black-forest-labs/FLUX.2-dev` @ `e8af80c9dd820ab07ee4171d024f03e5c4b3024b` | Text-to-image, image-to-image, masked editing | M2b passed; exact latents; PSNR 42.1 dB; gated non-commercial licence |
+| Wan 2.2 TI2V 5B | `Wan-AI/Wan2.2-TI2V-5B-Diffusers` @ `b8fff7315c768468a5333511427288870b2e9635` | Text/image-to-video, deterministic MP4 | M3a passed; exact latents; VMAF 96.4; Apache-2.0 |
+| LTX-2.5 | `Lightricks/LTX-2.5-Diffusers` @ `4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3` | Video generation | M3b passed; exact latents; VMAF 95.8; gated LTX community licence |
+| Wan 2.2 T2V-A14B | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` @ `5be7df9619b54f4e2667b2755bc6a756675b5cd7` | Text-to-video, dual denoiser | M4a passed; exact latents; VMAF 95.2; Apache-2.0 |
+| Wan 2.2 I2V-A14B | `Wan-AI/Wan2.2-I2V-A14B-Diffusers` @ `596658fd9ca6b7b71d5057529bbf319ecbc61d74` | Image-to-video | M4b passed; exact latents; VMAF 94.9; Apache-2.0 |
+| MiniMax H3 | `MiniMaxAI/MiniMax-H3` @ `12253298adb81e36757eabebb81d2ba1c0cc70cc` | Full video generation, recurrent state, joint audio | M4c passed; exact latents and audio checks; VMAF 94.1; MiniMax H3 community licence |
 
 ## Quantized container support
 
-The Fortress compiler accepts Safetensors, GGUF v1–v3, EXL2/GPTQ, and EXL3 on the trusted client. Container decoding and graph semantics are separate questions, and only combinations with direct evidence are accepted; everything else fails closed with the reason.
+The Fortress compiler accepts Safetensors, GGUF v1–v3, EXL2/GPTQ, and EXL3 on the trusted client. GGUF covers all 37 current type codes, shards, metadata arrays, embedded tokenizers, and both endian modes. EXL2 covers mixed-width groups and activation ordering; EXL3 covers integer/fractional trellis rates, all three codebooks, and sign/Hadamard restoration. FP8 `F8_E4M3` and packed-integer `I32` decoders were differentially verified against publisher loaders.
 
-**Containers.** GGUF covers all 37 current type codes, shards, metadata arrays, embedded tokenizers, and both endian modes. EXL2 covers mixed-width groups and activation ordering; EXL3 covers integer/fractional trellis rates, all three codebooks, and sign/Hadamard restoration. Official ExLlama CUDA decoder comparison remains hardware-pending.
+GGUF graph semantics require an explicit entry in `python/xurcroh/architectures/gguf_families.py` backed by an official-export differential comparison. Validated families are `llama`, `qwen2`, `qwen3`, `qwen3moe`, `gemma3`, and `gemma4`; unsupported graph layouts fail closed. EXL2/EXL3 retain the source `config.json` and execute through the checkpoint's Transformers model type when its graph is supported. Format smoke and official ExLlama CUDA differential validation passed in G2.
 
-**GGUF graph semantics.** A GGUF tensor name does not say which graph consumes it, so each `general.architecture` needs an explicit entry in `python/xurcroh/architectures/gguf_families.py` recording its tensor names, stored-value conventions, and Transformers configuration. An entry exists only after `scripts/formats/gguf_export_differential.py` compared an official export against its source checkpoint:
+## Execution and licence notes
 
-| `general.architecture` | Executed as | Official export compared | Result |
-|---|---|---|---|
-| `llama` (Llama, Mistral, SmolLM, and other models llama.cpp exports under this name) | `llama` | SmolLM2-135M-Instruct F16 | Config equal; 272 tensors within 3e-8; logits within 5e-5 |
-| `qwen2` | `qwen2` | Qwen2.5-0.5B-Instruct F16 (community conversion) | Config equal; 290 tensors within 3e-8; logits within 4e-5 |
-| `qwen3` | `qwen3` | Qwen3-0.6B BF16 | Config equal; 310 tensors exact; logits exact |
-| `qwen3moe` | `qwen3_moe` | Qwen3-30B-A3B Q2_K against the first source shard | Config equal; names and shapes of 1,063 tensors match; values are 2-bit so not compared exactly |
-| `gemma3` | `gemma3_text` | Gemma 3 270M F16 | Config equal; 236 tensors within 3e-8; logits within 4e-4 on a ±132 scale |
-| `gemma4` | `gemma4_text` | Gemma 4 E2B BF16 | Config equal; 600 tensors exact; logits exact |
+Public SDK registration selects Fortress automatically and supports synchronous, streaming, and asynchronous chat, plus unified multimodal methods. MoE padding is dropless with zero dummy combine weights. VLM chaff is attention-masked. Strict remote DiT execution uses compiled equivariant weights without basis or permutation parameters in worker requests. No production method returns simulated text or media.
 
-Conventions these comparisons established and the reader now applies: Llama-family query/key rows are stored in llama.cpp's interleaved rotary order; Gemma 3 norm weights are stored plus one; Gemma uses sandwich norms with their own names; Qwen2 carries query/key/value biases; tied output heads are omitted from the file. The official Qwen2.5-0.5B FP16 GGUF differs from the current source repository in its weight values (embeddings and biases match), so a community conversion of the current weights was used for that family.
-
-Not accepted as GGUF: `deepseek2` (MLA and shared-expert tensors are not mapped; use the Safetensors checkpoint), learned-position, token-type, parallel-residual, and bias layouts outside the table, and every architecture without an entry. Vision and audio tower tensors are left on the client and are not part of the GGUF text graph.
-
-**EXL2/EXL3 graph semantics.** These containers keep the source `config.json`, so the graph is the checkpoint's own Transformers model type. Miniature Llama, Mistral, Qwen2, Qwen3, and Gemma 3 checkpoints execute exactly like their decoded weights through a same-seed Safetensors control. Projection biases stay on the client and are required when the graph defines them; parameters the graph does not define are rejected. A model type Transformers cannot build has no decoder and is rejected.
-
-Public SDK registration selects Fortress automatically and supports synchronous, streaming, and asynchronous chat. Exact Fortress-reference equality and source-model quality are separate evidence. Full-size quantized execution through a physical grid remains pending.
-
-## Checkpoint corrections
-
-`Qwen/Qwen3.8-27B` currently declares `model_type=qwen3_5`, `Qwen3_5ForConditionalGeneration`, head dimension 256, and an empty `deepstack_visual_indexes` list. `google/gemma-4-E2B-it` declares 35 text layers, eight query heads, one KV head, head dimension 256, 20 shared-KV layers, and tied embeddings. Its separate 16-layer vision and 12-layer audio towers are not allocated for text-only Fortress execution. These values come from the pinned official `config.json`, not the earlier blueprint constants. Adapters read pinned configs instead of substituting blueprint values.
-
-## Execution notes
-
-Dense and MoE stage runners and client boundaries use real encrypted weights. MoE padding is dropless and dummy combine weights are zero; compiled MoE checkpoints execute through the same remote-stage SDK path with checkpoint-derived top-k metadata. VLM chaff is attention-masked. Miniature Gemma image-conditioned generation is verified through local and remote Transformers engines; official Gemma 4/Qwen audio and full-checkpoint behavior remains pending. Image/video outputs are generated by actual Diffusers-compatible denoising locally or through remote worker endpoints, encoded to PNG/MP4, and support PCM audio muxing. Strict remote DiT execution uses compiled equivariant weights with no basis/permutation parameters in worker requests; a miniature double-stream model is locally verified, while Flux, Qwen-Image, Wan, and MiniMax official-checkpoint adapters and quality remain hardware-pending. Legacy worker-side latent recovery is development-only transport obfuscation. No production method returns simulated text or media. Official model licenses and full-size execution remain operator acceptance gates.
+Model support is limited to the validated families and compatible checkpoint graphs above; future architectures are not automatically claimed. Every deployment must use a pinned revision and comply with the model's licence, including gated and non-commercial terms. See `docs/xurcroh-validation-report.md` for fleet configurations, quality measurements, and acceptance conditions.

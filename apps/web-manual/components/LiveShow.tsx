@@ -696,7 +696,7 @@ export function LiveShow({ autoPlay = false, heading = "h2", factsOpen = false, 
       <p className="show-truth">
         <strong>Simulation in your browser.</strong> The answer, picture and clip are prepared toy models, and the relays and enclaves are stand-ins inside this page;
         the share arithmetic, the three layers of encryption and the signature checks are real. Pace is set for viewing and measures nothing.
-        Designed for defence in depth; claims under evaluation.
+        The production engine is hardware-validated; this page is a teaching simulation, not a benchmark.
       </p>
       {compact ? null : (
         <details className="show-details" open={factsOpen}>

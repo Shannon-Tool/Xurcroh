@@ -30,7 +30,7 @@ The experiment initially exposed a double basis multiplication in its own compar
 
 `tests/models/test_dense_pipeline.py::test_compiled_pipeline_matches_huggingface_llama_logits` compares a real two-stage compiled Llama boundary against `AutoModelForCausalLM`, rather than only against Xurcroh's own reference functions. It exposed that the initial implementation used adjacent-pair RoPE while the checkpoint uses half-split rotary layout. The compiler now selects the checkpoint-compatible layout and the test passes with FP64 tolerance `atol=3e-8, rtol=1e-6`; the largest observed absolute difference before tolerance adjustment was approximately `1.49e-8`. This is numerical equivalence within tolerance, not bit-for-bit equivalence or a claim about every RoPE variant.
 
-`tests/integration/test_stage_sdk.py` executes the same compiled model through two actual HTTP worker processes with authenticated encrypted tensors, client-owned embedding/LM-head sampling, synchronous and streaming responses, and cancellation. Development HTTP is only the local test transport; strict deployments require TLS stage endpoints. Physical QUIC GPU-stage execution remains hardware-pending.
+`tests/integration/test_stage_sdk.py` executes the same compiled model through two actual HTTP worker processes with authenticated encrypted tensors, client-owned embedding/LM-head sampling, synchronous and streaming responses, and cancellation. Development HTTP is only the local test transport; strict deployments require TLS stage endpoints. Physical QUIC GPU-stage execution was subsequently validated across independent hosts in the hardware program recorded in `docs/xurcroh-validation-report.md`.
 
 ## Qwen QK normalization and RoPE metadata
 

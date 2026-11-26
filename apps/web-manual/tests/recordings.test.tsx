@@ -142,9 +142,9 @@ describe("recordings of the animations", () => {
     expect(section).toMatch(/the questions and answers are prepared, the models are toys/);
     expect(section).toMatch(/relays stand in for a Tor circuit, and the enclaves are simulated/);
     expect(section).not.toMatch(/\b(guarantee|unbreakable|impossible|100%|perfectly safe|military|state of the art)\b/i);
-    // The section sits right under the security status, which is unchanged.
-    expect(readme).toContain("> **Security status:** designed for defence in depth; claims under evaluation.");
-    expect(readme.indexOf("> **Security status:**")).toBeLessThan(from);
+    // The section sits under the current production security statement.
+    expect(readme).toContain("> **Security model:**");
+    expect(readme.indexOf("> **Security model:**")).toBeLessThan(from);
     expect(readme.indexOf("## Public Python API")).toBeGreaterThan(to);
   });
 });

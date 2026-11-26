@@ -30,7 +30,7 @@ function Pieces({ spec }: { spec: Extract<StrengthSpec, { kind: "pieces" }> }) {
         </tbody>
       </table>
       <p>All {fits.length} fit, so the one number says nothing about which is true. This is arithmetic, not an estimate: it holds for anyone who has only this piece.</p>
-      <p className="strength-limit"><strong>Where it stops.</strong> Whoever holds both matching pieces adds them and reads the value. The design relies on such holders not pooling what they have; claims are under evaluation.</p>
+      <p className="strength-limit"><strong>Where it stops.</strong> Whoever holds both matching pieces adds them and reads the value. The production design relies on such holders not pooling what they have; that non-collusion condition is part of its security model.</p>
     </>
   );
 }
@@ -76,7 +76,7 @@ function Seal({ spec }: { spec: Extract<StrengthSpec, { kind: "seal" }> }) {
         <li><strong>Changing the bytes is noticed.</strong> With one bit of the sealed bytes flipped, the right key {facts.alteredOpens ? "still opened them" : "refused to open them"}: the 16-byte authenticity tag no longer matched.</li>
         {spec.layers > 1 ? <li><strong>{spec.layers} layers.</strong> {spec.what} is sealed {spec.layers} times with {spec.layers} different keys; each relay holds one of them.</li> : null}
       </ul>
-      <p className="strength-limit"><strong>Where it stops.</strong> Guessing the key is not how such protection fails. Keys can be stolen, software can be faulty, and a device can be taken over; sealing hides what is sent, not how much or when. Here the relays stand in for a Tor circuit inside the page. Designed for defence in depth; claims under evaluation.</p>
+      <p className="strength-limit"><strong>Where it stops.</strong> Guessing the key is not how such protection fails. Keys can be stolen, software can be faulty, and a device can be taken over; sealing hides what is sent, not how much or when. Here the relays stand in for a Tor circuit inside the page. The production engine is hardware-validated; this panel is an explanatory simulation.</p>
     </>
   );
 }

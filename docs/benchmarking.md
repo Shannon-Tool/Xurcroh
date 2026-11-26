@@ -39,7 +39,7 @@ Image and video commands measure actual PNG/MP4 responses. Reference comparisons
 
 ## Report interpretation
 
-Every report has `schema_version: 1`, a workload kind, timestamp, parameters, and environment. `environment.hardware_validated` is `false` for the supplied pre-GPU harness. Performance varies with host, affinity, thermal state, checkpoint, dtype, batch, network, and framework revision. Run sufficient warmup and repetitions in Stage Two and retain machine configuration and raw JSON. The 40–50 ms/token architectural target is not a measured result.
+Every report has `schema_version: 1`, a workload kind, timestamp, parameters, and environment. `environment.hardware_validated` is `false` for the supplied local harness. Performance varies with host, affinity, thermal state, checkpoint, dtype, batch, network, and framework revision. Run sufficient warmup and repetitions on the deployment hardware and retain machine configuration and raw JSON. The 40–50 ms/token architectural target is not a measured result. Measured production-validation fleet, memory, bandwidth, media-quality, and L6 operation-latency results are published in `docs/xurcroh-validation-report.md`; those figures describe the validation environment, not a service-level guarantee.
 
 For hardware validation, capture at least:
 

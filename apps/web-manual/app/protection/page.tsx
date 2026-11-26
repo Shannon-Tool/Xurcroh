@@ -11,7 +11,7 @@ export default function ProtectionPage() {
   return (
     <article className="article article-wide">
       <header className="hero hero-compact">
-        <span className="evidence">Designed for defence in depth · claims under evaluation</span>
+        <span className="evidence">Defence in depth · validated on physical GPU fleets</span>
         <h1>How your data is protected</h1>
         <p>
           Seven layers stand between your data and anyone else. For each one this page names the threat, shows the mechanism working on

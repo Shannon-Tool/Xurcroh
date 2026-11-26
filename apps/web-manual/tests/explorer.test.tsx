@@ -31,7 +31,7 @@ describe("home page", () => {
     const { container } = render(<Home />);
     expect(screen.getByRole("heading", { name: "Live demonstration" })).toBeInTheDocument();
     expect(container.querySelector(".show-truth")).toHaveTextContent(/prepared toy models, and the relays and enclaves are stand-ins inside this page; the share arithmetic, the three layers of encryption and the signature checks are real/);
-    expect(container.querySelector(".show-truth")).toHaveTextContent(/Designed for defence in depth; claims under evaluation/);
+    expect(container.querySelector(".show-truth")).toHaveTextContent(/production engine is hardware-validated/);
     expect(screen.getByRole("link", { name: "Open the laboratory" })).toHaveAttribute("href", "/laboratory");
     expect(screen.getByRole("link", { name: "Demonstration on its own page" })).toHaveAttribute("href", "/show");
     await waitFor(() => expect(container.querySelector(".scene3d canvas")).not.toBeNull());

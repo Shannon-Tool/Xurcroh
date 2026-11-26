@@ -10,7 +10,7 @@ export default function GalleryPage() {
   return (
     <article className="article article-wide">
       <header className="hero hero-compact">
-        <span className="evidence">Review page · designed for defence in depth · claims under evaluation</span>
+        <span className="evidence">Review page · production-validated engine · interactive teaching simulations</span>
         <h1>All animations</h1>
         <p>
           Every animated stage in the manual, in one place, so that they can be compared and polished. Each one runs by itself while it is on

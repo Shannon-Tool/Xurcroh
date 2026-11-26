@@ -123,8 +123,8 @@ describe("protection tour", () => {
     expect(screen.getByRole("heading", { level: 1, name: "How your data is protected" })).toBeInTheDocument();
     const limits = screen.getByRole("heading", { level: 3, name: "What this does not protect against" }).closest("section")!;
     expect(within(limits).getAllByRole("listitem")).toHaveLength(PROTECTION_LIMITS.length);
-    expect(limits).toHaveTextContent("its claims are under evaluation");
-    expect(container.querySelector(".hero .evidence")).toHaveTextContent("Designed for defence in depth · claims under evaluation");
+    expect(limits).toHaveTextContent("production engine is hardware-validated");
+    expect(container.querySelector(".hero .evidence")).toHaveTextContent("Defence in depth · validated on physical GPU fleets");
     expect((await axe(container)).violations).toHaveLength(0);
   }, 20000);
 

@@ -74,7 +74,7 @@ describe("the panel under a stage", () => {
     expect(within(panel()).getAllByRole("row")).toHaveLength(questionIds().length + 1);
     expect(panel()).toHaveTextContent(`All ${questionIds().length} fit`);
     expect(panel()).toHaveTextContent("Whoever holds both matching pieces adds them and reads the value.");
-    expect(panel()).toHaveTextContent("claims are under evaluation");
+    expect(panel()).toHaveTextContent("non-collusion condition is part of its security model");
     expect(panel().textContent).not.toMatch(BANNED);
   });
 
@@ -88,7 +88,7 @@ describe("the panel under a stage", () => {
     expect(panel()).toHaveTextContent("refused to open them");
     expect(panel()).toHaveTextContent("Guessing the key is not how such protection fails.");
     expect(panel()).toHaveTextContent("the relays stand in for a Tor circuit inside the page");
-    expect(panel()).toHaveTextContent("Designed for defence in depth; claims under evaluation.");
+    expect(panel()).toHaveTextContent("production engine is hardware-validated");
     expect(panel().textContent).not.toMatch(BANNED);
     await act(async () => undefined);
   });
