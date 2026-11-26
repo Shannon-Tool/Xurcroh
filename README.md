@@ -12,10 +12,10 @@ Build a private inference grid across independent commodity GPUs or hardware-att
 
 <table>
 <tr>
-<td align="center" width="25%"><a href="docs/deployment/vast.md"><img src="docs/media/providers/vast-ai.svg" alt="Vast.ai" width="160" /></a><br /><a href="docs/deployment/vast.md"><b>Vast.ai setup</b></a></td>
-<td align="center" width="25%"><a href="docs/deployment/runpod.md"><img src="docs/media/providers/runpod.svg" alt="RunPod" width="160" /></a><br /><a href="docs/deployment/runpod.md"><b>RunPod setup</b></a></td>
-<td align="center" width="25%"><a href="docs/deployment/azure-tee.md"><img src="docs/media/providers/microsoft-azure.svg" alt="Microsoft Azure" height="42" /></a><br /><a href="docs/deployment/azure-tee.md"><b>Azure confidential GPUs</b></a></td>
-<td align="center" width="25%"><a href="docs/deployment/gcp-tee.md"><img src="docs/media/providers/google-cloud.svg" alt="Google Cloud" width="170" /></a><br /><a href="docs/deployment/gcp-tee.md"><b>Google Cloud confidential GPUs</b></a></td>
+<td align="center" width="25%"><a href="docs/deployment/vast.md"><img src="docs/media/providers/vast-ai.svg" alt="Vast.ai" height="36" /></a><br /><a href="docs/deployment/vast.md"><b>Vast.ai setup (Recommended)</b></a></td>
+<td align="center" width="25%"><a href="docs/deployment/runpod.md"><img src="docs/media/providers/runpod.svg" alt="RunPod" height="36" /></a><br /><a href="docs/deployment/runpod.md"><b>RunPod setup</b></a></td>
+<td align="center" width="25%"><a href="docs/deployment/azure-tee.md"><img src="docs/media/providers/microsoft-azure.svg" alt="Microsoft Azure" height="36" /></a><br /><a href="docs/deployment/azure-tee.md"><b>Azure confidential GPUs</b></a></td>
+<td align="center" width="25%"><a href="docs/deployment/gcp-tee.md"><img src="docs/media/providers/google-cloud.svg" alt="Google Cloud" height="36" /></a><br /><a href="docs/deployment/gcp-tee.md"><b>Google Cloud confidential GPUs</b></a></td>
 </tr>
 </table>
 
@@ -577,6 +577,23 @@ A runnable CLI version is available at `examples/managed_gemma.py`; supply each 
 ```
 
 The interactive research manual source is under `apps/web-manual/` and is independent of the production runtime. GPU topology estimates and outstanding hardware risks are in `docs/resources.md`.
+
+## Developed by Shannon
+
+Xurcroh is developed by **SHANNON LAB LLC** and is used by [Shannon](https://shannon-ai.com/) to deliver private AI inference.
+
+| Company information | Details |
+|---|---|
+| Legal name | SHANNON LAB LLC |
+| Entity type | Limited Liability Company (LLC) |
+| Formation state | New Mexico, United States |
+| State status | Active / Good Standing |
+| Formation date | December 2, 2025 |
+| Entity ID | 0008065379 |
+| NAICS subcode | 541512 — Computer Systems Design Services |
+| Company address | 8206 Louisiana Blvd NE Ste A #7871, Albuquerque, NM 87113, United States |
+
+[View Shannon's Certificate of Organization](https://shannon-ai.com/company-certificate.webp).
 
 ## Security
 
