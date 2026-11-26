@@ -593,7 +593,10 @@ Xurcroh is developed by **SHANNON LAB LLC** and is used by [Shannon](https://sha
 | NAICS subcode | 541512 — Computer Systems Design Services |
 | Company address | 8206 Louisiana Blvd NE Ste A #7871, Albuquerque, NM 87113, United States |
 
-[View Shannon's Certificate of Organization](https://shannon-ai.com/company-certificate.webp).
+<p align="center">
+  <a href="docs/company-certificate.webp"><img src="docs/company-certificate.webp" alt="State of New Mexico Certificate of Organization for SHANNON LAB LLC" width="572" /></a><br />
+  <sub>State of New Mexico Certificate of Organization — SHANNON LAB LLC</sub>
+</p>
 
 ## Security
 
