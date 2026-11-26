@@ -10,12 +10,14 @@ Run anything from compact open models to frontier-scale mixtures of experts acro
 
 Build a private inference grid across independent commodity GPUs or hardware-attested confidential VMs. Xurcroh uses the same Python SDK on every platform: it discovers worker resources, distributes sealed model shares, establishes post-quantum sessions, verifies results, and cleans up the deployment. Start with a single provider or combine independent providers for stronger failure-domain separation.
 
-<p>
-<a href="docs/deployment/vast.md"><img alt="Vast.ai setup" src="https://img.shields.io/badge/Vast.ai-GPU_cloud-4F46E5?style=for-the-badge" /></a>
-<a href="docs/deployment/runpod.md"><img alt="RunPod setup" src="https://img.shields.io/badge/RunPod-GPU_pods-7C3AED?style=for-the-badge" /></a>
-<a href="docs/deployment/azure-tee.md"><img alt="Microsoft Azure confidential GPU setup" src="https://img.shields.io/badge/Microsoft_Azure-Confidential_GPU-0078D4?style=for-the-badge&logo=microsoftazure&logoColor=white" /></a>
-<a href="docs/deployment/gcp-tee.md"><img alt="Google Cloud confidential GPU setup" src="https://img.shields.io/badge/Google_Cloud-Confidential_GPU-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white" /></a>
-</p>
+<table>
+<tr>
+<td align="center" width="25%"><a href="docs/deployment/vast.md"><img src="docs/media/providers/vast-ai.svg" alt="Vast.ai" width="160" /></a><br /><a href="docs/deployment/vast.md"><b>Vast.ai setup</b></a></td>
+<td align="center" width="25%"><a href="docs/deployment/runpod.md"><img src="docs/media/providers/runpod.svg" alt="RunPod" width="160" /></a><br /><a href="docs/deployment/runpod.md"><b>RunPod setup</b></a></td>
+<td align="center" width="25%"><a href="docs/deployment/azure-tee.md"><img src="docs/media/providers/microsoft-azure.svg" alt="Microsoft Azure" height="42" /></a><br /><a href="docs/deployment/azure-tee.md"><b>Azure confidential GPUs</b></a></td>
+<td align="center" width="25%"><a href="docs/deployment/gcp-tee.md"><img src="docs/media/providers/google-cloud.svg" alt="Google Cloud" width="170" /></a><br /><a href="docs/deployment/gcp-tee.md"><b>Google Cloud confidential GPUs</b></a></td>
+</tr>
+</table>
 
 - **[Vast.ai](docs/deployment/vast.md):** automated offer selection, budget-guarded lifecycle, CUDA deployment over SSH, and verified teardown for independent GPU hosts.
 - **[RunPod](docs/deployment/runpod.md):** SDK-managed Fortress workers on GPU pods, with tunneled transport when direct QUIC is unavailable.
