@@ -1,6 +1,8 @@
 # Deployment and Operations
 
-Xurcroh is undergoing physical hardware validation. These files provide reproducible service packaging; packaging and scoped single-GPU results are not evidence of independent multi-host acceptance, production security acceptance, or measured production performance.
+Start with the [cloud deployment overview](deployment/providers.md) for Vast.ai, RunPod, Azure confidential GPUs, and Google Cloud confidential GPUs.
+
+The Fortress engine has production acceptance for frozen build `3b48e2a + patches-01…23` (content hash `7f31c2e0`) under the conditions in the [hardware validation report](xurcroh-validation-report.md). Packaging, provider lifecycle checks, or an unrelated source revision must not be represented as the validated build. External assurance activities and residual risks remain documented in that report.
 
 ## Build
 
@@ -63,7 +65,7 @@ Start the controller with:
 4. Select nodes with the intended GPU and high-bandwidth topology. Keep tensor/expert groups within a high-bandwidth host group; use pipeline stages across independent hosts.
 5. Add an explicit ingress policy for the authorized client/controller networks. The supplied namespace-only policy intentionally denies other ingress by default.
 6. Configure attestation and strict encrypted-shard loading before treating workers as zero-trust stages. Merely running two copies of a plaintext checkpoint is not the Xurcroh zero-trust architecture.
-7. Run `docs/hardware-validation.md` and real numerical/security acceptance tests. The repository does not include a completed independent multi-host production-acceptance result.
+7. Run `docs/hardware-validation.md` and real numerical/security acceptance tests for the deployed revision. The frozen Fortress build's independent multi-host acceptance is recorded in `docs/xurcroh-validation-report.md`; it does not automatically transfer to another revision or generic deployment topology.
 
 Validate YAML locally with the deployment integration tests. `kubectl apply` is a Stage Two infrastructure action and has not been run.
 

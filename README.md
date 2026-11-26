@@ -6,6 +6,24 @@ Xurcroh is a production-accepted distributed inference platform for dense and Mi
 
 Run anything from compact open models to frontier-scale mixtures of experts across commodity GPUs, confidential VMs, or a mixture of providers — through one familiar Python API.
 
+## Deploy on your cloud
+
+Build a private inference grid across independent commodity GPUs or hardware-attested confidential VMs. Xurcroh uses the same Python SDK on every platform: it discovers worker resources, distributes sealed model shares, establishes post-quantum sessions, verifies results, and cleans up the deployment. Start with a single provider or combine independent providers for stronger failure-domain separation.
+
+<p>
+<a href="docs/deployment/vast.md"><img alt="Vast.ai setup" src="https://img.shields.io/badge/Vast.ai-GPU_cloud-4F46E5?style=for-the-badge" /></a>
+<a href="docs/deployment/runpod.md"><img alt="RunPod setup" src="https://img.shields.io/badge/RunPod-GPU_pods-7C3AED?style=for-the-badge" /></a>
+<a href="docs/deployment/azure-tee.md"><img alt="Microsoft Azure confidential GPU setup" src="https://img.shields.io/badge/Microsoft_Azure-Confidential_GPU-0078D4?style=for-the-badge&logo=microsoftazure&logoColor=white" /></a>
+<a href="docs/deployment/gcp-tee.md"><img alt="Google Cloud confidential GPU setup" src="https://img.shields.io/badge/Google_Cloud-Confidential_GPU-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white" /></a>
+</p>
+
+- **[Vast.ai](docs/deployment/vast.md):** automated offer selection, budget-guarded lifecycle, CUDA deployment over SSH, and verified teardown for independent GPU hosts.
+- **[RunPod](docs/deployment/runpod.md):** SDK-managed Fortress workers on GPU pods, with tunneled transport when direct QUIC is unavailable.
+- **[Microsoft Azure](docs/deployment/azure-tee.md):** NCC40ads H100 v5 confidential VMs with CPU/GPU attestation, scoped networking, and managed resource cleanup.
+- **[Google Cloud](docs/deployment/gcp-tee.md):** A3 HighGPU workers with Intel TDX, NVIDIA attestation, Shielded VM features, and managed firewall cleanup.
+
+See the [platform deployment overview](docs/deployment/providers.md) for prerequisites, topology planning, security modes, and production acceptance scope. Provider availability, pricing, and quota must be checked at deployment time.
+
 ## Validated in production conditions
 
 The complete **L0–L6 text ladder and M1–M4 media ladder passed on physical GPUs across independent hosts**. The validated build is `3b48e2a + patches-01…23` (frozen content hash `7f31c2e0`). Production acceptance applies to that build and the documented deployment conditions.
