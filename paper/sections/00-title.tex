@@ -1,0 +1,43 @@
+\begin{titlepage}
+\centering
+\vspace*{9mm}
+{\color{xteal}\rule{0.22\linewidth}{2pt}}\hfill{\color{xblue}\rule{0.72\linewidth}{2pt}}
+
+\vspace{15mm}
+{\Huge\bfseries\color{xink}Xurcroh Fortress\par}
+\vspace{5mm}
+{\LARGE\color{xblue}Verifiable Multimodal Inference over\\Distributed, Non-Colluding GPU Workers\par}
+\vspace{10mm}
+{\Large Felix Devon\par}
+\vspace{2mm}
+{\large SHANNON LAB LLC\par}
+\vspace{2mm}
+\href{mailto:felix.devon@shannon-ai.com}{felix.devon@shannon-ai.com}\par
+\vspace{10mm}
+\begin{tcolorbox}[colback=xpale,colframe=xline,width=0.88\linewidth,arc=2pt]
+\centering
+\small
+\textbf{Artifact and implementation:} \url{https://github.com/Shannon-Tool/Xurcroh}\\[2pt]
+\textbf{Hardware-validated source:} \frozenbuild\\
+\textbf{Frozen content hash:} \texttt{7f31c2e0}\\[2pt]
+Research manuscript \textbullet{} November 2026
+\end{tcolorbox}
+\vfill
+{\small\color{xmuted}Private distributed AI inference \textbullet{} Exact sharing \textbullet{} Verifiable results}
+\end{titlepage}
+
+\begin{abstract}
+\noindent
+GPU inference commonly concentrates model weights, user inputs, intermediate activations, and decoded outputs within one provider's trust boundary. Xurcroh Fortress explores a different division of responsibility: a trusted client owns prompts, nonlinear computation, routing, final reconstruction, and decoding, while independent GPU workers evaluate quantized linear operations over additive shares in the prime field $\field$, $p=2^{32}-5$. Per-operation $N\times N$ grids prevent a below-threshold set of workers from pooling complementary shares. Freivalds challenges, signed worker checkpoints, and fail-closed protocols address result integrity; hybrid X25519+ML-KEM-768 sessions and QUIC protect transport; optional AMD SEV-SNP, Intel TDX, and NVIDIA evidence adds hardware-backed isolation without treating a trusted execution environment as an unconditional root of trust.
+
+We describe the architecture, arithmetic, compilation pipeline, verification protocol, post-quantum session design, and unified handling of dense, mixture-of-experts, vision-language, image, and video models. We also distinguish the security of full random additive sharing from the computational hiding supplied by seed expansion, and algebraic obfuscation from encryption. A public hardware-validation record reports exact equality to the Fortress quantized reference for all L0--L6 text and M1--M4 media rungs, 34/34 attack checks per rung, zero Freivalds failures, and attested execution across three confidential-GPU providers. The evaluated fleets range from four RTX 4090 workers to 120 H100 workers; the report separately records model quality, per-role memory, validation cost, and verified teardown.
+
+These results establish feasibility for the documented frozen build and model families, not universal model support or unconditional confidentiality. Full-grid collusion, global traffic analysis, microarchitectural and physical attacks, external audit, independent reproducibility, and open red-team evaluation remain explicit boundaries. Xurcroh therefore presents both an implemented system and a reproducible framework for evaluating private distributed inference without obscuring the assumptions on which its guarantees depend.
+\end{abstract}
+\vfill
+{\small\color{xmuted}\textbf{Keywords:} private AI inference; additive secret sharing; verifiable computation; post-quantum transport; confidential computing; multimodal generation}
+\vspace{5mm}
+\clearpage
+
+\tableofcontents
+\clearpage

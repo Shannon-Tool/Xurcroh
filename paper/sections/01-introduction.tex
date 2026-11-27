@@ -1,0 +1,57 @@
+\section{Introduction}\label{sec:introduction}
+
+The operational convenience of centralized AI inference comes with an unusually broad disclosure. A conventional provider can observe not only a user's prompt and response, but also the model checkpoint, activations that encode intermediate semantics, routing decisions, and often retained cache state. Encryption in transit does not remove this exposure once computation begins. Scaling the model across several machines can actually widen the trusted computing base if every host is operated by the same party or receives plaintext tensors.
+
+Xurcroh Fortress is a distributed inference architecture built around a more restrictive question: \emph{can useful neural-network computation be delegated to independent GPU workers without giving any below-threshold set of workers the complete model or a user's recoverable input and output?} Its answer is not a single cryptographic primitive. Fortress combines exact additive sharing of quantized linear algebra, a client-resident semantic boundary, result verification, authenticated post-quantum transport, recipient-specific artifact protection, placement across failure domains, and optional hardware attestation. Each mechanism addresses a different adversarial capability.
+
+\subsection{Design goals}
+
+The architecture pursues six goals simultaneously:
+\begin{enumerate}
+  \item \textbf{Partitioned custody.} No individual commodity worker receives the complete unprotected model, raw user prompt, original media, or decoded result.
+  \item \textbf{Exact delegated arithmetic.} Quantized linear operations are evaluated over explicit finite-field representations, with reconstruction and verification defined in the same domain.
+  \item \textbf{Verifiable execution.} Incorrect matrix products, stale artifacts, replay, recipient substitution, and attestation substitution must fail closed rather than silently affect output.
+  \item \textbf{Unified workloads.} Dense transformers, mixture-of-experts (MoE) models, vision-language models (VLMs), image diffusion, and video generation use one client, protocol, and evidence architecture.
+  \item \textbf{Deployability.} The system supports independent commodity GPU providers and optional confidential virtual machines through a small public SDK rather than requiring specialized hardware everywhere.
+  \item \textbf{Auditable claims.} Functional equivalence, confidentiality, integrity, availability, and performance are reported separately, with their assumptions and evidence class attached.
+\end{enumerate}
+
+The result is deliberately not fully homomorphic encryption (FHE). Nonlinear functions, attention mixing, expert routing, sampling, and media decoding remain at the trusted client. This choice increases client responsibility and communication, but avoids representing an obfuscated floating-point transformer as an FHE computation. Fortress also does not equate hiding a weight matrix with proving that a worker behaved correctly: sharing addresses disclosure, while Freivalds checks address a separate integrity problem.
+
+\subsection{Contributions}
+
+This paper makes the following contributions:
+\begin{itemize}
+  \item A production-oriented distributed inference design based on exact quantized linear operations over additive shares, with per-operation placement and explicit finite-field overflow constraints.
+  \item A verification and evidence protocol combining independent Freivalds challenges, worker checkpoints, replay-resistant transport, hybrid classical/post-quantum key establishment, and dual-signature artifacts.
+  \item A compiler and runtime architecture that handles multiple checkpoint encodings and modalities while preserving prompts, client boundaries, expert routing, and decoded media on trusted infrastructure.
+  \item A provider-neutral deployment model for commodity GPUs and confidential hardware, including adversarial attestation checks and independently verified resource teardown.
+  \item A comprehensive public evaluation across the L0--L6 text and M1--M4 media ladders, including exact numerical comparisons, source-model quality, resource measurements, adversarial tests, and cost accounting.
+  \item A precise account of remaining risks, including full-grid collusion, traffic analysis, physical TEE attacks, and the distinction between seed-expanded computational hiding and information-theoretic raw sharing.
+\end{itemize}
+
+\subsection{A minimal public interface}
+
+The internal protocol is intentionally hidden behind a familiar API. The caller registers named models and independent workers, performs preflight, and creates a chat completion. The trusted client performs compilation and session setup; it does not forward a monolithic plaintext checkpoint to the workers.
+
+\begin{lstlisting}[language=Python,caption={Public SDK entry point. The internal Fortress grid is selected by the model definition.},label=lst:sdk]
+from Xurcroh import Xurcroh
+
+client = Xurcroh(cluster=workers, model_path=models)
+print(client.preflight())
+response = client.chat.completions.create(
+    model="gemma",
+    messages=[{"role": "user", "content": "Hello!"}],
+    max_tokens=128,
+)
+print(response.choices[0].message.content)
+client.close()
+\end{lstlisting}
+
+\subsection{Evidence classification}
+
+Throughout this paper, \emph{formally derived} refers to algebraic statements under stated assumptions; \emph{locally validated} refers to CPU tests, protocol models, or local integration; and \emph{hardware validated} refers to the public physical-GPU record~\cite{xurcroh-validation}. A production-acceptance decision is a project governance result, not a substitute for independent cryptanalysis. All hardware tables and plots concern \frozenbuild{} with content hash \texttt{7f31c2e0}. The public repository's current revision may contain documentation or subsequent changes and is not automatically identical to that frozen patched source.
+
+\begin{evidencebox}[Reading the evaluation]
+Zero error against the Fortress quantized reference is a statement about two executions of the same protected arithmetic. It is not zero error against the original full-precision neural network. Perplexity delta, PSNR, and VMAF are reported separately as quality comparisons. Likewise, zero observed verification failures is an experimental result, whereas the Freivalds soundness bound is probabilistic and algebraic.
+\end{evidencebox}

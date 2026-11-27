@@ -1,0 +1,13 @@
+\resizebox{0.94\linewidth}{!}{%
+\begin{tikzpicture}[node distance=5mm]
+\node[trust] (f0) {F0 / M0\\roots};
+\node[worker,right=of f0] (g2) {G2\\formats};
+\node[worker,right=of g2] (l0) {L0--L3\\text};
+\node[worker,right=of l0] (m1) {M1--M4\\media};
+\node[worker,right=of m1] (l4) {L4--L6\\frontier};
+\node[trust,right=of l4] (d2) {D2\\attested};
+\draw[flow] (f0) -- (g2); \draw[flow] (g2) -- (l0); \draw[flow] (l0) -- (m1); \draw[flow] (m1) -- (l4); \draw[flow] (l4) -- (d2);
+\node[box,below=10mm of m1,minimum width=80mm] (sign) {Each block: predecessor hash + frozen source + model revision + counters\\Ed25519 signature \textbf{and} ML-DSA-65 signature};
+\draw[flow,xteal] (sign) -- (m1);
+\node[font=\scriptsize,text=xmuted,below=5mm of sign] {A trusted head makes alteration evident; independent public witnessing remains separate.};
+\end{tikzpicture}}

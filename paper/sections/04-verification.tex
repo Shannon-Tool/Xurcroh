@@ -1,0 +1,60 @@
+\section{Verifying delegated linear computation}\label{sec:verification}
+
+Secret sharing hides operands but does not establish that a worker returned the correct product. Fortress therefore attaches challenges derived at compilation time to weight shares. The trusted client knows the unshared challenge relationship; the worker sees only the role material needed for normal execution.
+
+\subsection{Freivalds' algebraic test}
+
+For matrices $A\in\field^{m\times k}$, $B\in\field^{k\times n}$, and a claimed product $C\in\field^{m\times n}$, sample a uniform challenge $r\in\field^n$ and test
+\begin{equation}
+C r \stackrel{?}{=} A(B r).
+\label{eq:freivalds}
+\end{equation}
+If $C=AB$, equality always holds. If $C\neq AB$, let $D=C-AB\neq0$. Some row $d$ of $D$ is nonzero, and $Dr=0$ requires $d\cdot r=0$.
+
+\begin{theorem}[Freivalds soundness]\label{thm:freivalds}
+For one uniformly random $r$, the test in \cref{eq:freivalds} accepts an incorrect $C$ with probability at most $1/p$. With $R$ independently sampled challenges, the acceptance probability is at most $p^{-R}$.
+\end{theorem}
+\begin{proof}
+For a nonzero row $d$, choose a nonzero coordinate $d_h$. Condition on all coordinates except $r_h$. There is at most one value of $r_h$ satisfying $d\cdot r=0$, so the probability is at most $1/p$. Independence gives the $R$-round bound by multiplication.
+\end{proof}
+
+The implementation uses fixed challenge material compiled for a model and two independent challenges per weight share on the remote grid path. Fixed challenges avoid regenerating trusted weight products per request, but their lifetime, reuse, and independence must be included in the operational security analysis. A challenge that becomes known to a worker no longer supplies the same assurance. Verification counters are therefore as important as the mathematical primitive: every accepted role result must have been checked.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/freivalds.tex}
+\caption{Challenge verification and fail-closed recovery. A mismatch invalidates the result; retries preserve operation seeds so retransmission does not change the intended shared computation.}
+\label{fig:freivalds}
+\end{figure}
+
+\begin{algorithm}[htbp]
+\caption{Verified role result}
+\label{alg:verify}
+\begin{algorithmic}[1]
+\Require Claimed $Y_{i,j}$; compiled challenge set $\mathcal{R}$; expected artifact digest
+\State Validate frame version, sequence, recipient, tensor shape, and payload length
+\State Check the worker checkpoint and pinned artifact digest
+\ForAll{$r\in\mathcal{R}$}
+  \If{challenge$(Y_{i,j},r)\neq$ expected challenge residue}
+    \State Reject the response; attribute the failure; revoke or retry under policy
+    \State \Return $\bot$
+  \EndIf
+\EndFor
+\State Increment the verified-result counter and admit $Y_{i,j}$ to the combiner
+\State \Return $Y_{i,j}$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Arithmetic-domain boundary}
+
+\begin{securitybox}[Why the bound does not transfer to BF16]
+The proof of \cref{thm:freivalds} uses exact equality and uniform challenges over a finite field. BF16, FP16, and FP8 operations round and may reorder accumulation; a small rounding discrepancy is not a field forgery. Fortress therefore asserts the probabilistic bound only for the quantized finite-field path. Reduced-precision implementations require empirical differential tests and explicit numerical tolerances instead.
+\end{securitybox}
+
+This distinction also clarifies the evaluation metric. Exact equality to the quantized reference establishes reproducibility of the protected integer computation. It does not imply exact equality to the original BF16 checkpoint. Original-model quality is measured separately using perplexity for text and PSNR or VMAF for generated media.
+
+\subsection{Canaries, checkpoints, and task traces}
+
+A role worker with an identity key signs its loaded artifact digest and a running hash of session traffic. This binds observations to a pinned key and claimed artifact set; it is not hardware attestation. Process canaries associate unique share values with an observer set and trigger attribution and revocation when a monitoring integration reports exposure. A trip identifies the observer set, not necessarily the individual discloser.
+
+Every accepted request can emit a signed task trace containing the model revision, source digest, format, sharing policy, transport group, verification counters, worker checkpoints, and selected resource observations. Traces deliberately exclude prompts and decoded outputs. They make the execution reviewable without turning the evidence system into a plaintext data log.

@@ -1,0 +1,55 @@
+\section{Secure transport and evidence}\label{sec:transport}
+
+\subsection{Layered protection}
+
+Fortress transport has three distinct layers. Rust QUIC supplies authenticated, encrypted, forward-secret links using TLS 1.3~\cite{rfc9000,rfc8446}. The role-session protocol establishes an end-to-end application session using hybrid HPKE. Fixed-size binary frames then carry tensor descriptors and encrypted role payloads with explicit version, sequence, type, shape, and length fields.
+
+The hybrid suite combines X25519 and ML-KEM-768, HKDF-SHA256, and ChaCha20-Poly1305~\cite{rfc9180,fips203,rfc8439}. ML-KEM is the NIST-standardized module-lattice key-encapsulation mechanism derived from CRYSTALS-Kyber~\cite{kyber}. The purpose of the combination is to retain confidentiality unless both key-exchange components fail, subject to a correct combiner and implementation.
+
+\subsection{Role-session establishment}
+
+Let $K_w$ be a worker's static hybrid recipient public key. The client creates an ephemeral key pair and sends a fresh ephemeral public value with a secret $s_c$ sealed to $K_w$. The worker opens $s_c$, seals its own secret $s_w$ to the client's ephemeral key, and returns it with its loaded-artifact digest and, when configured, a signature over the exchange transcript $T$. Both parties derive
+\begin{equation}
+k_0=\HKDF(s_c\,\|\,s_w,\ \text{salt}=H(T),\ \text{info}=\texttt{Fortress role session}),
+\end{equation}
+followed by directional send/receive keys. On direct routes, a TLS exporter is mixed into the handshake so a transcript cannot be moved to another TLS connection. A relayed route has no shared client--worker TLS session and therefore reports that binding as absent.
+
+Rotation replaces a session key using a one-way derivation and starts a new nonce domain:
+\begin{equation}
+k_{e+1}=\HKDF(k_e,\ \text{info}=\texttt{rotation}\,\|\,e+1).
+\end{equation}
+The worker's static key alone should not open a recorded session because the worker secret was sealed to a discarded client ephemeral key. Python cannot guarantee immediate erasure of every discarded byte; forward secrecy is consequently a protocol property with best-effort implementation hygiene, not proof of physical memory erasure.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/session.tex}
+\caption{Fortress role-session establishment. The application session remains end-to-end across relays. Worker identity, artifact digest, challenge freshness, and directional keys have separate purposes.}
+\label{fig:session}
+\end{figure}
+
+\subsection{Framing, replay, and return paths}
+
+AEAD nonces are monotonic within a key epoch. Directional HKDF contexts prevent accidental reuse of the same application key in both directions. The receiver maintains a 64-sequence replay window: recent reordering is accepted, duplicates and excessively old packets are rejected, and nonce exhaustion fails closed. Bounded binary parsing rejects unsupported versions, malformed lengths, trailing bytes, and integer overflow without panics.
+
+Onion routing wraps each request layer to one authorized hop. A relay learns its next address but not the application session keys. The response is protected by the end-to-end role session and forwarded unchanged. One relay observes both endpoints; meaningful client--worker endpoint separation requires at least two non-colluding relays. Tor and I2P carriers instead frame QUIC datagrams over their respective stream transports, preserving mutual TLS and the application session inside the carrier. Neither design defeats global timing and volume correlation.
+
+Cover calls use the same frame form and length as real calls. Constant-rate mode fills unused slots, while decoy tasks execute complete requests whose outputs are discarded. These mechanisms impose throughput and latency costs. They do not hide the identities of contacted workers, and operation order can still reveal model structure.
+
+\subsection{Hardware evidence}
+
+Attested mode requires fresh evidence bound to a challenge nonce, workload and artifact identities, recipient key, and expected image measurement. AMD SEV-SNP and Intel TDX evidence covers the CPU/virtual-machine side; NVIDIA evidence covers the GPU side. Composite acceptance requires both. The client rejects stale quotes, wrong evidence, second-GPU substitution, and changed image measurements rather than downgrading to commodity execution.
+
+Provider APIs and virtual-machine names are not evidence. A successful create/destroy lifecycle proves only that the provider control plane behaved as observed. Physical attestation requires vendor-signed fields, current collateral, and policy evaluation. The vendor, firmware, and verifier remain additional trust roots.
+
+\subsection{Signed evidence and transparency}
+
+Task traces, model manifests, release manifests, worker registrations, and ladder evidence use Ed25519 and ML-DSA-65 together; both signatures must verify~\cite{fips204}. ML-DSA is the NIST-standardized module-lattice signature derived from CRYSTALS-Dilithium~\cite{dilithium}. Validation evidence blocks form a hash chain from F0 and M0 through the text/media rungs and attested executions. Each accepted rung binds the preceding result, source identity, model revision, and verification counters.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/evidence-chain.tex}
+\caption{Tamper-evident validation and request evidence. Dual signatures authenticate records; hash chaining detects modification or removal relative to a trusted head. Independent witnessing remains an external assurance activity.}
+\label{fig:evidence}
+\end{figure}
+
+An append-only Merkle digest log supports inclusion and consistency proofs for traces, model manifests, and releases. The project does not itself operate an independent public witness. A log and a witness run by the same party do not provide independent equivocation detection, and a signed trace is evidence about an asserted execution rather than a cryptographic proof of an entire neural-network forward pass.

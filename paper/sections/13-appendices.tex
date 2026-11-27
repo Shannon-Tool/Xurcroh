@@ -1,0 +1,108 @@
+\section{Mathematical and protocol details}\label{app:math}
+
+\subsection{Exact grid reconstruction}
+
+Expanding \cref{eq:grid} produces all cross terms. Modulo $p$,
+\begin{equation}
+\sum_{i=1}^{N}\sum_{j=1}^{N}W_iX_j
+=\sum_{i=1}^{N}W_i\left(\sum_{j=1}^{N}X_j\right)
+=\left(\sum_{i=1}^{N}W_i\right)X=WX.
+\end{equation}
+No cross term is approximated or discarded. Role order and transport packetization do not affect the exact sum provided field accumulation bounds hold. This proof addresses arithmetic correctness only; confidentiality comes from the distribution and placement of shares, and integrity comes from independent verification.
+
+\subsection{Pseudo-Mersenne reduction}
+
+For a 64-bit product $z$, let $z_0=z\bmod2^{32}$ and $z_1=\lfloor z/2^{32}\rfloor$. Since $2^{32}=p+5$,
+\begin{equation}
+z=z_0+(p+5)z_1\equiv z_0+5z_1\pmod p.
+\end{equation}
+The folded value can exceed 32 bits, so the same operation is repeated before final canonical reduction. Any native implementation must account for the wider intermediate produced by $5z_1$; an implementation that merely masks to 32 bits would be incorrect.
+
+\subsection{Challenge composition}
+
+For an incorrect result $C=AB+D$ with $D\neq0$, the verifier computes $Cr-A(Br)=Dr$. If independent random challenges $r_1,\ldots,r_R$ are used, every challenge must land in the zero set of every nonzero row for a false acceptance. Conditional independence gives $\Pr[\mathrm{accept}]\leq p^{-R}$. Reusing a challenge after disclosure or allowing a worker to choose it violates this argument.
+
+\subsection{Client-server work decomposition}
+
+If a layer has $L$ supported linear maps, direct request/response execution incurs on the order of $L$ grid interactions per model invocation, each with $N^2$ roles before batching or parallelism. Let $q_\ell$ denote the elements of activation share $\ell$ and $b$ its encoded byte width. Full activation sharing has total payload proportional to $bN\sum_\ell q_\ell$, while seeded shares replace $N-1$ full payloads with fixed-size seeds and retain one residual payload. The latter reduces bandwidth but changes the security assumption to PRG-based computational hiding.
+
+\subsection{Transform compatibility}
+
+For an orthogonal $Q$, $Q^{-1}=Q^\top$. Conjugating a linear map, $\widehat{W}=Q_{\mathrm{out}}WQ_{\mathrm{in}}^\top$, gives
+\begin{equation}
+\widehat{W}(Q_{\mathrm{in}}x)=Q_{\mathrm{out}}Wx.
+\end{equation}
+For attention scores, a shared orthogonal $Q$ preserves $q^\top k=(Qq)^\top(Qk)$ only when no intervening position-dependent operation violates commutation. Rotary positional embeddings impose that adjacent or half-split rotation pairs share the same transform. Grouped-query attention additionally requires consistency within each KV group. These are compatibility conditions for functional equivalence, not evidence of secrecy.
+
+\section{Validated model inventory}\label{app:models}
+
+\Cref{tab:model-inventory} lists the pinned revisions used by the public validation record. Fingerprints and full license notes are available in the repository's model matrix and hardware report.
+
+{\scriptsize
+\begin{longtable}{p{0.25\linewidth}p{0.45\linewidth}p{0.09\linewidth}p{0.08\linewidth}}
+\caption{Official model checkpoints and immutable revisions used in validation.}\label{tab:model-inventory}\\
+\toprule
+\textbf{Model} & \textbf{Revision} & \textbf{Encoding} & \textbf{Rung} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Model} & \textbf{Revision} & \textbf{Encoding} & \textbf{Rung} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Gemma 4 E2B & \texttt{4adf15748de9e1a0097b6274cee9c15836c41c37} & BF16 & L0/D2 \\
+Gemma 4 E4B & \texttt{4ecc2ba63bcac23ba4a767fc87025b1450f84c9c} & BF16 & L1a/D2 \\
+Gemma 4 12B & \texttt{43c9d014b231474fa7212dbb48a762566c2b255d} & BF16 & L1b \\
+Gemma 4 26B-A4B & \texttt{4d7ae4984b7db7de8f8457170b3f1a419ee76d52} & BF16 & L2 \\
+Gemma 4 31B & \texttt{842da3794eaa0b77d5f08bae87a17459d91ff475} & BF16 & L3a \\
+Qwen 3.8 27B & \texttt{37561816e66b5b9153b1b64c10968c18c1e6f4a0} & BF16 & L3b \\
+Mistral Medium 3.5 128B & \texttt{ff62230e1c990bdf05bbf6efa1c73fefe094ebf4} & FP8 & L4 \\
+GLM-5.3-Flash & \texttt{46a050bec13002ad29ee795c16e61cf4fa3c4a9c} & FP8 & L5 \\
+Kimi-K2.6 & \texttt{7eb5002f6aadc958aed6a9177b7ed26bb94011bb} & Packed I32 & L6 \\
+FLUX.2 klein 4B & \texttt{e7b7dc27f91deacad38e78976d1f2b499d76a294} & BF16 & M1a \\
+Z-Image-Turbo & \texttt{f332072aa78be7aecdf3ee76d5c247082da564a6} & BF16 & M1b \\
+Qwen-Image 2.1 & \texttt{d26bb61231c349cf6b7896fa83353113880e1ba3} & BF16 & M2a \\
+FLUX.2-dev & \texttt{e8af80c9dd820ab07ee4171d024f03e5c4b3024b} & BF16 & M2b \\
+Wan 2.2 TI2V 5B & \texttt{b8fff7315c768468a5333511427288870b2e9635} & BF16 & M3a \\
+LTX-2.5 & \texttt{4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3} & BF16 & M3b \\
+Wan 2.2 T2V-A14B & \texttt{5be7df9619b54f4e2667b2755bc6a756675b5cd7} & BF16 & M4a \\
+Wan 2.2 I2V-A14B & \texttt{596658fd9ca6b7b71d5057529bbf319ecbc61d74} & BF16 & M4b \\
+MiniMax H3 & \texttt{12253298adb81e36757eabebb81d2ba1c0cc70cc} & BF16 & M4c \\
+\end{longtable}}
+
+\section{Evidence and acceptance matrix}\label{app:evidence}
+
+\begin{table}[htbp]
+\centering\small
+\caption{Evidence classes used in this paper.}
+\begin{tabularx}{\linewidth}{p{0.22\linewidth}XX}
+\toprule
+\textbf{Class} & \textbf{Meaning} & \textbf{Examples} \\
+\midrule
+Formally derived & Follows from explicit algebra and assumptions & Grid reconstruction; single-share hiding; finite-field Freivalds bound \\
+Locally validated & Executed in CPU/local test or symbolic analysis & Decoder differentials; protocol parsing; ProVerif queries; arithmetic experiment \\
+Hardware validated & Observed on the stated physical frozen build & L0--L6, M1--M4; three-provider attestation; memory forensics \\
+Governance decision & Acceptance by the responsible project owner & Production acceptance under report conditions \\
+External pending & Requires another party or public process & Audit; second-party builds; independent witness; bounty/red team \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The signed validation chain orders F0, M0, G2, G3, G4, G5, G6, M1, M2, M3, M4, G11, G12, G13, D2-a, and D2-b. Each record identifies its predecessor and source revision. Public report examples include F0 SHA-256 \path{b42f0a9c31d5e8774a6c0091b2e358f41e0d7c3992ab6451c45e0a2b8d91f302} and L6 SHA-256 \path{e9031d1cc44a0f2b775e6b8f0a2d913e5c7044ab1d22ef6689c0d1e3f445a6b7}.
+
+\section{Artifact guide}\label{app:artifact}
+
+The repository contains the public SDK under \path{python/Xurcroh}, the internal Python runtime under \path{python/xurcroh}, Rust protocol/crypto/transport crates under \path{crates}, native CUDA code under \path{native/cuda}, executable tests under \path{tests}, and the independent interactive manual under \path{apps/web-manual}. Deployment guides cover Vast.ai, RunPod, Azure confidential GPUs, and Google Cloud confidential GPUs.
+
+Build this manuscript from the repository root:
+\begin{lstlisting}[language=bash]
+./scripts/build-paper.sh
+\end{lstlisting}
+Regenerate local arithmetic evidence and run its tests:
+\begin{lstlisting}[language=bash]
+.venv/bin/python experiments/fortress_arithmetic.py --iterations 5
+.venv/bin/pytest tests/fortress tests/experiments/test_fortress_arithmetic.py -q
+\end{lstlisting}
+
+No model checkpoint, private key, raw prompt, source media, generated output, or provider credential is needed to rebuild the paper. Hardware-run reproduction requires separately authorized infrastructure and compliance with each model's license.

@@ -1,0 +1,28 @@
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=1 by 2,vertical sep=1.4cm},width=\columnwidth,height=4.8cm,symbolic x coords={L0,L1a,L1b,L2,L3a,L3b,L4,L5,L6},xtick=data,x tick label style={font=\scriptsize},grid=major,grid style={gray!15}]
+\nextgroupplot[ybar,bar width=13pt,ylabel={Independent hosts},ymin=0,ymax=135,nodes near coords,nodes near coords style={font=\tiny}]
+\addplot[fill=xteal!75,draw=xteal] coordinates {
+(L0,4)
+(L1a,4)
+(L1b,4)
+(L2,8)
+(L3a,8)
+(L3b,8)
+(L4,32)
+(L5,76)
+(L6,120)
+};
+\nextgroupplot[ylabel={Perplexity delta (\%)},ymin=0,ymax=4.8,ytick={0,1,2,3,4},mark=*,mark size=1.8pt]
+\addplot[xorange,thick] coordinates {
+(L0,2.1)
+(L1a,1.8)
+(L1b,1.7)
+(L2,2.4)
+(L3a,1.9)
+(L3b,2.0)
+(L4,2.6)
+(L5,2.9)
+(L6,4.1)
+};
+\end{groupplot}
+\end{tikzpicture}

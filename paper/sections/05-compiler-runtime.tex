@@ -1,0 +1,59 @@
+\section{Protected compilation and execution}\label{sec:runtime}
+
+\subsection{Checkpoint ingestion}
+
+The trusted compiler resolves a model by immutable revision, reads its architecture metadata, verifies the license and checkpoint fingerprint, decodes weights, quantizes supported linear operators, derives role shares, and seals each artifact to a distinct recipient. Architecture detection is checkpoint-driven: model configuration, not a marketing name or an assumed tensor shape, selects the adapter. Unknown graph semantics and unsupported encodings fail closed.
+
+The public compiler accepts Safetensors, GGUF v1--v3, EXL2/GPTQ, and EXL3 containers. GGUF handling covers current tensor type codes, shards, metadata arrays, embedded tokenizers, and both endian modes. EXL2 handles mixed-width groups and activation ordering; EXL3 handles integer and fractional trellis rates, codebooks, and sign/Hadamard restoration. FP8 \texttt{F8\_E4M3} and packed \texttt{I32} decoders were compared against publisher loaders. Container support does not imply universal graph support: an explicit architecture adapter and differential comparison are required.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/compiler.tex}
+\caption{Trusted compilation and recipient isolation. Only role-specific sealed artifacts leave the compiler. Client boundary assets and verification challenges remain under client control.}
+\label{fig:compiler}
+\end{figure}
+
+\subsection{Quantization and operation extraction}
+
+A neural network can be viewed as an interleaving of linear maps and client-owned semantic operations:
+\begin{equation}
+h_{\ell+1}=\mathcal{N}_{\ell}\!\left(W_\ell h_\ell;\,\theta_\ell,s_\ell\right),
+\end{equation}
+where $W_\ell h_\ell$ is delegated, $\mathcal{N}_\ell$ includes normalization, nonlinearities, attention state updates, or routing, and $s_\ell$ denotes client state. The compiler identifies supported matrices in projections, feed-forward blocks, experts, and diffusion backbones. It records tensor shape, source and storage encodings, quantization scale, field modulus, and overflow bounds in authenticated manifests.
+
+For a scalar quantization $W\approx s_W\widetilde{W}$ and $X\approx s_X\widetilde{X}$, the client can reconstruct an approximation using
+\begin{equation}
+WX\approx s_Ws_X\left(\widetilde{W}\widetilde{X}\right),
+\end{equation}
+where the inner product is exact in $\field$ and scale restoration is trusted. Model-specific scales and zero points require adapters that preserve the publisher's semantics. The quality impact is empirical and is not inferred from the zero integer-reference error.
+
+\subsection{Role artifacts and key separation}
+
+A manifest identifies the model, graph, field, operation, recipient, and artifact digests. Each role's data key is sealed to a distinct hybrid recipient identity. Client embeddings, language-model head, router state, challenge vectors, bases, VAEs, and decoders are separately protected and never included in ordinary worker artifacts. Workers cannot use their own recipient identity to open another role's envelope.
+
+This credential separation does not assert that an arbitrary algebraic weight transformation is irreversible. Earlier obfuscation-first mechanisms remain useful as inner layers and transition tools, but Fortress production execution relies on additive sharing rather than treating an orthogonal matrix as encryption.
+
+\subsection{Trusted combiner and model state}
+
+The combiner reconstructs each linear result, checks verification counters, and executes operations withheld from workers. For text, these include tokenization, embeddings, normalization, attention mixing and state ownership, expert routing, sampling, and final decoding. For MoE models, padded dropless dispatch gives every expert a constant workload and assigns dummy results zero combination weight. This reduces selection-dependent network volume without eliminating timing or microarchitectural leakage.
+
+A single \texttt{FortressGridRuntime} per model shares one authenticated connection and encrypted session per role across operations. This avoids creating one thread pool, cover loop, and connection per matrix. Operation names remain inside authenticated payloads; fresh seeds and retry-stable derivation prevent retransmission from silently changing the computation. Session rotation and cancellation are role-scoped.
+
+\subsection{Memory lifecycle}
+
+Fortress treats logical deallocation and physical sanitization as different operations. Sensitive host staging uses wipeable buffers; role activation, transport, latent, and recurrent buffers are cleaned at request or session boundaries. On CUDA, zero-on-free schedules the wipe on the allocation's stream and synchronizes before reuse. KV pools require physical-slot wipes because returning a logical block need not invoke the allocator.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/memory.tex}
+\caption{Wipe-before-reuse ordering. Stream synchronization makes the tested allocation unavailable to the next owner until scrubbing completes; this does not prove erasure of every register or SRAM location.}
+\label{fig:memory}
+\end{figure}
+
+\begin{limitation}[Scope of memory evidence]
+An independent epilogue kernel cannot establish that every physical register, all shared memory, or another device's memory has been cleared. Python and framework copies, host root access, hypervisors, and capture before erasure remain relevant. The hardware evidence concerns measured allocation and cleanup behavior, not universal physical erasure.
+\end{limitation}
+
+\subsection{Failure behavior}
+
+Strict mode has no silent plaintext fallback. Missing adapters, incompatible revisions, invalid evidence, malformed tensor descriptors, stale epochs, and unsupported model semantics stop execution. Cancellation and monotonic deadlines are checked between denoising steps and between additive-grid rows. This cooperative mechanism does not claim preemption inside an arbitrary third-party native kernel. Shutdown cancels active work, waits for in-flight cleanup, and retains recovery state if remote teardown fails.

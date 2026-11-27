@@ -1,0 +1,16 @@
+\resizebox{0.91\linewidth}{!}{%
+\begin{tikzpicture}[node distance=7mm]
+\node[worker] (result) {Claimed result $C$};
+\node[box,right=of result] (left) {Compute $Cr$};
+\node[trust,below=of left] (right) {Compute $A(Br)$};
+\node[box,diamond,aspect=2.2,right=of left,inner sep=3pt] (decision) {$Cr=A(Br)$?};
+\node[trust,right=of decision] (accept) {Accept for\\combination};
+\node[danger,below=of decision] (reject) {Reject, attribute,\\revoke or retry};
+\draw[flow] (result) -- (left);
+\draw[flow] (result.south) |- (right.west);
+\draw[flow] (left) -- (decision);
+\draw[flow] (right.east) -| (decision.south);
+\draw[flow,xgreen] (decision) -- node[above,font=\scriptsize]{yes} (accept);
+\draw[flow,xred] (decision) -- node[right,font=\scriptsize]{no} (reject);
+\node[font=\scriptsize,text=xmuted,below=4mm of right] {Uniform $r\in\mathbb{F}_p^n$; one-round false acceptance $\leq 1/p$};
+\end{tikzpicture}}

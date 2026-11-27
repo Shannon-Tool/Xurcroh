@@ -1,0 +1,14 @@
+\resizebox{0.96\linewidth}{!}{%
+\begin{tikzpicture}[node distance=6mm]
+\node[trust] (checkpoint) {Pinned checkpoint\\revision + license};
+\node[trust,right=of checkpoint] (decode) {Decode and validate\\graph / quantization};
+\node[trust,right=of decode] (share) {Generate field shares\\and challenges};
+\node[trust,right=of share] (seal) {Seal each role artifact\\to its recipient};
+\node[worker,below=10mm of share,xshift=-15mm] (rolea) {Worker A\\artifact + own key};
+\node[worker,below=10mm of seal,xshift=15mm] (roleb) {Worker B\\artifact + own key};
+\node[trust,below=10mm of decode,yshift=-12mm,minimum width=40mm] (boundary) {Client-only assets\\embeddings / head / router / VAE};
+\draw[flow] (checkpoint) -- (decode); \draw[flow] (decode) -- (share); \draw[flow] (share) -- (seal);
+\draw[flow,xblue] (share) -- (rolea); \draw[flow,xblue] (seal) -- (roleb);
+\draw[flow,xteal] (decode) -- (boundary);
+\draw[-{Latex},xred,dashed] (rolea) -- node[above,font=\scriptsize]{cannot open} (roleb);
+\end{tikzpicture}}

@@ -1,0 +1,107 @@
+\section{Evaluation}\label{sec:evaluation}
+
+The public validation program evaluated protected execution on physical GPUs across independent hosts. Every accepted rung required exact equality to the Fortress quantized reference, separate source-model quality measurement, 34 worker-compromise and transport checks, zero Freivalds failures, canary attribution and revocation, verified task traces, streaming/cancellation/concurrency/recovery, resource measurement, signed chained evidence, cost accounting, and teardown proof. Results below are from \frozenbuild{} (\texttt{7f31c2e0}) and are historical measurements, not performance guarantees~\cite{xurcroh-validation}.
+
+\subsection{Text and VLM ladder}
+
+\begin{table}[htbp]
+\centering\scriptsize
+\caption{Physical text ladder. Quality is perplexity delta over 10,000 public prompts against the original model; L6 compares against the unpruned original. All rows have zero maximum absolute error against the Fortress quantized reference.}
+\label{tab:text-ladder}
+\resizebox{\linewidth}{!}{%
+\begin{tabularx}{\linewidth}{l>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.26\linewidth}rrrr}
+\toprule
+\textbf{Rung} & \textbf{Model} & \textbf{Fleet} & \textbf{Hosts} & \textbf{Quality} & \textbf{VRAM/role} & \textbf{Cost} \\
+ & & & & \textbf{(\%)} & \textbf{(GB)} & \textbf{(USD)} \\
+\midrule
+L0 & Gemma 4 E2B & 4$\times$ RTX 4090 & 4 & 2.1 & 17.1 & 57.94 \\
+L1a & Gemma 4 E4B & 4$\times$ RTX 4090 & 4 & 1.8 & 26.8 & 84.31 \\
+L1b & Gemma 4 12B & 4$\times$ A100 PCIe & 4 & 1.7 & 42.3 & 92.51 \\
+L2 & Gemma 4 26B-A4B & 8$\times$ A100 PCIe & 8 & 2.4 & 61.0 & 302.51 \\
+L3a & Gemma 4 31B & 8$\times$ A100 PCIe & 8 & 1.9 & 68.9 & 291.06 \\
+L3b & Qwen 3.8 27B & 8$\times$ A100 PCIe & 8 & 2.0 & 64.2 & 286.90 \\
+L4 & Mistral Medium 3.5 128B & 24$\times$ H100 PCIe + 8$\times$ H100 SXM & 32 & 2.6 & 63.2 & 2,735.16 \\
+L5 & GLM-5.3-Flash & 62$\times$ H100 PCIe + 14$\times$ H100 SXM & 76 & 2.9 & 58.9 & 6,522.80 \\
+L6 & Kimi-K2.6, REAP 0.472 & 84$\times$ H100 PCIe + 36$\times$ H100 SXM & 120 & 4.1 & 56.4 & 10,467.97 \\
+\bottomrule
+\end{tabularx}}
+\end{table}
+
+\Cref{tab:text-ladder} spans compact dense models, VLM conditioning, FP8 and packed-integer formats, and large MoE fleets. L2 was the first evaluated MoE rung with client routers, decoy expert calls, and padded dispatch. L5 and L6 passed eight-host rehearsals before full-fleet execution. Seed expansion operated on every rented GPU, and the listed VRAM values are measured per-role peaks rather than analytical four-byte upper bounds.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/generated/text-resources.tex}
+\caption{Measured peak VRAM per role across the physical text ladder. Larger fleets do not imply monotonically increasing per-role memory because model graph, quantization, and role assignment differ.}
+\label{fig:text-resources}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\input{figures/generated/text-fleet-quality.tex}
+\caption{Independent fleet size and measured perplexity delta. Quality is not a pass/fail threshold. L6's 4.1\% delta is relative to the unpruned model and includes the effect of REAP pruning.}
+\label{fig:fleet-quality}
+\end{figure}
+
+The L6 record reports 184,224 role requests and 184,224 verified results, a client RSS peak of 71.2 GB, peak role VRAM of 56.4 GB, 88.2 GiB/min bandwidth, and median operation latency of 1,411 ms. These observations describe one large protected configuration and its client-heavy arithmetic decomposition; they must not be repackaged as generic tokens-per-second estimates.
+
+\subsection{Image and video ladder}
+
+\begin{table}[htbp]
+\centering\small
+\caption{Physical media ladder. Every workflow has exact local-versus-grid latent equality. Costs are totals for the indicated M1--M4 rung, not individual model prices.}
+\label{tab:media-ladder}
+\begin{tabularx}{\linewidth}{ll>{\raggedright\arraybackslash}Xrr}
+\toprule
+\textbf{Rung} & \textbf{Model} & \textbf{Validated workflows} & \textbf{Quality} & \textbf{Rung cost (USD)} \\
+\midrule
+M1a & FLUX.2 klein 4B & Text-to-image; non-square/odd shapes & 44.2 dB PSNR & \multirow{2}{*}{124.62} \\
+M1b & Z-Image-Turbo & Few-step text-to-image & 43.7 dB PSNR & \\
+\midrule
+M2a & Qwen-Image 2.1 & T2I, I2I, masked editing & 42.8 dB PSNR & \multirow{2}{*}{412.85} \\
+M2b & FLUX.2-dev & T2I, I2I, masked editing & 42.1 dB PSNR & \\
+\midrule
+M3a & Wan 2.2 TI2V 5B & Text/image-to-video; deterministic MP4 & 96.4 VMAF & \multirow{2}{*}{401.79} \\
+M3b & LTX-2.5 & Video generation & 95.8 VMAF & \\
+\midrule
+M4a & Wan 2.2 T2V-A14B & Text-to-video; dual denoiser & 95.2 VMAF & \multirow{3}{*}{978.10} \\
+M4b & Wan 2.2 I2V-A14B & Image-to-video & 94.9 VMAF & \\
+M4c & MiniMax H3 & Video, recurrent state, joint audio & 94.1 VMAF & \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.49\linewidth}
+\centering\input{figures/generated/image-quality.tex}
+\caption{Image reference quality (PSNR).}
+\end{subfigure}\hfill
+\begin{subfigure}{0.49\linewidth}
+\centering\input{figures/generated/video-quality.tex}
+\caption{Video reference quality (VMAF).}
+\end{subfigure}
+\caption{Media-quality measurements beside exact latent equality. PSNR and VMAF use different scales and are plotted separately; neither is a universal perceptual-quality guarantee.}
+\label{fig:media-quality}
+\end{figure}
+
+The media results cover text-to-image, image-to-image, masked editing, text-to-video, image-to-video, recurrent state, and audio. The MiniMax H3 full run exercised recurrent-state and audio paths. Model licensing remains independent of technical support: some evaluated checkpoints are gated, research-only, or non-commercial.
+
+\subsection{Confidential hardware and relay paths}
+
+Attested L0 ran on four Azure NCC40ads H100 v5 instances in East US 2 with Intel TDX and NVIDIA confidential computing. Attested E4B ran across Google A3 HighGPU TDX and Alibaba gn8v-tee, combining Intel TDX/NVIDIA evidence on Google Cloud and AMD SEV-SNP on Alibaba. Numerical results exactly matched the corresponding commodity Fortress runs. Adversarial tests rejected stale evidence, wrong quotes, second-GPU substitution, and substituted image measurements.
+
+Provider lifecycle tests covered creation, visibility, charge reporting, destruction, and zero remaining instances on all three providers. A complete request also traversed the real Tor network with two relays on hosts separate from the workers; median relay latency was 38 ms above the direct baseline for that measurement.
+
+\subsection{Validation economics and teardown}
+
+The reported total spend was 25,045.91 USD against a 30,000 USD ceiling, leaving 4,954.09 USD unspent. Provider totals were Vast.ai 22,808.62 USD across 179 instances, Azure 353.34 across 9, Google Cloud 521.85 across 7, Alibaba Cloud 243.25 across 5, and RunPod 692.64 across 11+ CPU pods. These are historical charges, not current price quotations.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\linewidth}{!}{\input{figures/generated/validation-costs.tex}}
+\caption{Validation cost by broad ladder group. ``Other program costs'' is derived as the published total minus itemized L0--L6 and M1--M4 rung costs, and includes engineering, provider, TEE, teardown, storage, bandwidth, and residual charges.}
+\label{fig:costs}
+\end{figure}
+
+After execution, workers and relays were stopped, worker exit codes collected, resources destroyed, and provider APIs queried independently. The report records zero remaining instances and volumes at Vast.ai, Azure, Google Cloud, Alibaba Cloud, and RunPod. Final charge reconciliation included storage, bandwidth, and residual costs; a stopped virtual machine was not treated as free or destroyed.

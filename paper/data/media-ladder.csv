@@ -1,0 +1,11 @@
+# Source: docs/xurcroh-validation-report.md section 4; frozen build 3b48e2a+patches-01..23
+rung,model,modality,quality_metric,quality_value
+M1a,FLUX.2 klein 4B,image,PSNR dB,44.2
+M1b,Z-Image-Turbo,image,PSNR dB,43.7
+M2a,Qwen-Image 2.1,image,PSNR dB,42.8
+M2b,FLUX.2-dev,image,PSNR dB,42.1
+M3a,Wan 2.2 TI2V 5B,video,VMAF,96.4
+M3b,LTX-2.5,video,VMAF,95.8
+M4a,Wan 2.2 T2V-A14B,video,VMAF,95.2
+M4b,Wan 2.2 I2V-A14B,video,VMAF,94.9
+M4c,MiniMax H3,video,VMAF,94.1

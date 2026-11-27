@@ -1,0 +1,55 @@
+\section{System and threat model}\label{sec:threat}
+
+\subsection{Participants and trust boundaries}
+
+A Fortress deployment contains a trusted client or hosted gateway, a blind orchestration layer, independent role workers, optional relays, artifact storage, and optional hardware-attestation services. The client is trusted with user plaintext, source model checkpoints, complete challenge vectors, nonlinear computation, and output reconstruction. A hosted gateway inherits this trust and therefore must be operated as the client, not described as an oblivious server.
+
+Each worker receives only its assigned role artifacts and request shares. The orchestrator can register workers and route opaque messages but does not need user plaintext or application payload keys. Relays learn network and forwarding metadata; an entry relay and exit relay have different views. Hardware evidence, when required, is evaluated against a pinned trust policy before protected material is released.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/architecture.tex}
+\caption{Fortress trust and data boundaries. The client owns model boundaries, nonlinear semantics, and reconstruction. Workers see role-specific shares; relays forward protected frames. Composite TEE evidence is optional on commodity deployments and mandatory in attested mode.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Adversary capabilities}
+
+We consider an active adversary that may fully control one or more below-threshold workers. Such an adversary can read process memory, inspect its assigned artifacts and keys, alter computation, replay packets, delay responses, record timing, and collaborate with other compromised workers. A network adversary can observe and modify traffic, while a malicious relay can inspect its own forwarding metadata. In TEE mode, the cloud operator and host operating system are outside the protected application boundary, but CPU/GPU vendors, firmware, attestation collateral, and verifier implementations remain trust dependencies.
+
+\begin{assumption}[Share non-collusion]\label{assumption:collusion}
+For each operation, adversarial workers do not obtain a complementary set of shares sufficient to reconstruct the protected source value. Placement labels and provider diversity are operational aids, not cryptographic proof of independence. Full-grid collusion invalidates the corresponding confidentiality guarantee.
+\end{assumption}
+
+\begin{assumption}[Trusted client]\label{assumption:client}
+The client or hosted gateway correctly executes tokenization, quantization, nonlinear operations, challenge verification, reconstruction, and output decoding, and protects its long-term and ephemeral secrets. Client compromise is outside the remote-worker confidentiality model.
+\end{assumption}
+
+\begin{assumption}[Primitive security]\label{assumption:primitives}
+Established cryptographic implementations provide their advertised properties under their respective models. Hybrid key establishment is intended to remain secure unless both component key exchanges fail; it does not make classical TLS certificates post-quantum authentication credentials.
+\end{assumption}
+
+\subsection{Security objectives and non-goals}
+
+\Cref{tab:threats} separates confidentiality, integrity, and availability. A system can satisfy one while failing another. In particular, verified incorrect computation does not imply input hiding, and an attested machine can still be malicious at the application layer if its measured workload is not the intended one.
+
+\begin{table}[htbp]
+\centering\small
+\caption{Threats, controls, and residual exposure.}
+\label{tab:threats}
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.22\linewidth}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.28\linewidth}}
+\toprule
+\textbf{Adversary action} & \textbf{Primary controls} & \textbf{Residual boundary} \\
+\midrule
+Read one worker's model state & Additive weight shares; recipient-sealed artifacts; no boundary keys & Complementary-share collusion; reconstruction of seed-expanded shares if the PRG assumption fails \\
+Recover user input or output & Client-owned boundaries; activation shares; end-to-end encrypted sessions & Client compromise; complementary-share collusion; semantic side channels \\
+Return a wrong matrix product & Independent Freivalds challenges; exact finite-ring arithmetic & Acceptance probability is nonzero; non-matrix and client computation require other controls \\
+Replay or alter network traffic & AEAD, sequence tracking, replay windows, directional keys, rotation & Availability attacks and global timing observation \\
+Substitute a worker or GPU & Pinned identities, fresh nonce-bound CPU/GPU evidence, workload/image binding & Vendor/verifier compromise and physical attacks \\
+Infer workload from traffic & Fixed frames, cover calls, decoy tasks, padded MoE dispatch, relays & Timing, scheduling, cache/TLB, power, and intersection analysis \\
+Recover data after release & Stream-ordered scrubbing, KV/latent/state cleanup, host zeroization & Unobservable registers/SRAM, foreign-device memory, root or hypervisor capture before erasure \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Availability is intentionally not conflated with confidentiality. Cancellation, bounded request admission, reconnection, and crash recovery improve operational resilience, but a provider can always withhold service. Traffic-analysis resistance is similarly scoped: cover traffic and relays change observable patterns without proving anonymity against a global observer.

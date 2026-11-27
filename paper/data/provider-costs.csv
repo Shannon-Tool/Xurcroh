@@ -1,0 +1,7 @@
+# Source: docs/xurcroh-validation-report.md section 8; historical validation charges, not price quotes
+provider,instances,cost_usd
+Vast.ai,179,22808.62
+Azure,9,353.34
+Google Cloud,7,521.85
+Alibaba Cloud,5,243.25
+RunPod,11,692.64

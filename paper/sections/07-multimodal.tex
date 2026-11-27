@@ -1,0 +1,57 @@
+\section{Unified multimodal inference}\label{sec:multimodal}
+
+Fortress applies the same sharing, transport, verification, and evidence infrastructure to text, vision-language conditioning, image diffusion, and video generation. Modal adapters differ in graph extraction and client boundary, not in whether workers are trusted with plaintext.
+
+\subsection{Dense and mixture-of-experts language models}
+
+For a transformer decoder, tokenization and embedding remain client-owned. Supported linear projections are quantized and delegated; the combiner applies normalization, attention semantics, residual updates, and nonlinearities. The final normalization, language-model head, and sampling stay at the client. This supports synchronous, asynchronous, and streaming generation under one request state machine.
+
+An MoE block computes
+\begin{equation}
+y=\sum_{e\in\operatorname{TopK}(r(x))}g_e(x)E_e(x),
+\end{equation}
+where the router $r$ and gates $g$ remain trusted. Protected dispatch sends a fixed-capacity workload to every selected execution domain, adds dummy items when needed, and sets dummy output weights to zero:
+\begin{equation}
+y=\sum_e g_e(x)E_e(x)\,\mathbf{1}[e\text{ is real}].
+\end{equation}
+Decoy expert calls and constant-load padding reduce direct packet-volume leakage, but do not remove timing, access-pattern, cache, TLB, or power channels. Large MoE models additionally benefit from measured expert placement and client-side routers that never become worker-visible model state.
+
+The L5 evaluation exercised GLM-5.3-Flash with 288 experts across 45 layers. The L6 evaluation used Kimi-K2.6 with measured REAP expert pruning: all 61 layers and 384 experts per layer were measured before pruning, the retained fraction was 0.472, and quality was compared with the unpruned original on a separate trusted reference host~\cite{xurcroh-validation}.
+
+\subsection{Vision-language conditioning}
+
+VLM inputs are prepared at the trusted boundary. Image patches, supported audio embeddings, text tokens, masks, and positional information are assembled before protected execution. Chaff tokens are explicitly attention-masked so they cannot alter model semantics. Model-specific configuration is derived from the pinned checkpoint; unsupported positional, recurrence, or graph variants are rejected rather than approximated by a generic adapter.
+
+The Qwen 3.8 27B rung included image/audio conditioning substeps with exact quantized-reference equality. This is evidence for the evaluated adapter and revision, not a claim that every future VLM can be handled by the same tensor layout.
+
+\subsection{Image generation and editing}
+
+A diffusion transformer produces a sequence of protected latent updates. The trusted client generates or imports initial noise, encodes source images for image-to-image workflows, controls the scheduler, and decodes final latents with a VAE or lightweight decoder. A flow-matching update can be written
+\begin{equation}
+z_{t+1}=z_t+\Delta_t\,v_\theta(z_t,c,t),
+\end{equation}
+where $c$ is conditioning and $v_\theta$ contains delegated linear operations interleaved with trusted nonlinear and scheduling operations. Masked editing constrains the reconstruction region at the client rather than exposing the original image to workers.
+
+For an equivariant transition layer used by the compiler, a linear map satisfies
+\begin{equation}
+\widehat{W}=U_{\mathrm{out}}WU_{\mathrm{in}}^{-1},\qquad
+\widehat{W}\widehat{x}=U_{\mathrm{out}}Wx
+\quad\text{when}\quad \widehat{x}=U_{\mathrm{in}}x.
+\label{eq:equivariance}
+\end{equation}
+Such a transformation demonstrates functional equivalence, not confidentiality. Orthogonal transformations preserve inner products and norms and may permit alignment against public models. Fortress consequently treats them as an inner compilation layer only.
+
+Adaptive layer normalization introduces coefficient-specific constraints. If $P$ is a signed permutation, multiplicative $\gamma$ and $\alpha$ coefficients require unsigned permutations while additive $\beta$ coefficients use the signed form; applying signs uniformly breaks products whose signs cancel. The compiler validates joint attention, modulation, feed-forward paths, and input/output projections before emitting media artifacts. Worker requests do not carry the client basis or spatial permutation.
+
+\subsection{Video and audio}
+
+Video adds temporal token structure, recurrent state, frame scheduling, and optional audio. The client retains the initial media, temporal mask semantics, final latent reconstruction, VAE decoding, and MP4/audio encoding. Protected workers evaluate supported matrix operations without receiving decoded frames. Recurrent state is transformed and cleaned according to the same request-scoped ownership rules as text KV state and image latents.
+
+The media ladder exercised Wan 2.2 text/image-to-video, LTX-2.5, and MiniMax H3 recurrent-state and joint-audio paths. Exact latent equality and deterministic output checks are reported alongside VMAF; neither metric alone measures every aspect of perceptual quality.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/multimodal.tex}
+\caption{Unified Fortress dataflow. Modality-specific encoders and decoders stay at the trusted boundary, while the shared grid executes verified linear operations.}
+\label{fig:multimodal}
+\end{figure}

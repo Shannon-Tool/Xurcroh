@@ -1,0 +1,10 @@
+\begin{tikzpicture}
+\begin{axis}[width=\columnwidth,height=5.2cm,ybar,bar width=18pt,symbolic x coords={M1a,M1b,M2a,M2b},xtick=data,ylabel={PSNR (dB)},ymin=40,ymax=45,grid=major,grid style={gray!15},nodes near coords,nodes near coords style={font=\scriptsize}]
+\addplot[fill=xblue!75,draw=xblue] coordinates {
+(M1a,44.2)
+(M1b,43.7)
+(M2a,42.8)
+(M2b,42.1)
+};
+\end{axis}
+\end{tikzpicture}

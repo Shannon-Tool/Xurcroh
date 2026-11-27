@@ -1,0 +1,12 @@
+\resizebox{0.96\linewidth}{!}{%
+\begin{tikzpicture}[node distance=6mm and 7mm]
+\node[trust,minimum width=29mm] (text) {Text / VLM\\tokens, image, audio};
+\node[trust,below=of text,minimum width=29mm] (image) {Image\\noise / source / mask};
+\node[trust,below=of image,minimum width=29mm] (video) {Video / audio\\noise / source / time};
+\node[worker,right=24mm of text,yshift=-15mm,minimum width=50mm,minimum height=40mm] (grid) {\textbf{Shared Fortress grid}\\[2pt]Exact quantized linear maps\\Additive shares and placement\\Freivalds verification\\Hybrid PQ authenticated transport};
+\node[trust,right=24mm of grid,minimum width=33mm,minimum height=40mm] (output) {\textbf{Trusted reconstruction}\\[2pt]Text sampling\\Latent inversion / VAE\\Video + audio encoding};
+\draw[flow,xteal] (text) -- (grid); \draw[flow,xteal] (image) -- (grid); \draw[flow,xteal] (video) -- (grid);
+\draw[flow,xblue] (grid) -- (output);
+\node[box,below=7mm of grid,minimum width=65mm] (client) {Client-owned normalization, attention, routing, nonlinearities and scheduler};
+\draw[flow,xteal] (grid) -- (client); \draw[flow,xteal] (client) -| (output);
+\end{tikzpicture}}

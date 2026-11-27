@@ -1,0 +1,19 @@
+\section{Related work}\label{sec:related}
+
+\paragraph{Confidential virtual machines and accelerators.}
+AMD SEV-SNP and Intel TDX isolate virtual-machine state from parts of the host stack, while NVIDIA confidential computing extends attestation to supported GPUs~\cite{amd-sev-snp,intel-tdx,nvidia-cc}. These technologies reduce exposure to infrastructure operators but retain vendor, firmware, and verifier trust. Fortress can use them as an additional layer and separately protects operands through sharing on commodity workers.
+
+\paragraph{Secure multiparty computation and homomorphic encryption.}
+Secret sharing originates in threshold cryptography~\cite{shamir1979}; modern MPC protocols distribute computation under explicit corruption thresholds. FHE permits computation over encrypted data under cryptographic hardness assumptions~\cite{gentry2009}. Fortress is narrower than general-purpose MPC or FHE: it delegates exact linear maps and leaves nonlinear semantics at the client. This specialization makes GPU implementation practical for the evaluated graphs, but increases client work and requires a non-colluding placement policy.
+
+\paragraph{Verifiable computation.}
+Freivalds' randomized matrix-product test is a classical example of efficient algebraic verification~\cite{freivalds1977}. General-purpose succinct arguments can cover broader computations but introduce different setup, proof, and performance costs. Fortress applies the specialized test where its finite-field assumptions hold and does not extrapolate its probability bound to rounded floating-point kernels.
+
+\paragraph{Distributed inference.}
+Pipeline and tensor parallelism partition neural-network execution to fit and accelerate large models; GPipe and Megatron-LM are influential examples~\cite{gpipe,megatron}. Serving systems such as vLLM and SGLang optimize scheduling, KV management, and GPU utilization~\cite{vllm,sglang}. These systems ordinarily trust the execution environment with plaintext model state. Fortress uses distributed placement for confidentiality and integrity in addition to capacity, and its protected production engine is distinct from ordinary plaintext serving.
+
+\paragraph{Provider-operated private AI.}
+Systems such as Apple Private Cloud Compute emphasize hardware/software transparency and provider-operated attested infrastructure~\cite{apple-pcc}. Fortress instead supports a mixture of independent commodity and confidential workers with client-owned model semantics. A definitive per-threat comparison requires independent analysis; this paper identifies architectural differences without claiming universal superiority.
+
+\paragraph{Private model transformation.}
+Basis rotations and related transformations can preserve neural-network behavior while changing representations. Their equivalence equations do not by themselves provide cryptographic confidentiality, particularly when public-weight alignment and invariant attacks are available. Fortress limits these transformations to inner compatibility and compilation mechanisms rather than counting them as its primary security guarantee.

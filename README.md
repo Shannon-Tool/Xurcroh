@@ -39,6 +39,7 @@ The complete **L0–L6 text ladder and M1–M4 media ladder passed on physical G
 | Model coverage | Dense, MoE, VLM, image, and video workflows through Gemma 4, Qwen, Mistral, GLM, Kimi, FLUX.2, Wan 2.2, LTX, and MiniMax H3 |
 | Evidence trail | Signed **Ed25519 + ML-DSA-65** rung chain and independently verifiable per-request task traces |
 | Validation history | [Full hardware report](docs/xurcroh-validation-report.md) · [Test history](docs/test-history.md) |
+| Research paper | **[Xurcroh Fortress — PDF](paper/xurcroh-fortress.pdf)** by Felix Devon · [LaTeX source](paper/main.tex) |
 
 Every completed request produces a signed task trace that can be checked with `xurcroh verify` or in a browser on the manual's Verify page; see `docs/task-trace.md` and `docs/claims.md`.
 

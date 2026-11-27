@@ -1,0 +1,13 @@
+\resizebox{0.85\linewidth}{!}{%
+\begin{tikzpicture}
+\node[trust,minimum width=30mm] (client) {Client};
+\node[worker,right=75mm of client,minimum width=30mm] (worker) {Role worker};
+\draw[thick,xline] ($(client.south)+(0,-0.2)$) -- ++(0,-5.6);
+\draw[thick,xline] ($(worker.south)+(0,-0.2)$) -- ++(0,-5.6);
+\draw[flow,xblue] ($(client.south)+(0,-0.9)$) -- node[above,font=\scriptsize,align=center]{ephemeral public key\\HPKE-sealed $s_c$} ($(worker.south)+(0,-0.9)$);
+\draw[flow,xteal] ($(worker.south)+(0,-2.0)$) -- node[above,font=\scriptsize,align=center]{HPKE-sealed $s_w$\\artifact digest + transcript signature} ($(client.south)+(0,-2.0)$);
+\node[box] at ($(client.south)+(0,-3.15)$) {Derive $k_0$; check identity};
+\node[box] at ($(worker.south)+(0,-3.15)$) {Derive $k_0$; pin artifacts};
+\draw[flow,xblue] ($(client.south)+(0,-4.25)$) -- node[above,font=\scriptsize]{AEAD request share; sequence + epoch} ($(worker.south)+(0,-4.25)$);
+\draw[flow,xteal] ($(worker.south)+(0,-5.2)$) -- node[above,font=\scriptsize]{AEAD verified result; rotate when scheduled} ($(client.south)+(0,-5.2)$);
+\end{tikzpicture}}

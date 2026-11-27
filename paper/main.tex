@@ -1,0 +1,99 @@
+\documentclass[11pt,letterpaper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=0.82in,headheight=14pt]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage[table,dvipsnames]{xcolor}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{pgfplotstable}
+\usepgfplotslibrary{groupplots}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,calc,shapes.geometric,decorations.pathreplacing}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage[most]{tcolorbox}
+\usepackage[backend=biber,style=numeric-comp,sorting=nyt,maxbibnames=8,doi=true,isbn=false,url=true]{biblatex}
+\usepackage[colorlinks=true,hypertexnames=false,linkcolor=xblue,citecolor=xblue,urlcolor=xteal,pdftitle={Xurcroh Fortress: Verifiable Multimodal Inference over Distributed, Non-Colluding GPU Workers},pdfauthor={Felix Devon},pdfsubject={Private distributed AI inference, verifiable computation, and confidential computing},pdfkeywords={AI inference, secret sharing, Freivalds, post-quantum, TEE, multimodal}]{hyperref}
+\usepackage[capitalise,noabbrev]{cleveref}
+
+\definecolor{xblue}{HTML}{3157A4}
+\definecolor{xteal}{HTML}{087F8C}
+\definecolor{xorange}{HTML}{D97706}
+\definecolor{xred}{HTML}{B42318}
+\definecolor{xgreen}{HTML}{217A4B}
+\definecolor{xink}{HTML}{17233C}
+\definecolor{xmuted}{HTML}{5C667A}
+\definecolor{xpale}{HTML}{F2F6FC}
+\definecolor{xline}{HTML}{CBD5E1}
+
+\pgfplotsset{compat=1.18,every axis/.append style={font=\small,axis line style={xline},tick style={xline},label style={xink},title style={xink},legend style={font=\scriptsize,draw=xline,fill=white},legend cell align=left}}
+\tikzset{box/.style={draw=xline,fill=white,rounded corners=2pt,align=center,minimum height=9mm,inner sep=5pt,text=xink},trust/.style={box,fill=xteal!8,draw=xteal},worker/.style={box,fill=xblue!7,draw=xblue},danger/.style={box,fill=xred!6,draw=xred},flow/.style={-{Latex[length=2.4mm]},thick,xmuted},boundary/.style={draw,dashed,rounded corners=4pt,inner sep=7pt}}
+\lstset{basicstyle=\ttfamily\scriptsize,keywordstyle=\color{xblue},commentstyle=\color{xmuted},stringstyle=\color{xteal},breaklines=true,showstringspaces=false,frame=single,rulecolor=\color{xline},backgroundcolor=\color{xpale},aboveskip=8pt,belowskip=8pt}
+\setlist{itemsep=3pt,topsep=4pt}
+\renewcommand{\arraystretch}{1.16}
+\setlength{\parskip}{2pt}
+\setlength{\parindent}{1.5em}
+\setlength{\emergencystretch}{2em}
+\captionsetup{font=small,labelfont={bf,color=xblue},textfont={color=xink},width=0.94\linewidth}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{xmuted}Xurcroh Fortress}
+\fancyhead[R]{\small\color{xmuted}Felix Devon}
+\fancyfoot[C]{\small\thepage}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{assumption}[definition]{Assumption}
+\theoremstyle{plain}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{theorem}[definition]{Theorem}
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+\newtheorem{limitation}[definition]{Limitation}
+
+\newtcolorbox{evidencebox}[1][Evidence scope]{enhanced,breakable,colback=xpale,colframe=xblue,boxrule=0.6pt,arc=2pt,left=7pt,right=7pt,top=6pt,bottom=6pt,title={#1},fonttitle=\bfseries\small,coltitle=white}
+\newtcolorbox{securitybox}[1][Security boundary]{enhanced,breakable,colback=xteal!5,colframe=xteal,boxrule=0.6pt,arc=2pt,left=7pt,right=7pt,top=6pt,bottom=6pt,title={#1},fonttitle=\bfseries\small,coltitle=white}
+\newtcolorbox{limitbox}[1][Limitations]{enhanced,breakable,colback=xorange!5,colframe=xorange,boxrule=0.6pt,arc=2pt,left=7pt,right=7pt,top=6pt,bottom=6pt,title={#1},fonttitle=\bfseries\small,coltitle=white}
+\newcommand{\frozenbuild}{\texttt{3b48e2a + patches-01--23}}
+\newcommand{\field}{\mathbb{F}_{p}}
+\newcommand{\Fp}{\mathbb{F}_{p}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\abs}[1]{\left\lvert #1\right\rvert}
+\DeclareMathOperator{\Enc}{Enc}
+\DeclareMathOperator{\Dec}{Dec}
+\DeclareMathOperator{\Verify}{Verify}
+\DeclareMathOperator{\HKDF}{HKDF}
+\DeclareMathOperator{\HPKE}{HPKE}
+\DeclareMathOperator{\AEAD}{AEAD}
+\addbibresource{references.bib}
+\graphicspath{{figures/}{figures/generated/}}
+
+\begin{document}
+\input{sections/00-title}
+\input{sections/01-introduction}
+\input{sections/02-threat-model}
+\input{sections/03-arithmetic}
+\input{sections/04-verification}
+\input{sections/05-compiler-runtime}
+\input{sections/06-transport}
+\input{sections/07-multimodal}
+\input{sections/08-implementation}
+\input{sections/09-evaluation}
+\input{sections/10-security-evaluation}
+\input{sections/11-related-work}
+\input{sections/12-conclusion}
+\appendix
+\input{sections/13-appendices}
+\printbibliography
+\end{document}

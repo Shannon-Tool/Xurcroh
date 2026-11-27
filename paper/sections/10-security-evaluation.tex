@@ -1,0 +1,51 @@
+\section{Security evaluation and limitations}\label{sec:security-evaluation}
+
+\subsection{Adversarial validation}
+
+Each hardware rung completed 34 worker-compromise and transport checks. The adversary was granted access to its own worker process, artifacts, and credentials rather than modeled as a blind external observer. Tests covered peer-artifact decryption, boundary-key availability, model and prompt remnants, tampered manifests and shards, stale-epoch mixing, replay, malformed framing, and altered results. Memory and log scans searched for checkpoints, source matrices, embeddings/heads/routers, client bases, VAE material, prompts, and recoverable latents.
+
+Attested executions additionally substituted stale quotes, incorrect evidence, a second GPU, and a changed image measurement. Each was rejected. CUDA forensics on RTX 4090, A100 80 GB, and H100 80 GB exercised scrub-then-probe, zero-on-free/reallocation, and KV/latent/recurrent/transport cleanup; \texttt{compute-sanitizer --tool initcheck} reported clean results for the tested paths.
+
+Zero observed Freivalds failures across accepted rungs means no incorrect result escaped the implemented verification gate in those tests. It does not make the theoretical false-acceptance probability zero. Likewise, passing a fixed attack suite is evidence about those tests and their implementation, not proof that no other attack exists.
+
+\subsection{Formal protocol models}
+
+ProVerif models cover direct and relayed Fortress role sessions over adversary-controlled channels. Queries address request/response secrecy after specified key disclosures and injective agreement on session keys. A relayed model also considers later ratchet-key disclosure. Control runs demonstrate that the models can fail when the corresponding protection is removed.
+
+These are symbolic models, not computational proofs of hybrid ML-KEM/X25519 security. They do not cover every replay window, side channel, TLS implementation, identity compromise, or provider behavior. Known-answer tests use NIST ACVP and Project Wycheproof material for supported post-quantum operations, while round-trip tests cover library-generated randomness.
+
+\subsection{Structural leakage and algebraic obfuscation}
+
+Orthogonal conjugation $W\mapsto UWU^{\top}$ can preserve exact layer behavior, but also preserves norms, inner products, eigenspectra, and other structural quantities. Given public or related models, Procrustes-style alignment and norm analysis can recover information. A basis change therefore supplies computational obfuscation at most; it is not semantically secure encryption, FHE, secret sharing, or a zero-knowledge proof.
+
+Fortress addresses this by making additive sharing the primary confidentiality boundary. The full random variant has an information-theoretic hiding argument under independence and non-collusion. Seed expansion changes the claim to computational hiding. No amount of basis rotation changes that classification.
+
+\subsection{Collusion and placement}
+
+Below-threshold worker collusion was tested and fails to reconstruct protected values. Full-grid collusion remains a residual risk by construction. Placement across countries, CPU vendors, and providers reduces correlated operational control only if the metadata is truthful. Operator-supplied labels are not independently verified proof of legal or organizational independence.
+
+A deployment that places complementary shares on different ports of one host has failed its security objective even if arithmetic remains correct. Similarly, multiple cloud accounts controlled by one operator may not create meaningful independence. Non-collusion is therefore both a protocol assumption and a governance requirement.
+
+\subsection{Traffic and microarchitectural channels}
+
+Fixed frames, cover calls, decoys, padded dispatch, and relays mitigate selected observable signals. They do not establish anonymity against a global passive observer. Entry and exit relays learn endpoint metadata; long-lived constant-rate flows can themselves be recognizable; real requests can exhibit model-dependent operation order. MoE padding equalizes workload size but not necessarily kernel duration, memory addresses, cache/TLB activity, power consumption, or scheduling patterns.
+
+A local leave-one-out nearest-mean timing experiment reported balanced accuracy 0.572 against a 0.5 baseline for one run. This small measurement is not general classifier resistance and should motivate further evaluation rather than a blanket non-leakage claim.
+
+\subsection{TEE and physical limitations}
+
+A TEE adds hardware-enforced isolation and measured identity, but does not remove trust in CPU/GPU vendors, firmware, collateral, or verifier correctness. Probing, fault injection, cold-boot, acoustic/electromagnetic leakage, physical bus attacks, and compromised attestation roots were not tested. NVIDIA and CPU evidence must be bound to the same session and workload to prevent composite substitution.
+
+Even with valid attestation, a measured application can have a vulnerability, and an external verifier service can become unavailable or compromised. TEE mode is an additional barrier whose failure must be explicit, not an unconditional guarantee.
+
+\subsection{Outstanding independent assurance}
+
+The public validation record explicitly leaves the following outside its completed scope:
+\begin{itemize}
+  \item independent cryptography and systems audit with published findings;
+  \item second-party reproducible builds and independently operated public-log witnessing;
+  \item a public per-threat comparison with other confidential-computing and MPC systems;
+  \item an open red-team or bounty period;
+  \item hosted continuous integration on the frozen validated build, which was unavailable because of account billing during validation.
+\end{itemize}
+These omissions do not invalidate the reported physical tests, but they limit the strength of public assurance. Production acceptance is therefore a scoped engineering decision, not a claim of formal system-wide proof.

@@ -1,0 +1,9 @@
+\section{Conclusion}\label{sec:conclusion}
+
+Xurcroh Fortress demonstrates a concrete approach to private distributed inference in which independent GPU workers perform exact quantized linear operations over additive shares, while a trusted client retains the semantic and nonlinear boundaries of the model. Freivalds verification, recipient-isolated artifacts, hybrid post-quantum sessions, fail-closed attestation, memory lifecycle controls, and signed task traces address different parts of the threat model without being conflated into a single unsupported security guarantee.
+
+The reported physical evaluation covers dense, MoE, VLM, image, and video workloads from small RTX 4090 grids to a 120-host H100 fleet, with exact equality to the quantized reference on every published rung. Attested executions across Azure, Google Cloud, and Alibaba Cloud demonstrate that commodity sharing and confidential hardware can be complementary rather than mutually exclusive deployment strategies.
+
+The architecture's costs are equally important. The trusted client performs substantial computation and state management; communication grows with the share grid; large MoE models require large independent fleets; and traffic-analysis, full-collusion, microarchitectural, and physical threats remain. Seed-expanded shares reduce bandwidth but weaken the confidentiality classification from information-theoretic to computational hiding. External audit, second-party reproducibility, independent witnessing, and open adversarial review remain necessary assurance work.
+
+Fortress is therefore best understood as a working, scoped private-inference architecture and an evidence framework: useful not because it claims trust has disappeared, but because it makes precisely visible where trust remains.

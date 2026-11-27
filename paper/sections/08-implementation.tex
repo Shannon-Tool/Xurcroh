@@ -1,0 +1,31 @@
+\section{Implementation and reproducibility}\label{sec:implementation}
+
+\subsection{Polyglot component boundaries}
+
+Xurcroh assigns implementation languages according to their operational role. Python implements the public SDK, model ingestion, trusted combiner, orchestration integration, and provider lifecycle. Rust owns bounded protocol parsing, AEAD, session state, and QUIC transport. C++ and CUDA implement native memory operations and exact field kernels. TypeScript implements an independent interactive manual whose simulations are not used in production inference.
+
+These components share versioned schemas and explicit ownership rules. The Rust protocol is used by native Python bindings rather than maintaining a second wire serializer. GPU tensors cross language boundaries with explicit shape, dtype, lifetime, synchronization, and cleanup contracts. Optional integrations import framework code only at runtime and reject incompatible pinned APIs.
+
+The Fortress production path supersedes the earlier obfuscation-first vLLM/SGLang design for protected inference. Existing vLLM, SGLang, and xDiT integrations remain numerical references and transition tools; launching an ordinary plaintext model server is not accepted as Fortress execution.
+
+\subsection{Deployment topology}
+
+SDK-managed deployment discovers host capacity, resolves a pinned checkpoint, compiles role artifacts on trusted infrastructure, deploys the committed source, bootstraps a minimal CUDA environment, generates deployment-scoped mutual-TLS identities, and starts role workers. Startup concurrency is bounded to avoid overwhelming a small gateway. A datagram relay supports providers where direct UDP is unavailable, with end-to-end QUIC and application cryptography retained inside the SSH tunnel.
+
+For an $N$-share two-operand operation, placement uses $N^2$ roles. A default Gemma configuration uses five operation groups and thus $5N^2$ independently addressable hosts; $N=2$ yields 20 hosts. This is a topology rule, not an assertion that arbitrary models fit. \texttt{client.preflight()} checks the actual checkpoint, role memory, host count, file descriptors, and bandwidth requirements before execution.
+
+Provider adapters expose offer discovery, creation, destruction, remaining-resource checks, and charge reporting. Vast.ai supplies bounded validation lifecycle automation; RunPod and other SSH hosts use the managed-worker path. Azure, Google Cloud, and Alibaba Cloud have confidential-GPU adapters. OCI, AWS Nitro, and IBM paths are CPU-only and cannot be presented as confidential GPU execution.
+
+\subsection{Verification tooling}
+
+The repository includes Python unit and integration tests, Rust tests and linting, native CUDA tests, protocol fuzzing, symbolic ProVerif models, numerical differential tests, container checks, dependency/secret scanning, and frontend tests for the manual. Benchmark commands emit versioned JSON and omit prompts, outputs, media, credentials, and keys.
+
+Local benchmark commands execute real algorithms or public SDK requests. They do not generate synthetic inference responses. The interactive manual, by contrast, is explicitly a browser-based educational simulation; it is not cited as hardware evidence.
+
+\subsection{Artifact scope}
+
+The primary artifact is available at \url{https://github.com/Shannon-Tool/Xurcroh}. The public model matrix pins official checkpoint revisions and licenses~\cite{xurcroh-models}. The hardware report records frozen source identity and evidence hashes~\cite{xurcroh-validation}. This paper's CSV files and plotting script make its figures regenerable from the published aggregate values.
+
+\begin{evidencebox}[Reproducibility statement]
+The manuscript sources, plots, and public documentation are reproducible from the repository. Independent reproduction of the frozen hardware ladder, second-party release builds, and an independently operated transparency witness remain external work. A matching wheel hash from two builds by the same party is useful engineering evidence but is not second-party reproducibility.
+\end{evidencebox}

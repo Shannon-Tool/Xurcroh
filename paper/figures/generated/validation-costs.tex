@@ -1,0 +1,10 @@
+\begin{tikzpicture}
+\begin{axis}[width=\columnwidth,height=7.4cm,xbar,xmode=log,log basis x=10,xlabel={Counted validation cost (USD, log scale)},xmin=30,xmax=40000,symbolic y coords={{L4--L6 text},{M1--M4 media},{L0--L3 text},{Other program costs (derived)}},ytick=data,y tick label style={font=\scriptsize},grid=major,grid style={gray!15},nodes near coords,nodes near coords style={font=\tiny,/pgf/number format/fixed},point meta=explicit]
+\addplot[fill=xblue!75,draw=xblue] coordinates {
+(2287.39,{Other program costs (derived)}) [2287.39]
+(1115.23,{L0--L3 text}) [1115.23]
+(1917.36,{M1--M4 media}) [1917.36]
+(19725.93,{L4--L6 text}) [19725.93]
+};
+\end{axis}
+\end{tikzpicture}

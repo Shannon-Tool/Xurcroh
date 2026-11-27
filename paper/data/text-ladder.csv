@@ -1,0 +1,11 @@
+# Source: docs/xurcroh-validation-report.md section 3; frozen build 3b48e2a+patches-01..23; content hash 7f31c2e0
+rung,model,parameters_billion,hosts,vram_gb,quality_delta_percent,cost_usd
+L0,Gemma 4 E2B,2,4,17.1,2.1,57.94
+L1a,Gemma 4 E4B,4,4,26.8,1.8,84.31
+L1b,Gemma 4 12B,12,4,42.3,1.7,92.51
+L2,Gemma 4 26B-A4B,26,8,61.0,2.4,302.51
+L3a,Gemma 4 31B,31,8,68.9,1.9,291.06
+L3b,Qwen 3.8 27B,27,8,64.2,2.0,286.90
+L4,Mistral Medium 3.5 128B,128,32,63.2,2.6,2735.16
+L5,GLM-5.3-Flash,0,76,58.9,2.9,6522.80
+L6,Kimi-K2.6 REAP 0.472,0,120,56.4,4.1,10467.97

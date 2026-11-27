@@ -1,0 +1,24 @@
+\resizebox{0.98\linewidth}{!}{%
+\begin{tikzpicture}[node distance=7mm and 8mm]
+\node[trust,minimum width=37mm,minimum height=45mm] (client) {\textbf{Trusted client / gateway}\\[2pt]Prompts and source media\\Model compiler \& challenges\\Nonlinear ops \& routing\\Sampling and decoding};
+\node[box,right=of client,minimum width=27mm,minimum height=26mm] (control) {\textbf{Blind controller}\\Registration\\Opaque routing};
+\node[worker,right=of control,minimum width=30mm] (w1) {\textbf{Role $(1,1)$}\\$W_1,X_1$};
+\node[worker,below=of w1,minimum width=30mm] (w2) {\textbf{Role $(1,2)$}\\$W_1,X_2$};
+\node[worker,right=of w1,minimum width=30mm] (w3) {\textbf{Role $(2,1)$}\\$W_2,X_1$};
+\node[worker,below=of w3,minimum width=30mm] (w4) {\textbf{Role $(2,2)$}\\$W_2,X_2$};
+\node[box,below=10mm of client,minimum width=37mm] (identity) {\textbf{Client identity store}\\Hybrid recipient keys\\Trace verification keys};
+\node[danger,below=10mm of w3,minimum width=65mm] (adversary) {\textbf{Below-threshold adversary}\\Own memory, artifacts, packets, and timing};
+\begin{scope}[on background layer]
+\node[boundary,draw=xteal,fit=(client)(identity),label={[xteal]above:Trusted semantic boundary}] {};
+\node[boundary,draw=xblue,fit=(w1)(w2)(w3)(w4),label={[xblue]above:Independent GPU workers}] {};
+\end{scope}
+\draw[flow,xteal] (client) -- node[above,font=\scriptsize]{opaque work} (control);
+\draw[flow,xblue] (control.east) -- (w1.west);
+\draw[flow,xblue] (control.east) -- (w2.west);
+\draw[flow,xblue] (control.east) -- (w3.west);
+\draw[flow,xblue] (control.east) -- (w4.west);
+\draw[flow,xteal] (identity) -- (client);
+\draw[flow,xred,dashed] (adversary.north) -- (w3.south);
+\draw[flow,xred,dashed] (adversary.north) -- (w4.south);
+\node[font=\scriptsize,text=xmuted,align=center] at ($(w2.south)!0.5!(w4.south)+(0,-2.1)$) {Hybrid PQ QUIC / optional relays\\Verified $Y_{i,j}=W_iX_j$ returned to client};
+\end{tikzpicture}}

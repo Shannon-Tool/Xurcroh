@@ -1,0 +1,17 @@
+\resizebox{0.86\linewidth}{!}{%
+\begin{tikzpicture}[scale=1.0]
+\node[trust,minimum width=28mm] (w) {$W=W_1+W_2$};
+\node[trust,below=8mm of w,minimum width=28mm] (x) {$X=X_1+X_2$};
+\node[worker,right=32mm of w,minimum width=30mm] (a) {$W_1X_1$};
+\node[worker,right=10mm of a,minimum width=30mm] (b) {$W_1X_2$};
+\node[worker,below=12mm of a,minimum width=30mm] (c) {$W_2X_1$};
+\node[worker,below=12mm of b,minimum width=30mm] (d) {$W_2X_2$};
+\node[trust,right=25mm of b,minimum width=37mm,minimum height=30mm] (sum) {$Y=\displaystyle\sum_{i,j}W_iX_j$\\$=WX\pmod p$};
+\draw[flow] (w.east) -- (a.west); \draw[flow] (w.east) -- (b.west);
+\draw[flow] (w.east) -- (c.west); \draw[flow] (w.east) -- (d.west);
+\draw[flow] (x.east) -- (a.west); \draw[flow] (x.east) -- (b.west);
+\draw[flow] (x.east) -- (c.west); \draw[flow] (x.east) -- (d.west);
+\draw[flow,xteal] (a.east) -- (sum.west); \draw[flow,xteal] (b.east) -- (sum.west);
+\draw[flow,xteal] (c.east) -- (sum.west); \draw[flow,xteal] (d.east) -- (sum.west);
+\node[font=\scriptsize,text=xmuted] at ($(a.north)!0.5!(b.north)+(0,0.5)$) {One weight share + one activation share per role};
+\end{tikzpicture}}

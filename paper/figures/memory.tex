@@ -1,0 +1,15 @@
+\resizebox{0.96\linewidth}{!}{%
+\begin{tikzpicture}[x=1.0cm,y=1.0cm]
+\draw[-{Latex},thick,xmuted] (0,0) -- (15,0) node[right,font=\scriptsize]{stream-ordered time};
+\foreach \x/\name/\colour in {0.4/Allocate/xblue,3.0/Compute/xblue,5.7/Release/xorange,8.1/Scrub/xorange,10.7/Synchronize/xteal,13.2/Reuse/xgreen} {
+  \draw[thick,\colour] (\x,0) -- (\x,0.35);
+  \node[above,font=\scriptsize,text=\colour,align=center] at (\x,0.4) {\name};
+}
+\fill[xblue!18] (0.4,-1.0) rectangle (5.7,-1.7);
+\fill[xorange!20] (5.7,-1.0) rectangle (10.7,-1.7);
+\fill[xgreen!20] (13.2,-1.0) rectangle (14.8,-1.7);
+\node[font=\scriptsize] at (3.05,-1.35) {allocation live};
+\node[font=\scriptsize] at (8.2,-1.35) {sensitive remnants; no reuse};
+\node[font=\scriptsize] at (14,-1.35) {next owner};
+\draw[xred,thick,-{Latex}] (7.2,-2.2) -- node[below,font=\scriptsize]{early reuse is forbidden} (12.8,-2.2);
+\end{tikzpicture}}

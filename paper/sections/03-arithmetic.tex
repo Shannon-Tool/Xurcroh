@@ -1,0 +1,88 @@
+\section{Exact arithmetic and additive sharing}\label{sec:arithmetic}
+
+Fortress delegates matrix multiplication rather than an entire transformer layer. This decomposition is the central architectural trade-off: workers receive statistically protected linear operands, while the trusted client retains operations whose nonlinear or routing semantics are difficult to share efficiently.
+
+\subsection{Field and signed representation}
+
+Let $p=2^{32}-5$, which is prime, and let $\field$ be its finite field. Integer encodings produced by a model-specific decoder are canonicalized before sharing. For a field residue $x\in\{0,\ldots,p-1\}$, the signed representative is
+\begin{equation}
+\operatorname{sgn}(x)=
+\begin{cases}
+x, & x\leq\lfloor p/2\rfloor,\\
+x-p, & \text{otherwise}.
+\end{cases}
+\label{eq:signed}
+\end{equation}
+Canonicalization prevents multiple wire representations of the same residue and avoids interpreting a negative two's-complement word as an unrelated field element. Every decoder, transport descriptor, kernel, challenge, and reconstruction path uses the same modulus; mixed-modulus or stale-epoch inputs are rejected.
+
+Products use at least 64-bit intermediates. For $a,b\in[0,p)$, $ab<(2^{32}-5)^2<2^{64}$. The pseudo-Mersenne form permits reduction using $2^{32}\equiv5\pmod p$. Writing $z=z_0+2^{32}z_1$ with $0\leq z_0<2^{32}$ gives
+\begin{equation}
+z\equiv z_0+5z_1\pmod p,
+\end{equation}
+followed by repeated folding and a final conditional subtraction. This is exact modular arithmetic, not low-32-bit truncation. Accumulation bounds and supported share counts are checked explicitly; integer wraparound is never presented as exactness.
+
+\subsection{Additive weights and activations}
+
+For $W\in\field^{m\times k}$ and $X\in\field^{k\times n}$, choose $N$ additive shares of each operand:
+\begin{equation}
+W=\sum_{i=1}^{N}W_i\pmod p,\qquad
+X=\sum_{j=1}^{N}X_j\pmod p.
+\label{eq:shares}
+\end{equation}
+For full random sharing, $W_1,\ldots,W_{N-1}$ and $X_1,\ldots,X_{N-1}$ are independent uniform field tensors; the final shares close the sums. By bilinearity,
+\begin{align}
+Y=WX
+&=\left(\sum_iW_i\right)\left(\sum_jX_j\right)\nonumber\\
+&=\sum_{i=1}^{N}\sum_{j=1}^{N}Y_{i,j},\qquad Y_{i,j}=W_iX_j\pmod p.
+\label{eq:grid}
+\end{align}
+A role at grid position $(i,j)$ evaluates $Y_{i,j}$ using only $W_i$ and $X_j$. The trusted combiner adds all $N^2$ results in $\field$ and applies signed decoding only after exact reconstruction.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/share-grid.tex}
+\caption{An $N\times N$ operation grid. Each worker receives one weight share and one activation share. Any one share alone is independent of the source under full uniform sharing; reconstruction requires all complementary components.}
+\label{fig:share-grid}
+\end{figure}
+
+\begin{proposition}[Single-share hiding]\label{prop:hiding}
+If all but the closing share are independent and uniform over $\field$, every individual share is uniform and independent of the source. More generally, any subset missing at least one uniformly random, independent component has its distribution unchanged by the source.
+\end{proposition}
+\begin{proof}[Proof sketch]
+For any fixed source $s$ and observed shares, the missing uniform share is a bijection between its possible values and the closing constraint. The conditional distribution of the observed shares therefore remains uniform. Independence across weights and activations extends the argument componentwise.
+\end{proof}
+
+This statement is information-theoretic only for full independently generated random shares and under \cref{assumption:collusion}. It says nothing about an adversary that obtains every complementary component, observes the client, or exploits metadata.
+
+\subsection{Seed-expanded storage and transport}
+
+Fortress can derive non-final shares from domain-separated seeds. A 32-byte operation seed is expanded into per-row and per-activation-index seeds; one residual share closes the sum. For model shares, domain separation includes the share index. This reduces material transferred or stored: an experiment with a $16\times16$ matrix recorded 2,048 bytes for two full shares and 1,056 bytes for the seeded representation, saving 992 bytes~\cite{xurcroh-arithmetic}.
+
+\begin{limitation}[Seed expansion is computational]
+A seed-expanded share is the output of a pseudorandom generator. It is not an information-theoretic one-time pad, regardless of how many row, role, or operation domains are used. An information-theoretic statement applies only to the full random sharing path with \texttt{seeded\_activations=false}. Task traces record which representation was used.
+\end{limitation}
+
+\subsection{Placement and independence}
+
+Correct arithmetic does not itself enforce non-collusion. The compiler emits role-specific artifacts and the placement layer separates complementary components across distinct hosts, countries, CPU vendors, or operators as configured. A model's operations are assigned across several independent role grids, avoiding a single fixed worker population for the whole model. Labels are supplied by the operator and are not independently verified geographic or organizational attestations.
+
+\begin{algorithm}[htbp]
+\caption{One shared matrix operation}
+\label{alg:grid}
+\begin{algorithmic}[1]
+\Require Quantized $W,X$; share count $N$; placement policy $\Pi$
+\State Canonicalize operands in $\field$ and validate dimensions and overflow bounds
+\State Generate or derive $W_1,\ldots,W_N$ and $X_1,\ldots,X_N$ satisfying \cref{eq:shares}
+\ForAll{$(i,j)\in[N]\times[N]$}
+  \State Select an eligible independent role $(i,j)$ under $\Pi$
+  \State Establish or reuse the authenticated role session
+  \State Send only role-sealed $W_i$ material and the request-specific $X_j$ share
+  \State Receive $Y_{i,j}$ and verify its associated challenges
+\EndFor
+\State $Y\gets\sum_{i,j}Y_{i,j}\pmod p$
+\State Decode signed outputs and pass them to the client-owned nonlinear path
+\State \Return $Y$
+\end{algorithmic}
+\end{algorithm}
+
+Communication grows quadratically in the number of additive shares for a two-operand product. Larger grids increase the number of components that must be pooled but also add network calls, verification work, scheduling overhead, and failure modes. $N$ is therefore a security and deployment parameter, not a free scalability knob.
