@@ -45,6 +45,24 @@ Every completed request produces a signed task trace that can be checked with `x
 
 > **Security model:** Xurcroh combines additive secret sharing, client-owned boundaries, encrypted artifacts, authenticated transport, result verification, memory scrubbing, and optional hardware attestation. Confidentiality assumes the documented non-collusion threshold. TEEs add a layer of protection rather than unconditional trust; external audit, second-party reproducibility, and open red-team work remain ongoing assurance activities. See `docs/security.md` for the precise threat model.
 
+## Cite Xurcroh
+
+**Felix Devon. “Xurcroh Fortress - Verifiable Multimodal Inference over Distributed, Non-Colluding GPU Workers.” SHANNON LAB LLC, November 2026.**<br>
+**DOI:** [10.13140/RG.2.2.15046.31042](https://doi.org/10.13140/RG.2.2.15046.31042) · [ResearchGate](https://www.researchgate.net/publication/418452236_Xurcroh_Fortress_-_Verifiable_Multimodal_Inference_over_Distributed_Non-Colluding_GPU_Workers) · [BibTeX](paper/citation.bib)
+
+```bibtex
+@misc{devon2026xurcroh,
+  author    = {Devon, Felix},
+  title     = {Xurcroh Fortress - Verifiable Multimodal Inference over Distributed, Non-Colluding GPU Workers},
+  year      = {2026},
+  month     = nov,
+  publisher = {SHANNON LAB LLC},
+  doi       = {10.13140/RG.2.2.15046.31042},
+  url       = {https://doi.org/10.13140/RG.2.2.15046.31042}
+}
+```
+
+GitHub also provides formatted APA and BibTeX citations through **Cite this repository**, using `CITATION.cff`.
 
 <!-- animations:start -->
 ## See it run

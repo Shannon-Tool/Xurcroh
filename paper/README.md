@@ -1,6 +1,12 @@
 # Xurcroh Fortress research paper
 
-`xurcroh-fortress.pdf` is the publication artifact for ResearchGate. The manuscript is written by Felix Devon (SHANNON LAB LLC) and uses only the repository's public architecture, model matrix, experiments, and hardware-validation record.
+`xurcroh-fortress.pdf` is the ResearchGate publication artifact. The manuscript is written by Felix Devon (SHANNON LAB LLC) and uses only the repository's public architecture, model matrix, experiments, and hardware-validation record.
+
+**DOI:** [10.13140/RG.2.2.15046.31042](https://doi.org/10.13140/RG.2.2.15046.31042) · [ResearchGate publication](https://www.researchgate.net/publication/418452236_Xurcroh_Fortress_-_Verifiable_Multimodal_Inference_over_Distributed_Non-Colluding_GPU_Workers) · [BibTeX](citation.bib)
+
+## Cite
+
+Devon, Felix. “Xurcroh Fortress - Verifiable Multimodal Inference over Distributed, Non-Colluding GPU Workers.” SHANNON LAB LLC, November 2026. https://doi.org/10.13140/RG.2.2.15046.31042.
 
 ## Build
 

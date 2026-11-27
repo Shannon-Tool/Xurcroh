@@ -21,6 +21,9 @@ def test_paper_identity_and_frozen_evidence_scope() -> None:
     assert "7f31c2e0" in source
     assert "Full-grid collusion" in source
     assert "Second-party" in source or "second-party" in source
+    assert "10.13140/RG.2.2.15046.31042" in source
+    assert "10.13140/RG.2.2.15046.31042" in (ROOT / "CITATION.cff").read_text()
+    assert "10.13140/RG.2.2.15046.31042" in (ROOT / "README.md").read_text()
 
 
 def test_all_included_tex_sources_exist() -> None:

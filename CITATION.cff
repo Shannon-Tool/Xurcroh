@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use Xurcroh Fortress, please cite the research paper."
+title: "Xurcroh Fortress - Verifiable Multimodal Inference over Distributed, Non-Colluding GPU Workers"
+type: preprint
+authors:
+  - given-names: Felix
+    family-names: Devon
+    affiliation: SHANNON LAB LLC
+    email: felix.devon@shannon-ai.com
+doi: 10.13140/RG.2.2.15046.31042
+url: https://www.researchgate.net/publication/418452236_Xurcroh_Fortress_-_Verifiable_Multimodal_Inference_over_Distributed_Non-Colluding_GPU_Workers
+repository-code: https://github.com/Shannon-Tool/Xurcroh
+date-released: 2026-11-27
+license: Apache-2.0
